@@ -1,0 +1,16 @@
+{
+  "name": "turnahead",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A live, QR-powered walk-in queue platform for clinics and service desks.",
+  "type": "commonjs",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/*.test.js",
+    "check": "node --check server.js && node --check public/common.js && node --check public/desk.js && node --check public/track.js && node --check public/board.js"
+  },
+  "license": "MIT",
+  "keywords": ["queue-management", "qr-tickets", "healthcare", "real-time", "open-source"]
+}
