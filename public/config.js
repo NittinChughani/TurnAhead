@@ -1,12 +1,8 @@
-/**
- * TurnAhead Firebase web config. These are public project identifiers, NOT secrets.
- * Replace the placeholders with your Firebase project's web-app configuration.
- * Never put service-account keys, private keys, or staff passwords here.
- */
 export const firebaseConfig = {
-  apiKey: 'PASTE_FIREBASE_API_KEY',
-  authDomain: 'PASTE_PROJECT_ID.firebaseapp.com',
-  projectId: 'PASTE_PROJECT_ID',
-  appId: 'PASTE_FIREBASE_APP_ID'
+  apiKey: 'AIzaSyB4TDbj_yjmWr-ArmRtat9cbR2LuixRbAs',
+  authDomain: 'turnahead-b34f9.firebaseapp.com',
+  projectId: 'turnahead-b34f9',
+  appId: '1:348690841921:web:4a091271d11a618258e1c0'
 };
+
 export const facilityName = 'TurnAhead Demo Clinic';
