@@ -1,8 +1,12 @@
 import {configured, helpfulError} from './firebase.js';
-import {facility,observeTicket,observeQueue} from './store.js';
+import {getHospital} from './org-store.js';
+import {observeTicket,observeQueue} from './store.js';
 import {dayKey,waitingEstimate} from './queue-engine.js';
 const $=id=>document.getElementById(id);
-const ticketId=new URLSearchParams(location.search).get('ticket');
+const query=new URLSearchParams(location.search);
+const ticketId=query.get('ticket'),hospitalId=query.get('hospital');
+const legacy=!hospitalId;
+let facility='Your hospital';
 let currentTicket=null,currentQueue=null,stopQueue=null,alerts=false,hadLoaded=false,lastStatus='',lastAhead=null;
 const messages={waiting:'Your place will update as reception calls the next person.',called:"It's your turn. Please go to your service counter.",completed:'Your queue visit has been marked as complete.',skipped:'This number was skipped. Please speak with reception.',expired:'This ticket belongs to an earlier day. Please ask reception for a new one.'};
 function fail(message){$('track-error').textContent=message;$('track-error').hidden=false;$('track-content').hidden=true;}
@@ -21,10 +25,10 @@ function update(){
   $('ahead-count').textContent=waiting?ahead:status==='called'?'↗':'✓';
   $('track-eta').textContent=waiting?(q.paused?'Paused':estimate.range.join('–')+' min'):'—';
   $('track-serving').textContent=q.active?.code||'—';
-  $('track-message').textContent=q.paused&&waiting?'This queue is currently paused. Please check with reception.':messages[status]||'Please speak with reception.';
+  $('track-message').textContent=legacy?'This ticket uses the older queue system. Its status is no longer updated. Please request a new QR ticket from reception.':q.paused&&waiting?'This queue is currently paused. Please check with reception.':messages[status]||'Please speak with reception.';
   const pct=waiting?Math.max(10,Math.min(92,Math.round(100/(ahead+1)))):100;
   $('track-progress-bar').style.width=`${pct}%`;
-  $('progress-description').textContent=waiting?`${ahead===0?'You are next in line.':`${ahead} ${ahead===1?'person':'people'} ahead of you.`} Waiting times may change as appointments take longer or shorter.`:messages[status]||'';
+  $('progress-description').textContent=legacy?'Legacy ticket — live tracking is unavailable after the hospital upgrade.':waiting?`${ahead===0?'You are next in line.':`${ahead} ${ahead===1?'person':'people'} ahead of you.`} Waiting times may change as appointments take longer or shorter.`:messages[status]||'';
   if(hadLoaded&&alerts&&Notification.permission==='granted'){
     if(lastStatus==='waiting'&&status==='called')notify('Your turn is ready',`${t.code} — please return to ${q.name}.`);
     else if(waiting && ahead>0 && ahead<=2 && (lastAhead===null||lastAhead>2) && !sessionStorage.getItem('ta-near-'+ticketId)){
@@ -42,10 +46,22 @@ $('enable-alerts').addEventListener('click',async()=>{
   $('enable-alerts').textContent=alerts?'Alerts enabled ✓':'Enable browser alerts ↗';
 });
 if(!configured) fail('This website is not connected to Firebase yet. Please contact reception.');
-else if(!ticketId||!/^[A-Za-z0-9]{20}$/.test(ticketId)) fail('No valid ticket was supplied. Scan the QR code on your receipt to open your queue status.');
-else observeTicket(ticketId,t=>{
-  if(!t){fail('We could not find that ticket. Please check your QR code or ask reception.');return;}
-  currentTicket=t;
-  if(currentQueue?.id!==t.queueId){stopQueue?.();currentQueue=null;stopQueue=observeQueue(t.queueId,q=>{if(!q)fail('This service queue is no longer available.');else{currentQueue=q;update();}},e=>fail(helpfulError(e)));}
-  else update();
-},e=>fail(helpfulError(e)));
+else if(!ticketId||!/^[A-Za-z0-9]{20}$/.test(ticketId)||(hospitalId&&!/^[A-Za-z0-9]{20}$/.test(hospitalId)))
+  fail('No valid ticket was supplied. Scan the QR code on your receipt to open your queue status.');
+else (async()=>{
+  if(!legacy){
+    try{facility=(await getHospital(hospitalId)).name;}
+    catch(e){fail(helpfulError(e));return;}
+  }
+  observeTicket(hospitalId,ticketId,t=>{
+    if(!t){fail('We could not find that ticket. Please check your QR code or ask reception.');return;}
+    currentTicket=t;
+    if(currentQueue?.id!==t.queueId){
+      stopQueue?.();currentQueue=null;
+      stopQueue=observeQueue(hospitalId,t.queueId,q=>{
+        if(!q)fail('This service queue is no longer available.');
+        else{currentQueue=q;update();}
+      },e=>fail(helpfulError(e)));
+    } else update();
+  },e=>fail(helpfulError(e)));
+})();

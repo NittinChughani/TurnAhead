@@ -42,6 +42,6 @@ test('QR encoder can create an SVG for a GitHub Pages tracking URL',async()=>{
   const {readFileSync}=await import('node:fs');const vm=await import('node:vm');
   const s=readFileSync(new URL('../public/qr.js',import.meta.url),'utf8');
   const ctx={window:{}};vm.runInNewContext(s,ctx,{timeout:2000});
-  const svg=ctx.window.turnaheadQR.svg('https://nittinchughani.github.io/TurnAhead/track.html?ticket=AbCdEfGhiJKLmnoPQrST');
+  const svg=ctx.window.turnaheadQR.svg('https://nittinchughani.github.io/TurnAhead/track.html?hospital=ABcdEFghIJklMNopQR12&ticket=AbCdEfGhiJKLmnoPQrST');
   assert.match(svg,/viewBox/);assert.match(svg,/<path/);assert.ok(svg.length>2000);
 });

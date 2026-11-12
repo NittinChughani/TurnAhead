@@ -1,85 +1,206 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Firebase Auth does NOT by itself grant reception access.
-    // Create staff/{uid} with active: true manually in Firebase Console.
-    function isStaff() {
-      return request.auth != null &&
+    // v2.1: Firestore is the authority for hospital identity, role and tenant isolation.
+    function signedIn() { return request.auth != null; }
+    function verified() { return signedIn() && request.auth.token.email_verified == true && request.auth.token.email is string; }
+    function email() { return request.auth.token.email.lower(); }
+    // Time-limited compatibility for the existing live v2.0 pilot during rollout.
+    function legacyStaff() {
+      return signedIn() && request.time < timestamp.date(2026, 12, 12) &&
         exists(/databases/$(database)/documents/staff/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.active == true;
     }
-    function validQueue() {
-      return request.resource.data.keys().hasOnly([
-        'name','prefix','dayKey','lastNumber','waitingNumbers','active',
-        'served','avgMinutes','paused','createdAt','updatedAt'
-      ]) &&
-      request.resource.data.name is string &&
-      request.resource.data.name.size() >= 3 &&
-      request.resource.data.name.size() <= 45 &&
-      request.resource.data.prefix is string &&
-      request.resource.data.dayKey is string &&
-      request.resource.data.lastNumber is int &&
-      request.resource.data.lastNumber >= 0 &&
-      request.resource.data.waitingNumbers is list &&
-      request.resource.data.waitingNumbers.size() <= 2000 &&
-      request.resource.data.served is int &&
-      request.resource.data.avgMinutes is int &&
-      request.resource.data.paused is bool;
+    function memberPath(hid,uid) {
+      return /databases/$(database)/documents/memberships/$(hid + '_' + uid);
     }
-    function validTicket() {
-      return request.resource.data.keys().hasOnly([
-        'queueId','queueName','code','number','dayKey','status',
-        'createdAt','calledAt','finishedAt'
-      ]) &&
-      request.resource.data.queueId is string &&
-      request.resource.data.queueName is string &&
-      request.resource.data.code is string &&
-      request.resource.data.number is int &&
-      request.resource.data.dayKey is string &&
-      request.resource.data.status in ['waiting','called','completed','skipped'] &&
-      request.resource.data.createdAt is number;
+    function hospitalPath(hid) { return /databases/$(database)/documents/hospitals/$(hid); }
+    function invitePath(hid,mail) { return /databases/$(database)/documents/hospitals/$(hid)/invites/$(mail); }
+    function isMember(hid) {
+      return verified() && exists(memberPath(hid,request.auth.uid)) &&
+        get(memberPath(hid,request.auth.uid)).data.active == true &&
+        get(memberPath(hid,request.auth.uid)).data.hospitalId == hid &&
+        get(memberPath(hid,request.auth.uid)).data.uid == request.auth.uid;
     }
-    match /staff/{uid} {
-      // Staff membership can ONLY be created/changed by a project administrator
-      // through the Firebase Console or Admin SDK, never from the public website.
-      allow get: if request.auth != null && request.auth.uid == uid;
-      allow list, create, update, delete: if false;
+    function role(hid) { return get(memberPath(hid,request.auth.uid)).data.role; }
+    function manager(hid) { return isMember(hid) && role(hid) in ['owner','admin','supervisor']; }
+    function admin(hid) { return isMember(hid) && role(hid) in ['owner','admin']; }
+    function owner(hid) { return isMember(hid) && role(hid) == 'owner' && get(hospitalPath(hid)).data.ownerUid == request.auth.uid; }
+    function validHospital(data) {
+      return data.keys().hasOnly(['name','ownerUid','status','createdAt','updatedAt']) &&
+        data.name is string && data.name.size() >= 3 && data.name.size() <= 70 &&
+        data.ownerUid is string && data.status == 'active' &&
+        data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+    function validMembership(data,hid,uid) {
+      return data.keys().hasOnly(['uid','hospitalId','email','role','active','createdAt','updatedAt','invitedBy']) &&
+        data.uid == uid && data.hospitalId == hid && data.email is string &&
+        data.email.size() <= 254 && data.role in ['owner','admin','supervisor','receptionist'] &&
+        data.active is bool && data.createdAt is timestamp &&
+        data.updatedAt is timestamp && data.invitedBy is string;
+    }
+    function validInvite(data,mail) {
+      return data.keys().hasOnly(['email','role','status','createdBy','createdAt','expiresAt','acceptedUid','acceptedAt']) &&
+        data.email == mail && data.email is string && data.email.size() <= 254 &&
+        data.role in ['admin','supervisor','receptionist'] &&
+        data.status == 'pending' && data.createdBy == request.auth.uid &&
+        data.createdAt == request.time && data.expiresAt is timestamp &&
+        data.expiresAt > request.time &&
+        data.acceptedUid == null && data.acceptedAt == null;
+    }
+    function validQueue(data) {
+      return data.keys().hasOnly(['name','prefix','dayKey','lastNumber','waitingNumbers','active','served','avgMinutes','paused','createdAt','updatedAt']) &&
+        data.name is string && data.name.size() >= 3 && data.name.size() <= 45 &&
+        data.prefix is string && data.dayKey is string &&
+        data.lastNumber is int && data.lastNumber >= 0 && data.lastNumber <= 9999 &&
+        data.waitingNumbers is list && data.waitingNumbers.size() <= 2000 &&
+        data.served is int && data.avgMinutes is int && data.paused is bool &&
+        data.createdAt is number && data.updatedAt is number;
+    }
+    function validControl(data) {
+      return data.keys().hasOnly(['pending','activeId','activeSince']) &&
+        data.pending is list && data.pending.size() <= 2000;
+    }
+    function validTicket(data) {
+      return data.keys().hasOnly(['queueId','queueName','code','number','dayKey','status','createdAt','calledAt','finishedAt']) &&
+        data.queueId is string && data.queueName is string && data.code is string &&
+        data.number is int && data.number >= 1 && data.dayKey is string &&
+        data.status in ['waiting','called','completed','skipped'] &&
+        data.createdAt is number;
+    }
+    match /hospitals/{hid} {
+      // Public landing/board can fetch a *known* hospital ID, never enumerate hospitals.
+      allow get: if true;
+      allow list, delete: if false;
+      allow create: if verified() && request.resource.data.ownerUid == request.auth.uid &&
+        validHospital(request.resource.data) && request.resource.data.createdAt == request.time;
+      allow update: if admin(hid) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','updatedAt']) &&
+        validHospital(request.resource.data) && request.resource.data.updatedAt == request.time;
+
+      match /invites/{mail} {
+        allow get: if admin(hid) || (verified() && email() == mail);
+        allow list: if admin(hid);
+        allow create: if admin(hid) && validInvite(request.resource.data,mail) &&
+          (request.resource.data.role != 'admin' || owner(hid));
+        allow update: if (
+          // Administrator revokes an outstanding invitation.
+          (admin(hid) && resource.data.status == 'pending' &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+            request.resource.data.status == 'revoked') ||
+          // Administrator resends a previously revoked/pending invitation.
+          (admin(hid) && resource.data.status in ['pending','revoked'] &&
+            validInvite(request.resource.data,mail) &&
+            (request.resource.data.role != 'admin' || owner(hid))) ||
+          // Verified invitee claims invitation; membership creation is atomic.
+          (verified() && email() == mail && resource.data.status == 'pending' &&
+            resource.data.expiresAt > request.time &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','acceptedUid','acceptedAt']) &&
+            request.resource.data.status == 'accepted' &&
+            request.resource.data.acceptedUid == request.auth.uid &&
+            request.resource.data.acceptedAt == request.time &&
+            getAfter(memberPath(hid,request.auth.uid)).data.role == resource.data.role &&
+            getAfter(memberPath(hid,request.auth.uid)).data.active == true)
+        );
+        allow delete: if false;
+      }
+
+      match /queues/{queueId} {
+        allow get, list: if true;
+        allow create: if manager(hid) && validQueue(request.resource.data);
+        allow update: if isMember(hid) && validQueue(request.resource.data);
+        allow delete: if false;
+      }
+      match /controls/{queueId} {
+        allow get: if isMember(hid);
+        allow list: if false;
+        allow create: if manager(hid) && validControl(request.resource.data);
+        allow update: if isMember(hid) && validControl(request.resource.data);
+        allow delete: if false;
+      }
+      match /tickets/{ticketId} {
+        // Unpredictable ticket ID is a bearer link. No PII stored on tickets.
+        allow get: if true;
+        allow list: if isMember(hid);
+        allow create, update: if isMember(hid) && validTicket(request.resource.data);
+        allow delete: if false;
+      }
+      match /meta/{key} {
+        allow get: if isMember(hid) && key == 'sequence';
+        allow list, delete: if false;
+        allow create, update: if manager(hid) && key == 'sequence' &&
+          request.resource.data.keys().hasOnly(['nextPrefix']) &&
+          request.resource.data.nextPrefix is int && request.resource.data.nextPrefix >= 1;
+      }
+    }
+
+    match /memberships/{memberId} {
+      allow get: if verified() &&
+        (resource.data.uid == request.auth.uid || admin(resource.data.hospitalId));
+      // Client queries MUST filter by uid (self) or hospitalId (hospital admin).
+      allow list: if verified() &&
+        (resource.data.uid == request.auth.uid || admin(resource.data.hospitalId));
+      allow create: if verified() && memberId == request.resource.data.hospitalId + '_' + request.auth.uid &&
+        validMembership(request.resource.data,request.resource.data.hospitalId,request.auth.uid) &&
+        request.resource.data.email == email() && request.resource.data.active == true &&
+        request.resource.data.createdAt == request.time &&
+        (
+          // Self-service hospital creation: the owner alone may bootstrap the owner membership.
+          (request.resource.data.role == 'owner' &&
+            getAfter(hospitalPath(request.resource.data.hospitalId)).data.ownerUid == request.auth.uid &&
+            request.resource.data.invitedBy == request.auth.uid) ||
+          // All other roles require a verified single-use email invitation.
+          (request.resource.data.role in ['admin','supervisor','receptionist'] &&
+            get(invitePath(request.resource.data.hospitalId,email())).data.status == 'pending' &&
+            get(invitePath(request.resource.data.hospitalId,email())).data.role == request.resource.data.role &&
+            get(invitePath(request.resource.data.hospitalId,email())).data.createdBy == request.resource.data.invitedBy &&
+            get(invitePath(request.resource.data.hospitalId,email())).data.expiresAt > request.time &&
+            getAfter(invitePath(request.resource.data.hospitalId,email())).data.status == 'accepted' &&
+            getAfter(invitePath(request.resource.data.hospitalId,email())).data.acceptedUid == request.auth.uid)
+        );
+      allow update: if verified() && admin(resource.data.hospitalId) &&
+        resource.data.role != 'owner' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role','active','updatedAt']) &&
+        request.resource.data.role in ['admin','supervisor','receptionist'] &&
+        request.resource.data.active is bool &&
+        request.resource.data.updatedAt == request.time &&
+        // Only the owner can promote/demote another administrator.
+        (owner(resource.data.hospitalId) ||
+          (resource.data.role != 'admin' && request.resource.data.role != 'admin'));
+      allow delete: if false;
+    }
+
+    // v2.0 compatibility expires 12 December 2026. This allows a safe,
+    // rules-first rollout; it must be removed after existing queues finish.
+    // Legacy patient reads remain available by unpredictable ticket ID.
+    match /tickets/{ticketId} {
+      allow get: if true;
+      allow list: if legacyStaff();
+      allow create, update: if legacyStaff() && validTicket(request.resource.data);
+      allow delete: if false;
     }
     match /queues/{queueId} {
-      // Public board + patient position need only anonymous queue information.
       allow get, list: if true;
-      allow create, update: if isStaff() && validQueue();
+      allow create, update: if legacyStaff() && validQueue(request.resource.data);
       allow delete: if false;
     }
-    match /controls/{queueId} {
-      // Contains the secret random ticket IDs; never expose to visitors.
-      allow get: if isStaff();
+    match /staff/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, write: if false;
+    }
+    match /controls/{id} {
+      allow get: if legacyStaff();
       allow list: if false;
-      allow create, update: if isStaff() &&
-        request.resource.data.keys().hasOnly(['pending','activeId','activeSince']) &&
-        request.resource.data.pending is list &&
-        request.resource.data.pending.size() <= 2000;
+      allow create, update: if legacyStaff() && validControl(request.resource.data);
       allow delete: if false;
     }
-    match /tickets/{ticketId} {
-      // A ticket's 20-character random Firestore ID acts as a bearer link.
-      // No names, diagnoses, phone numbers or medical information are stored.
-      allow get: if true;
-      allow list: if isStaff();
-      allow create, update: if isStaff() && validTicket();
-      allow delete: if false;
-    }
-    match /meta/{docId} {
-      allow get: if isStaff() && docId == 'sequence';
-      allow list: if false;
-      allow create, update: if isStaff() && docId == 'sequence' &&
+    match /meta/{id} {
+      allow get: if legacyStaff() && id == 'sequence';
+      allow list, delete: if false;
+      allow create, update: if legacyStaff() && id == 'sequence' &&
         request.resource.data.keys().hasOnly(['nextPrefix']) &&
-        request.resource.data.nextPrefix is int &&
-        request.resource.data.nextPrefix >= 1;
-      allow delete: if false;
+        request.resource.data.nextPrefix is int && request.resource.data.nextPrefix >= 1;
     }
-    match /{document=**} {
-      allow read, write: if false;
-    }
+    match /{document=**} { allow read, write: if false; }
   }
 }
