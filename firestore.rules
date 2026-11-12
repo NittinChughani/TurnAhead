@@ -1,0 +1,85 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Firebase Auth does NOT by itself grant reception access.
+    // Create staff/{uid} with active: true manually in Firebase Console.
+    function isStaff() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/staff/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.active == true;
+    }
+    function validQueue() {
+      return request.resource.data.keys().hasOnly([
+        'name','prefix','dayKey','lastNumber','waitingNumbers','active',
+        'served','avgMinutes','paused','createdAt','updatedAt'
+      ]) &&
+      request.resource.data.name is string &&
+      request.resource.data.name.size() >= 3 &&
+      request.resource.data.name.size() <= 45 &&
+      request.resource.data.prefix is string &&
+      request.resource.data.dayKey is string &&
+      request.resource.data.lastNumber is int &&
+      request.resource.data.lastNumber >= 0 &&
+      request.resource.data.waitingNumbers is list &&
+      request.resource.data.waitingNumbers.size() <= 2000 &&
+      request.resource.data.served is int &&
+      request.resource.data.avgMinutes is int &&
+      request.resource.data.paused is bool;
+    }
+    function validTicket() {
+      return request.resource.data.keys().hasOnly([
+        'queueId','queueName','code','number','dayKey','status',
+        'createdAt','calledAt','finishedAt'
+      ]) &&
+      request.resource.data.queueId is string &&
+      request.resource.data.queueName is string &&
+      request.resource.data.code is string &&
+      request.resource.data.number is int &&
+      request.resource.data.dayKey is string &&
+      request.resource.data.status in ['waiting','called','completed','skipped'] &&
+      request.resource.data.createdAt is number;
+    }
+    match /staff/{uid} {
+      // Staff membership can ONLY be created/changed by a project administrator
+      // through the Firebase Console or Admin SDK, never from the public website.
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+    }
+    match /queues/{queueId} {
+      // Public board + patient position need only anonymous queue information.
+      allow get, list: if true;
+      allow create, update: if isStaff() && validQueue();
+      allow delete: if false;
+    }
+    match /controls/{queueId} {
+      // Contains the secret random ticket IDs; never expose to visitors.
+      allow get: if isStaff();
+      allow list: if false;
+      allow create, update: if isStaff() &&
+        request.resource.data.keys().hasOnly(['pending','activeId','activeSince']) &&
+        request.resource.data.pending is list &&
+        request.resource.data.pending.size() <= 2000;
+      allow delete: if false;
+    }
+    match /tickets/{ticketId} {
+      // A ticket's 20-character random Firestore ID acts as a bearer link.
+      // No names, diagnoses, phone numbers or medical information are stored.
+      allow get: if true;
+      allow list: if isStaff();
+      allow create, update: if isStaff() && validTicket();
+      allow delete: if false;
+    }
+    match /meta/{docId} {
+      allow get: if isStaff() && docId == 'sequence';
+      allow list: if false;
+      allow create, update: if isStaff() && docId == 'sequence' &&
+        request.resource.data.keys().hasOnly(['nextPrefix']) &&
+        request.resource.data.nextPrefix is int &&
+        request.resource.data.nextPrefix >= 1;
+      allow delete: if false;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

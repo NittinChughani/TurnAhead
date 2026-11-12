@@ -2,17 +2,19 @@
 
 <img src="docs/assets/readme-hero.webp" alt="TurnAhead — Know when it's your turn" width="100%" />
 
-<br/>
+<br />
 
-**A clearer wait. A calmer day.**
+### A clearer wait. A calmer day.
 
-A real-time, QR-powered queue experience designed for the places where waiting shouldn't mean uncertainty.
+**Real-time, QR-powered walk-in queues — without another app, another account, or another question at the front desk.**
 
-<br/>
+<br />
 
-[![Node.js](https://img.shields.io/badge/Node.js-22%2B-122447?style=for-the-badge&logo=nodedotjs&logoColor=3ad4ad)](https://nodejs.org/) [![JavaScript](https://img.shields.io/badge/JavaScript-Vanilla-122447?style=for-the-badge&logo=javascript&logoColor=ffd966)](https://developer.mozilla.org/docs/Web/JavaScript) [![License: MIT](https://img.shields.io/badge/License-MIT-122447?style=for-the-badge&logo=opensourceinitiative&logoColor=3ad4ad)](LICENSE) [![Status](https://img.shields.io/badge/Release-Walk--in_MVP-0c8c78?style=for-the-badge)](#roadmap)
+[![GitHub Pages](https://img.shields.io/badge/Hosted_on-GitHub_Pages-112343?style=for-the-badge&logo=githubpages&logoColor=54E0BD)](https://pages.github.com/) [![Firebase](https://img.shields.io/badge/Powered_by-Firebase-112343?style=for-the-badge&logo=firebase&logoColor=FFCA28)](https://firebase.google.com/) [![JavaScript](https://img.shields.io/badge/Vanilla-JavaScript-112343?style=for-the-badge&logo=javascript&logoColor=F7DF1E)](https://developer.mozilla.org/docs/Web/JavaScript) [![MIT](https://img.shields.io/badge/License-MIT-167C72?style=for-the-badge)](LICENSE)
 
-**[Deploy online](#launch-a-live-website)** &nbsp;·&nbsp; **[Explore the product](#the-experience)** &nbsp;·&nbsp; **[Technical overview](#under-the-hood)**
+<br />
+
+[**Launch TurnAhead ↗**](docs/SETUP-GITHUB-PAGES-FIREBASE.md) · [**Explore the workflow**](#the-experience) · [**Architecture**](#under-the-hood) · [**Roadmap**](#roadmap)
 
 </div>
 
@@ -20,201 +22,199 @@ A real-time, QR-powered queue experience designed for the places where waiting s
 
 ## Why TurnAhead?
 
-A hospital waiting room. A diagnostic centre. A busy service counter. You've taken your ticket — but now what?
+A hospital waiting room. A diagnostic centre. A busy public service counter. You've taken your ticket — but now what?
 
-You don't know how many people are ahead. You don't know whether the queue has stopped. You keep checking reception because **nobody can tell you when your turn is getting close**.
+You don't know how many people are ahead of you. You don't know whether the queue has stopped. You keep returning to reception because **nobody can tell you when your turn is getting close**.
 
-TurnAhead solves that moment.
+**TurnAhead solves that moment.**
 
-Reception issues a ticket with a unique QR code. A visitor scans it and sees a live queue position, approximate waiting window, and the token currently being served — **without downloading an app or creating an account**.
+Reception issues a paper ticket with a unique QR code. The visitor scans it to see their live place in line, the approximate waiting window, and the token currently being served. **No patient sign-up. No app download. No standing around the desk asking for updates.**
 
 > **Know when it's your turn. Spend less time wondering.**
 
-<br/>
+<p align="center"><img src="docs/assets/flow.svg" alt="TurnAhead workflow: register, scan, track, move forward" width="100%" /></p>
 
 ## The experience
 
-<p align="center"><img src="docs/assets/flow.svg" alt="TurnAhead: Register → Scan → Track → Next turn" width="100%" /></p>
-
 <table>
-<tr><td width="50%" valign="top">
+<tr>
+<td width="50%" valign="top">
 
-### 🧑‍💼 For reception teams
+### For reception teams
 
-- Create independent department queues
-- Issue numbered, print-ready QR tickets
-- Call next, complete, skip, pause or resume
-- See waiting, active and completed totals
-- Share a public board for the waiting area
+- **Create departments:** independent service queues with distinct ticket prefixes
+- **Issue walk-in tickets:** sequential codes and locally generated scannable QR receipts
+- **One-tap controls:** call next, complete, skip, pause and resume
+- **Monitor the day:** waiting, currently serving, completed and recent activity
+- **Display the board:** share live anonymous queue numbers on a waiting-room screen
 
-</td><td width="50%" valign="top">
+</td>
+<td width="50%" valign="top">
 
-### 📱 For visitors
+### For people waiting
 
-- Scan a ticket — no login or app download
-- View their turn and people ahead
-- Follow live queue movement
-- See an **estimated window**, not a false promise
-- Enable optional in-page browser alerts
+- **Scan once:** a private, unpredictable ticket link opens in any browser
+- **See your progress:** people ahead, current token and estimated waiting window
+- **Watch live changes:** updates appear across separate phones and computers
+- **Choose your theme:** clean light and dark interfaces
+- **Get an optional alert:** while the page is open, with browser permission
 
-</td></tr></table>
+</td>
+</tr>
+</table>
 
-### Four connected screens
+### Four screens, one connected queue
 
-| Screen | Purpose | Access |
-|---|---|---|
-| **Home** `/` | A clear product introduction with an illustrated queue journey | Public |
-| **Reception** `/desk` | Manage real queue state and issue QR tickets | Password-protected |
-| **My Turn** `/track/:secret` | Private-link patient queue tracking | Anyone holding the ticket |
-| **Queue Board** `/board` | Display current tokens by department | Public, anonymous |
+| Experience | GitHub Pages route | Who uses it? |
+|:--|:--|:--|
+| **Landing page** | `index.html` | Everyone |
+| **Reception desk** | `desk.html` | Authorized staff (Firebase Auth + staff approval) |
+| **My Turn** | `track.html?ticket=...` | Only someone holding the random ticket link |
+| **Live board** | `board.html` | Waiting room visitors and public displays |
 
-<br/>
+<p align="center"><strong>Beautiful by design. Useful by default.</strong></p>
 
-## Built with intention
-
-**Designed to be human.** A light, breathable interface; a genuinely usable dark theme; subtle motion that respects reduced-motion preferences; consistent original branding; clear visual hierarchy; and a layout that works from reception desktops to patient phones.
-
-**Built to actually work.** Queue state is stored in SQLite rather than a browser mockup. Server-Sent Events (SSE) propagate queue changes to connected patient and public-board pages. QR codes are generated locally as SVGs, so we do not send tracking links to an external QR service.
-
-**Privacy by default.** Ticket numbers and random tracking secrets, not medical records. No diagnoses, personal names, or patient contact details are required for the walk-in MVP.
-
-<br/>
-
-## Launch a live website
-
-**TurnAhead is built to be used in the browser, not through a command line.** After it is deployed, reception staff and visitors just open the public HTTPS website, use reception login, and scan QR tickets. The backend is hosted for you.
-
-<p align="center">
-  <a href="https://render.com/deploy?repo=https://github.com/NittinChughani/TurnAhead"><img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy TurnAhead to Render" /></a>
-</p>
-
-**[Deploy online in a few clicks →](docs/DEPLOY-ONLINE.md)** — Connect a hosting account, choose a reception password, and open the public URL provided by Render. No local Node.js installation is needed to use the website. The deploy button uses the included [`render.yaml`](render.yaml).
-
-> **Demo hosting limitation:** The free Render instance is only suitable for trying the app. Its SQLite data can be lost during restart, sleep, or redeployment. **Do not use the free preview for real patient queues.** For organizations, use a paid persistent disk, security review and backups as explained in the [deployment guide](docs/DEPLOY-ONLINE.md). A GitHub repo is not automatically a live website.
-
-<br/>
-
-## Getting started
-
-**Requirements:** Node.js **22.13+** (uses the built-in `node:sqlite` module). No `npm install` required.
-
-```bash
-git clone https://github.com/NittinChughani/TurnAhead.git
-cd TurnAhead
-cp .env.example .env
-```
-
-Edit `.env` and set a unique `ADMIN_PASSWORD` (**12+ characters**) and random `SESSION_SECRET` (**32+ characters**). Then:
-
-```bash
-npm start
-```
-
-Open **http://localhost:3000** for the public site, and **http://localhost:3000/desk** to log into reception. Create a ticket, scan its QR code or copy its tracking link, and use **Call next** to see the live updates.
-
-> For phone scans, `localhost` on your computer does not resolve on the phone. Deploy to an HTTPS public URL, set `PUBLIC_URL=https://your-domain.example`, and print tickets from that deployment. For local-network testing, use a reachable host address.
-
-### Useful commands
-
-```bash
-npm run dev     # Restart on server edits
-npm run check   # JavaScript syntax checks
-npm test        # End-to-end API and queue lifecycle tests
-```
-
-### Configuration
-
-| Variable | Meaning |
-|---|---|
-| `ADMIN_PASSWORD` | Reception password, required, minimum 12 characters |
-| `SESSION_SECRET` | Cookie signing secret, required, minimum 32 characters |
-| `PORT` | HTTP port (default `3000`) |
-| `FACILITY_NAME` | Name displayed throughout the application |
-| `TIME_ZONE` | Facility's timezone (default `Asia/Karachi`) |
-| `DATA_DIR` | Persistent directory for the SQLite database (default `./data`) |
-| `PUBLIC_URL` | Optional public HTTPS origin used in printed QR tickets; automatically uses Render URL when hosted there |
-| `NODE_ENV` | Use `production` for HTTPS deployment with Secure cookies |
-
-### Deploying
-
-A one-click Render preview blueprint (`render.yaml`) and ready-to-build `Dockerfile` are included. Deploy **one running instance per facility** on a platform that supports a long-running Node server and a **persistent mounted volume** for `DATA_DIR`. Configure HTTPS, `PUBLIC_URL`, and both required secrets.
-
-**Do not deploy the database on ephemeral storage** or scale this MVP across multiple instances without moving to shared persistence and a distributed event bus. Static hosting alone (such as GitHub Pages) cannot run the queue backend.
-
-<br/>
-
-## Under the hood
-
-```text
-                 ┌───────────────────────────┐
-                 │     Node.js HTTP API      │
-                 │  Session / Queue Engine   │
-                 └──────┬───────────┬────────┘
-                        │           │
-              ┌─────────▼───┐  ┌────▼─────────┐
-              │   SQLite    │  │  Live SSE    │
-              │ Tickets &   │  │  event feed  │
-              │ departments │  └────┬─────────┘
-              └─────────────┘       │
-                        ┌───────────┼──────────┐
-                        ▼           ▼          ▼
-                   Reception   Patient QR   Queue board
-                   controls    tracking     (no PII)
-```
-
-- **Backend:** Node.js standard library, `node:sqlite`, signed HTTP-only session cookies.
-- **Database:** SQLite, atomic transactions for issuing and advancing tickets, WAL mode.
-- **Real time:** Server-Sent Events with a polling fallback on patient and board views.
-- **QR generation:** Locally generated SVG (vendored MIT-licensed QR encoder).
-- **Frontend:** Responsive HTML, CSS and vanilla JavaScript; no frontend framework or runtime npm dependencies.
-- **Testing:** Node's built-in test runner checks login, ticket generation, QR creation, queue transitions, pause/resume and API access rules.
-
-### About the ETA
-
-TurnAhead estimates the wait based on how many tickets are ahead and the average recent completed-service duration. It displays a **range**, not an exact arrival time; priority patients, interruptions and long consultations can change the real wait. Staff should still call or announce the next visitor.
-
-<br/>
-
-## Roadmap
-
-| Milestone | Status |
-|---|---|
-| Walk-in ticket issue, secure QR tracking and live board | ✅ Implemented |
-| Multi-department queue control | ✅ Implemented |
-| Reception login and light/dark theme | ✅ Implemented |
-| Basic adaptive waiting windows | ✅ Implemented |
-| Booked appointments + walk-in coordination | 🗓️ Planned |
-| Staff accounts, roles, audit history | 🗓️ Planned |
-| SMS/WhatsApp updates via approved providers | 🗓️ Planned |
-| Queue analytics, kiosk mode and accessibility audit | 🗓️ Planned |
-
-> **Current scope:** This is an open-source walk-in pilot. It is not yet a certified clinical or enterprise system. A real organizational deployment needs security review, data-retention policy, backups, accessibility testing and operational validation. See [SECURITY.md](SECURITY.md).
-
-<br/>
-
-## Why I built it
-
-TurnAhead started with a simple observation: when people don't know where they stand in a queue, they spend more time asking, checking and worrying than they should have to.
-
-The interesting engineering challenge wasn't just drawing tickets. It was making sure a reception action, a printed QR code, a public display and someone's personal tracking page **all describe the same real state** — reliably, with as little friction as possible.
-
-Building this project was an exercise in thoughtful product design, real-time updates, reliable backend state, and keeping complex operations easy to understand.
-
-<br/>
-
-## Open source, open to improvement
-
-Issues, feedback, pilot suggestions and contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. The source is licensed under [MIT](LICENSE).
-
-<div align="center">
+The interface keeps TurnAhead's original brand identity across every screen: its ticket-and-forward-motion logo, crisp typography, lively but restrained animations, deliberate whitespace, responsive layouts and a proper light/dark theme switch. The brand isn't an interchangeable dashboard template.
 
 ---
 
-<img src="public/assets/brand-light.webp" alt="TurnAhead logo" width="230" />
+## Launch as a real website
 
-**Less waiting. More living.**
+**TurnAhead v2 runs on GitHub Pages with Firebase.** The previous Node.js server, Render configuration and local SQLite setup are no longer necessary. Visitors and reception staff use the website by opening a normal HTTPS link.
 
-Built by [Nittin Chughani](https://github.com/NittinChughani) · Made with care for the everyday moments that add up.
+<div align="center">
+
+**[Read the complete GitHub Pages + Firebase setup guide →](docs/SETUP-GITHUB-PAGES-FIREBASE.md)**
+
+</div>
+
+### Setup overview
+
+1. **Create Firebase project** → register a Firebase Web app, enable **Firestore** and **Email/Password Authentication**.
+2. **Add web config** → paste the public Firebase Web app settings into [`public/config.js`](public/config.js). This file initially contains placeholders; the queue cannot go live until you configure it.
+3. **Publish security rules** → copy [`firestore.rules`](firestore.rules) into the Firestore Rules editor and publish. **Do not use Firestore test mode**.
+4. **Authorize your receptionist** → create a Firebase Authentication user, then add `staff/<their UID>` with Boolean `active: true` through the Firebase Console.
+5. **Turn on GitHub Pages** → Repository **Settings → Pages → Source: GitHub Actions**. The included workflow deploys `public/` automatically on changes to `main`.
+6. **Open the website** → once deployment succeeds, visit **`https://nittinchughani.github.io/TurnAhead/`** (or your custom domain). Open Reception on one device and scan a new ticket on another.
+
+> **Important:** A GitHub repository alone does not create a Firebase project. The URL above is the *expected* GitHub Pages address, not a claim that publishing or Firebase configuration has already been completed.
+
+### What you'll see
+
+```
+GitHub Pages (static frontend)              Firebase (shared services)
+────────────────────────────────             ─────────────────────────────
+index.html    Beautiful introduction         Authentication → receptionist sign-in
+
+desk.html     Issue + move queue        ↔    Firestore → staff-authorized writes
+
+track.html    Patient's QR link         ←    Firestore → read one anonymous ticket
+
+board.html    Public now-serving board  ←    Firestore → live public queue data
+```
+
+**The critical detail:** every browser connects to **the same Firestore database**. This is not a localStorage demonstration; one visitor's device receives queue changes made by the receptionist's device. Firestore transactions serialize concurrent ticket issuance so two reception desks do not give the same number.
+
+---
+
+## Under the hood
+
+| Layer | Implementation | Reason |
+|:--|:--|:--|
+| Hosting | GitHub Pages + GitHub Actions | Free static web hosting with a familiar repository workflow |
+| Interface | Semantic HTML, custom CSS, modern JavaScript modules | Fast, readable and framework-free |
+| Shared state | Cloud Firestore and `onSnapshot` | Real-time queue and ticket updates across devices |
+| Reception authentication | Firebase Email/Password + `staff/{uid}` approval | Only authorized reception accounts may alter queues |
+| Queue consistency | Firestore `runTransaction` | Atomic ticket numbers, FIFO movement and status changes |
+| Patient access | Random Firestore ticket ID in QR link | No login for visitors; no medical information stored |
+| QR generation | Local bundled MIT-licensed QR encoder | No third-party QR API required |
+| Theme | Light/dark mode with locally saved preference | Comfort and continuity on every screen |
+| Tests | Node.js built-in test runner, CI | Development checks; **Node.js is not required to use the website** |
+
+### A privacy-first queue model
+
+- Public queue documents have **anonymous** token numbers and counts, not patients' names.
+- Private queue-control documents contain the ticket-ID mappings and are readable only by authorized staff.
+- Anyone holding a valid ticket link can read **that anonymous ticket**; Firestore rules prevent public listing of the tickets collection.
+- Reception identities are individually authorized through Firebase. A login account alone is **not enough** for staff privileges.
+- **Never store diagnoses, phone numbers, or other medical/personal details in TurnAhead.**
+
+Read [SECURITY.md](SECURITY.md) before handling any real queue.
+
+### Source layout
+
+```text
+TurnAhead/
+├── public/
+│   ├── index.html          # Website & product experience
+│   ├── desk.html           # Reception interface
+│   ├── track.html          # Visitor's QR-linked status
+│   ├── board.html          # Shared public display
+│   ├── assets/             # Official logo in both themes + favicon
+│   ├── styles.css          # Responsive brand design & animation
+│   ├── common.js           # UI theme, escaping, formatting
+│   ├── config.js           # Public Firebase web configuration
+│   ├── firebase.js         # Browser Firebase initialization
+│   ├── queue-engine.js     # Tested queue calculations
+│   ├── store.js            # Transactional Firestore operations
+│   ├── qr.js               # Locally bundled QR generation
+│   ├── desk.js             # Reception controls
+│   ├── track.js            # Real-time patient tracking
+│   └── board.js            # Real-time public board
+├── firestore.rules         # Essential access controls
+├── firebase.json           # Optional Firebase CLI rules configuration
+├── docs/                   # Launch guide, artwork, flow chart
+├── test/                   # Automated tests
+└── .github/workflows/      # GitHub Pages deployment + checks
+```
+
+---
+
+## Run developer checks (optional)
+
+If you're contributing code, Node.js 22+ is handy for test automation **only**:
+
+```bash
+npm test
+npm run check
+```
+
+Reception staff and patients **do not** run these commands. They use the hosted site.
+
+## What the MVP intentionally does *not* do
+
+This release focuses on **walk-in queues only**. It does not yet offer advance appointments, patient identity verification, medical records, SMS/WhatsApp delivery, guaranteed appointment times or clinical system integrations. Browser notifications only work with permission while the tracking page is open.
+
+Queue state uses compact Firestore arrays, intentionally designed for **small pilot installations**; additional server-side architecture, retention controls, audit logs and testing are required before use at a large hospital. Firebase quotas/limits apply.
+
+## Roadmap
+
+- [x] Original TurnAhead brand and responsive landing page
+- [x] Light/dark modes, motion, accessible interface
+- [x] Independent walk-in departments and printable QR tickets
+- [x] Live visitor tracking and public service board
+- [x] Atomic queue updates with Firestore transactions
+- [x] Firebase staff authorization and restrictive security rules
+- [x] GitHub Pages deployment workflow
+- [ ] Launch a configured Firebase project and activate GitHub Pages hosting
+- [ ] End-to-end testing with reception and patient devices on the public URL
+- [ ] Staff activity/audit history and data-retention controls
+- [ ] Advance appointments and hybrid walk-in/scheduled queues
+- [ ] SMS/WhatsApp integration with appropriate authorization
+- [ ] Organization onboarding and multi-facility management
+
+---
+
+## Contributing & license
+
+Issues, feedback and thoughtful pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md). This project is released under the [MIT License](LICENSE); attribution for the bundled QR library is retained in its source and [license file](lib/qr/LICENSE).
+
+<div align="center">
+
+**TurnAhead**  
+*More clarity. Less waiting. Better days.*
+
+Made by [Nittin Chughani](https://github.com/NittinChughani) · Built for the places where a better queue can make a real difference.
 
 [Back to top ↑](#why-turnahead)
 

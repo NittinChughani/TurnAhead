@@ -1,12 +1,11 @@
 # Contributing to TurnAhead
 
-Thanks for helping make everyday queues calmer and clearer.
+Thanks for helping people spend less time wondering when their turn is due.
 
-1. Open an issue first for substantial changes.
-2. Fork the repository and work in a focused branch.
-3. Use Node.js 22.13 or newer; there are no runtime npm dependencies.
-4. Run `npm run check && npm test` before a pull request.
-5. Preserve patient privacy and avoid introducing personal medical information into public endpoints.
-6. Include a concise description, screenshots for design changes, and tests for backend changes.
+1. Fork the repository and create a descriptive branch.
+2. Keep the existing branded, accessible, responsive UI and dark/light mode.
+3. Never commit Firebase credentials other than public web app configuration, and never commit private keys.
+4. Check changes with `npm test` and `npm run check` (Node is used only for development/tests, **not** to run the website).
+5. Submit a PR explaining the user problem and how to verify the workflow.
 
-Design goals: **clarity over noise, accessible interactions, useful motion, and honest status reporting**. No fake live data, no misleading waiting-time guarantees.
+See [SECURITY.md](SECURITY.md) for privacy and authorization requirements.

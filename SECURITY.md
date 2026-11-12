@@ -1,15 +1,15 @@
-# Security & privacy
+# Security and privacy
 
-TurnAhead is an **early-stage pilot**, not a clinically validated or audited hospital information system.
+TurnAhead is an **early-stage queue-management pilot**. It is not a clinically validated hospital information system.
 
-- **Never store diagnoses or medical records in ticket metadata.** The MVP deliberately issues anonymous queue numbers.
-- Patient tracking links contain random, unguessable identifiers. Anyone possessing a ticket or link can access its queue status. Treat printed receipts as private.
-- Reception actions require a server-side session issued after password authentication. Session cookies are HTTP-only and use `Secure` in production (deploy behind HTTPS).
-- Set strong unique `ADMIN_PASSWORD` and `SESSION_SECRET` values in environment variables; never commit `.env`.
-- Run **one instance per facility**. The current SSE hub is in-process; adding horizontally scaled replicas requires a shared event bus and shared database.
-- Place the SQLite file on a persistent, backed-up volume. Ephemeral cloud filesystems lose data on redeploy.
-- Ticket data is retained until an administrator handles database retention/deletion; implement a formal retention and audit policy before a real clinical rollout.
-- Restrict reception device access and rotate passwords. A shared password is appropriate for demos and small pilots, but real deployments should introduce individual staff accounts, audit logs and permission roles.
-- Browser notifications require HTTPS or localhost and work while the tracking page is open. This is not an SMS, WhatsApp or background push service.
+- Reception access is Firebase Authentication **plus** a manually provisioned `staff/{uid}` document with `active: true`. The website deliberately has **no public staff registration**.
+- Firestore rules deny staff privilege to unapproved authenticated users. Only project administrators may add or revoke staff membership via Firebase Console or the Admin SDK. **Deploy `firestore.rules` before handing out reception access.**
+- Patient ticket links use random 20-character Firestore document IDs; public reads are limited to direct ticket reads (`get`) and cannot list the tickets collection. Treat QR receipts and tracking links as bearer credentials.
+- Anonymous public queue documents contain only department names, anonymous ticket codes, counts and service state. Staff-only `controls` documents contain ticket-ID mappings and cannot be read by visitors.
+- **Do not collect patient names, diagnoses, phone numbers, addresses, medical records or appointment reasons** in this MVP. The security rules validate allowed document fields.
+- Firebase web configuration is public configuration, not a password; never add a service-account JSON key, Firebase Admin SDK secret, or staff password to the GitHub repository.
+- Browser notifications are available only with permission and while the page is open. Never rely on them as the sole means of announcing a patient's turn.
+- The MVP maintains queue arrays in Firestore documents and is designed for modest pilot queues (up to approximately 2,000 waiting tickets per department), not large-scale facilities. Add server-side services, indexing, audit logging, abuse protection, retention policies, backups and observability before production clinical rollout.
+- Tickets are not automatically deleted; configure retention/deletion before collecting any real operational data. Never use Firestore test-mode rules (`allow read, write: if true`).
 
-If you find a security issue, please contact the maintainer privately through GitHub rather than publishing exploit details in an issue.
+Report vulnerabilities privately to the project maintainer.

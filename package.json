@@ -1,16 +1,12 @@
 {
-  "name": "turnahead",
-  "version": "1.0.0",
+  "name": "turnahead-web",
+  "version": "2.0.0",
   "private": true,
-  "description": "A live, QR-powered walk-in queue platform for clinics and service desks.",
-  "type": "commonjs",
-  "engines": { "node": ">=22.13.0" },
+  "type": "module",
+  "description": "TurnAhead \u2014 static GitHub Pages + Firebase walk-in queue platform",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
     "test": "node --test test/*.test.js",
-    "check": "node --check server.js && node --check public/common.js && node --check public/desk.js && node --check public/track.js && node --check public/board.js"
+    "check": "node --check public/queue-engine.js && node --check public/desk.js && node --check public/track.js && node --check public/board.js && node --check public/firebase.js"
   },
-  "license": "MIT",
-  "keywords": ["queue-management", "qr-tickets", "healthcare", "real-time", "open-source"]
+  "license": "MIT"
 }
