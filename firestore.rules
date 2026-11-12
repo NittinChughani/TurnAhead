@@ -23,8 +23,8 @@ service cloud.firestore {
         get(memberPath(hid,request.auth.uid)).data.uid == request.auth.uid;
     }
     function role(hid) { return get(memberPath(hid,request.auth.uid)).data.role; }
-    function manager(hid) { return isMember(hid) && role(hid) in ['owner','admin','supervisor']; }
-    function admin(hid) { return isMember(hid) && role(hid) in ['owner','admin']; }
+    function manager(hid) { return isMember(hid) && role(hid) in ['owner','supervisor']; }
+    function admin(hid) { return owner(hid); }
     function owner(hid) { return isMember(hid) && role(hid) == 'owner' && get(hospitalPath(hid)).data.ownerUid == request.auth.uid; }
     function validHospital(data) {
       return data.keys().hasOnly(['name','ownerUid','status','createdAt','updatedAt']) &&
@@ -35,14 +35,14 @@ service cloud.firestore {
     function validMembership(data,hid,uid) {
       return data.keys().hasOnly(['uid','hospitalId','email','role','active','createdAt','updatedAt','invitedBy']) &&
         data.uid == uid && data.hospitalId == hid && data.email is string &&
-        data.email.size() <= 254 && data.role in ['owner','admin','supervisor','receptionist'] &&
+        data.email.size() <= 254 && data.role in ['owner','supervisor','receptionist'] &&
         data.active is bool && data.createdAt is timestamp &&
         data.updatedAt is timestamp && data.invitedBy is string;
     }
     function validInvite(data,mail) {
       return data.keys().hasOnly(['email','role','status','createdBy','createdAt','expiresAt','acceptedUid','acceptedAt']) &&
         data.email == mail && data.email is string && data.email.size() <= 254 &&
-        data.role in ['admin','supervisor','receptionist'] &&
+        data.role in ['supervisor','receptionist'] &&
         data.status == 'pending' && data.createdBy == request.auth.uid &&
         data.createdAt == request.time && data.expiresAt is timestamp &&
         data.expiresAt > request.time &&
@@ -72,8 +72,8 @@ service cloud.firestore {
       // Public landing/board can fetch a *known* hospital ID, never enumerate hospitals.
       allow get: if true;
       allow list, delete: if false;
-      allow create: if verified() && request.resource.data.ownerUid == request.auth.uid &&
-        validHospital(request.resource.data) && request.resource.data.createdAt == request.time;
+      // Operator-provisioned only; browser users cannot register a hospital or an owner.
+      allow create: if false;
       allow update: if admin(hid) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','updatedAt']) &&
         validHospital(request.resource.data) && request.resource.data.updatedAt == request.time;
@@ -81,8 +81,7 @@ service cloud.firestore {
       match /invites/{mail} {
         allow get: if admin(hid) || (verified() && email() == mail);
         allow list: if admin(hid);
-        allow create: if admin(hid) && validInvite(request.resource.data,mail) &&
-          (request.resource.data.role != 'admin' || owner(hid));
+        allow create: if admin(hid) && validInvite(request.resource.data,mail);
         allow update: if (
           // Administrator revokes an outstanding invitation.
           (admin(hid) && resource.data.status == 'pending' &&
@@ -90,8 +89,7 @@ service cloud.firestore {
             request.resource.data.status == 'revoked') ||
           // Administrator resends a previously revoked/pending invitation.
           (admin(hid) && resource.data.status in ['pending','revoked'] &&
-            validInvite(request.resource.data,mail) &&
-            (request.resource.data.role != 'admin' || owner(hid))) ||
+            validInvite(request.resource.data,mail)) ||
           // Verified invitee claims invitation; membership creation is atomic.
           (verified() && email() == mail && resource.data.status == 'pending' &&
             resource.data.expiresAt > request.time &&
@@ -144,29 +142,21 @@ service cloud.firestore {
         validMembership(request.resource.data,request.resource.data.hospitalId,request.auth.uid) &&
         request.resource.data.email == email() && request.resource.data.active == true &&
         request.resource.data.createdAt == request.time &&
-        (
-          // Self-service hospital creation: the owner alone may bootstrap the owner membership.
-          (request.resource.data.role == 'owner' &&
-            getAfter(hospitalPath(request.resource.data.hospitalId)).data.ownerUid == request.auth.uid &&
-            request.resource.data.invitedBy == request.auth.uid) ||
-          // All other roles require a verified single-use email invitation.
-          (request.resource.data.role in ['admin','supervisor','receptionist'] &&
-            get(invitePath(request.resource.data.hospitalId,email())).data.status == 'pending' &&
-            get(invitePath(request.resource.data.hospitalId,email())).data.role == request.resource.data.role &&
-            get(invitePath(request.resource.data.hospitalId,email())).data.createdBy == request.resource.data.invitedBy &&
-            get(invitePath(request.resource.data.hospitalId,email())).data.expiresAt > request.time &&
-            getAfter(invitePath(request.resource.data.hospitalId,email())).data.status == 'accepted' &&
-            getAfter(invitePath(request.resource.data.hospitalId,email())).data.acceptedUid == request.auth.uid)
-        );
-      allow update: if verified() && admin(resource.data.hospitalId) &&
+        // Self-activation requires a pending invitation for this verified email.
+        request.resource.data.role in ['supervisor','receptionist'] &&
+        get(invitePath(request.resource.data.hospitalId,email())).data.status == 'pending' &&
+        get(invitePath(request.resource.data.hospitalId,email())).data.role == request.resource.data.role &&
+        get(invitePath(request.resource.data.hospitalId,email())).data.createdBy == request.resource.data.invitedBy &&
+        get(invitePath(request.resource.data.hospitalId,email())).data.expiresAt > request.time &&
+        getAfter(invitePath(request.resource.data.hospitalId,email())).data.status == 'accepted' &&
+        getAfter(invitePath(request.resource.data.hospitalId,email())).data.acceptedUid == request.auth.uid;
+
+      allow update: if verified() && owner(resource.data.hospitalId) &&
         resource.data.role != 'owner' &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role','active','updatedAt']) &&
-        request.resource.data.role in ['admin','supervisor','receptionist'] &&
+        request.resource.data.role in ['supervisor','receptionist'] &&
         request.resource.data.active is bool &&
-        request.resource.data.updatedAt == request.time &&
-        // Only the owner can promote/demote another administrator.
-        (owner(resource.data.hospitalId) ||
-          (resource.data.role != 'admin' && request.resource.data.role != 'admin'));
+        request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }
 

@@ -13,26 +13,25 @@ test('hospital names are validated and normalized',()=>{
   assert.throws(()=>validHospitalName('x'));
   assert.throws(()=>validHospitalName('Z'.repeat(71)));
 });
-test('owner and administrator manage staff; supervisor only manages departments',()=>{
+test('exactly one hospital owner is the administrator',()=>{
   assert.equal(canManageStaff('owner'),true);
-  assert.equal(canManageStaff('admin'),true);
+  assert.equal(canManageStaff('admin'),false);
   assert.equal(canManageStaff('supervisor'),false);
+  assert.equal(canManageDepartments('owner'),true);
   assert.equal(canManageDepartments('supervisor'),true);
   assert.equal(canManageDepartments('receptionist'),false);
 });
-test('only hospital owner can invite administrators',()=>{
-  assert.equal(canInviteRole('owner','admin'),true);
-  assert.equal(canInviteRole('admin','admin'),false);
-  assert.equal(canInviteRole('admin','receptionist'),true);
+test('only owner can approve non-admin staff roles',()=>{
+  for (const role of ['supervisor','receptionist']) assert.equal(canInviteRole('owner',role),true);
+  for (const role of ['owner','admin']) assert.equal(canInviteRole('owner',role),false);
   assert.equal(canInviteRole('supervisor','receptionist'),false);
-  assert.equal(canInviteRole('owner','owner'),false);
+  assert.equal(canInviteRole('admin','receptionist'),false);
 });
-test('hospital owner role is immutable; admins cannot promote themselves',()=>{
-  assert.equal(canChangeRole('owner','owner','admin'),false);
+test('owner can downgrade former admins but cannot assign new administrators',()=>{
+  assert.equal(canChangeRole('owner','owner','receptionist'),false);
   assert.equal(canChangeRole('owner','admin','supervisor'),true);
-  assert.equal(canChangeRole('admin','admin','receptionist'),false);
-  assert.equal(canChangeRole('admin','supervisor','admin'),false);
-  assert.equal(canChangeRole('admin','receptionist','supervisor'),true);
+  assert.equal(canChangeRole('owner','receptionist','admin'),false);
+  assert.equal(canChangeRole('admin','receptionist','supervisor'),false);
 });
 test('membership keys are scoped to both workspace and Firebase UID',()=>{
   assert.equal(membershipId(hid,uid),`${hid}_${uid}`);
@@ -45,7 +44,7 @@ test('share links use independent hospital-specific query values',()=>{
   const patient=new URL(ticketLink(hid,'SomeRandomTicketId123',base));
   assert.equal(board.pathname,'/TurnAhead/board.html');
   assert.equal(board.searchParams.get('hospital'),hid);
-  assert.equal(invite.pathname,'/TurnAhead/desk.html');
+  assert.equal(invite.pathname,'/TurnAhead/activate.html');
   assert.equal(invite.searchParams.get('invite'),hid);
   assert.equal(patient.pathname,'/TurnAhead/track.html');
   assert.equal(patient.searchParams.get('hospital'),hid);

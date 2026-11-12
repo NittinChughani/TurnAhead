@@ -44,17 +44,10 @@ export async function getHospital(id) {
 export function watchMembership(hospitalId,uid,callback,error) {
   return onSnapshot(memberRef(hospitalId,uid),snap=>callback(snap.exists()?{id:snap.id,...snap.data()}:null),error);
 }
-export async function createHospital(name,user=auth.currentUser) {
-  if(!user?.emailVerified) throw Error('Verify your email before creating a hospital.');
-  const clean=validHospitalName(name), ref=doc(collection(db,'hospitals'));
-  const batch=writeBatch(db);
-  batch.set(ref,{name:clean,ownerUid:user.uid,status:'active',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
-  batch.set(memberRef(ref.id,user.uid),{
-    uid:user.uid,hospitalId:ref.id,email:normalizeEmail(user.email),role:'owner',
-    active:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),invitedBy:user.uid
-  });
-  await batch.commit();
-  return {id:ref.id,name:clean};
+// Hospital owners are provisioned through an operator-controlled process, not public signup.
+// Hospital owners are provisioned through an operator-controlled process, not public signup.
+export async function createHospital() {
+  throw Error('Hospital workspaces are provisioned by the TurnAhead platform operator.');
 }
 export async function findInvitation(hospitalId,email) {
   const snap=await getDoc(inviteRef(hospitalId,email));
@@ -79,7 +72,7 @@ export async function acceptInvitation(hospitalId,user=auth.currentUser) {
 export async function inviteStaff(hospitalId,email,role,actorRole,user=auth.currentUser) {
   email=normalizeEmail(email);
   if(email===normalizeEmail(user.email)) throw Error('You already have an account in this workspace.');
-  if(!canInviteRole(actorRole,role)) throw Error('Only the hospital owner can invite additional administrators.');
+  if(!canInviteRole(actorRole,role)) throw Error('Only the designated hospital administrator can add authorized staff.');
   const now=Date.now();
   await setDoc(inviteRef(hospitalId,email),{
     email,role,status:'pending',createdBy:user.uid,

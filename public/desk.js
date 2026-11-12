@@ -1,19 +1,20 @@
 import {configured, auth, helpfulError} from './firebase.js';
-import {observeAuth, login, register, logout, requestVerification, refreshVerification,
-  myMemberships, getHospital, createHospital, findInvitation, acceptInvitation, watchMembership} from './org-store.js';
-import {canManageStaff, canManageDepartments, boardLink} from './org-model.js';
+import {observeAuth, login, logout, requestVerification, refreshVerification,
+  myMemberships, getHospital, watchMembership} from './org-store.js';
+import {canManageStaff, canManageDepartments, boardLink, isStaffRole} from './org-model.js';
 import {bootstrap, rollOverAll, observeQueues, observeTickets,
   issueTicket, createQueue, performAction} from './store.js';
 import {dayKey} from './queue-engine.js';
 
 const {esc,fmt}=window.turnahead, $=id=>document.getElementById(id);
-const views=['login-view','register-view','verify-view','onboarding-view','invite-view','dashboard'];
-let inviteId=new URLSearchParams(location.search).get('invite');
+const views=['login-view','verify-view','no-access-view','dashboard'];
+// Old v2.1 invitation URLs continue through the dedicated activation screen.
+if(new URLSearchParams(location.search).has('invite')) location.replace('./activate.html'+location.search);
 let currentHospital=null,currentMember=null,memberships=[],queues=[],tickets=[],selectedQueue=null,currentTicket=null;
 let stopQueues=null,stopTickets=null,stopMember=null,authEpoch=0,toastTimer,noticeTimer;
-let pendingSignIn=false,pendingSignOut=false,registration=false,inviteData=null,invitedHospital=null;
+let pendingSignIn=false,pendingSignOut=false;
 const show=(id,visible)=>$(id).hidden=!visible;
-function view(name){views.forEach(v=>show(v,v===name));show('logout',Boolean(auth?.currentUser));show('workspace-switch',name==='dashboard'&&memberships.length>1);show('public-board-link',name==='dashboard');show('admin-link',name==='dashboard'&&canManageStaff(currentMember?.role));window.scrollTo(0,0);}
+function view(name){views.forEach(v=>show(v,v===name));show('logout',Boolean(auth?.currentUser));show('workspace-switch',name==='dashboard'&&memberships.filter(m=>isStaffRole(m.role)).length>1);show('public-board-link',name==='dashboard');show('admin-link',name==='dashboard'&&canManageStaff(currentMember?.role));window.scrollTo(0,0);}
 function toast(message,error=false){const el=$('toast');el.textContent=message;el.classList.toggle('error',error);show('toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('toast',false),4600);}
 function notice(message,error=false){const el=$('notice');el.textContent=message;el.classList.toggle('error',error);show('notice',true);clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>show('notice',false),6000);}
 function stopSubscriptions(){stopQueues?.();stopTickets?.();stopMember?.();stopQueues=stopTickets=stopMember=null;}
@@ -38,23 +39,24 @@ function render(){
   $('activity-count').textContent=`${latest.length} recent`;
   $('recent-tickets').innerHTML=latest.length?latest.slice(0,14).map(t=>`<div class="activity-item"><div class="activity-token">${esc(t.code)}</div><div class="activity-main"><b>${esc(t.queueName||'Service desk')}</b><small>${esc(fmt(t.createdAt))}</small></div><span class="activity-state">${esc(t.status)}</span></div>`).join(''):'<div class="empty-state">No tickets today. Create the first walk-in ticket to get started.</div>';
 }
-async function action(id,kind,button){button.disabled=true;try{const r=await performAction(currentHospital.id,id,kind);notice(`${r.code?r.code+' · ':''}${{next:'Called to reception',complete:'Marked complete',skip:'Skipped',pause:'Queue paused',resume:'Queue resumed'}[kind]}.`);}catch(e){notice(helpfulError(e),true);}finally{button.disabled=false;}}
+async function action(id,kind,button){const label=button.textContent;button.disabled=true;button.textContent='Updating…';try{const r=await performAction(currentHospital.id,id,kind);notice(`${r.code?r.code+' · ':''}${{next:'Called to reception',complete:'Marked complete',skip:'Skipped',pause:'Queue paused',resume:'Queue resumed'}[kind]}.`);}catch(e){notice(helpfulError(e),true);}finally{button.textContent=label;button.disabled=false;}}
 async function openHospital(member){
   stopSubscriptions();currentMember=member;currentHospital=await getHospital(member.hospitalId);
   localStorage.setItem('turnahead-hospital',member.hospitalId);
   $('public-board-link').href=boardLink(member.hospitalId,location.href);
   $('admin-link').href='./admin.html?hospital='+encodeURIComponent(member.hospitalId);
-  $('workspace-switch').innerHTML=memberships.map(m=>`<option value="${esc(m.hospitalId)}" ${m.hospitalId===member.hospitalId?'selected':''}>${esc(m.hospitalName||m.hospitalId)}</option>`).join('');
+  $('workspace-switch').innerHTML=memberships.filter(m=>isStaffRole(m.role)).map(m=>`<option value="${esc(m.hospitalId)}" ${m.hospitalId===member.hospitalId?'selected':''}>${esc(m.hospitalName||m.hospitalId)}</option>`).join('');
   refreshRole();
   queues=[];tickets=[];selectedQueue=null;render();view('dashboard');
   stopMember=watchMembership(member.hospitalId,auth.currentUser.uid,updated=>{
     if(!updated?.active){toast('Your access to this hospital has been disabled.',true);stopSubscriptions();currentHospital=null;routeCurrentUser();return;}
     currentMember=updated;refreshRole();
   },e=>toast(helpfulError(e),true));
-  if(canManageDepartments(member.role))await bootstrap(member.hospitalId);
-  await rollOverAll(member.hospitalId);
+  // Subscribe first: patients and reception see updates without waiting on daily maintenance.
   stopQueues=observeQueues(member.hospitalId,data=>{queues=data;render();},e=>notice(helpfulError(e),true));
   stopTickets=observeTickets(member.hospitalId,data=>{tickets=data;render();},e=>notice(helpfulError(e),true));
+  // Maintenance happens asynchronously and is idempotent.
+  (async()=>{if(canManageDepartments(member.role))await bootstrap(member.hospitalId);await rollOverAll(member.hospitalId);})().catch(e=>notice(helpfulError(e),true));
 }
 async function routeCurrentUser(){
   const seq=++authEpoch;
@@ -68,54 +70,30 @@ async function routeCurrentUser(){
     const names=await Promise.all(memberships.map(m=>getHospital(m.hospitalId).catch(()=>({name:'Unknown hospital'}))));
     if(seq!==authEpoch)return;
     memberships=memberships.map((m,i)=>({...m,hospitalName:names[i].name}));
-    const pendingInvite=/^[A-Za-z0-9]{20}$/.test(inviteId||'')?inviteId:null;
-    if(pendingInvite && !memberships.some(m=>m.hospitalId===pendingInvite)){
-      try{
-        [invitedHospital,inviteData]=await Promise.all([getHospital(pendingInvite),findInvitation(pendingInvite,user.email)]);
-        if(seq!==authEpoch)return;
-        const active=inviteData?.status==='pending'&&inviteData.expiresAt?.toMillis()>Date.now();
-        $('invite-detail').textContent=active?`${invitedHospital.name} invited ${user.email} as ${inviteData.role}. This workspace will remain separate from all other hospitals.`:'No active invitation matches this verified email. Ask your hospital administrator for a new invitation.';
-        show('accept-invite',active);view('invite-view');return;
-      }catch(e){$('invite-detail').textContent=helpfulError(e);show('accept-invite',false);view('invite-view');return;}
+    if(!memberships.some(m=>isStaffRole(m.role))){
+      // Account login is NOT authorization. Never expose operational data to an unregistered email.
+      $('no-access-detail').textContent='You are not registered as authorized hospital staff. Ask your hospital administrator to add your work email.';
+      view('no-access-view');pendingSignIn=false;return;
     }
-    if(!memberships.length){view('onboarding-view');return;}
-    const preferred=pendingInvite||localStorage.getItem('turnahead-hospital');
-    const chosen=memberships.find(m=>m.hospitalId===preferred)||memberships[0];
+    const preferred=localStorage.getItem('turnahead-hospital');
+    const chosen=memberships.find(m=>m.hospitalId===preferred&&isStaffRole(m.role))||memberships.find(m=>isStaffRole(m.role));
     if(seq!==authEpoch)return;
     await openHospital(chosen);
-  }catch(e){if(seq!==authEpoch)return;toast(helpfulError(e),true);view('onboarding-view');}
-  finally{if(pendingSignIn){toast('Logged in successfully. Welcome back!');pendingSignIn=false;}}
+  }catch(e){if(seq!==authEpoch)return;toast(helpfulError(e),true);view('no-access-view');}
+  finally{if(pendingSignIn && currentHospital){toast('Logged in successfully. Welcome back!');pendingSignIn=false;}}
 }
-$('show-register').addEventListener('click',()=>view('register-view'));
-$('back-to-login').addEventListener('click',()=>view('login-view'));
 $('login-form').addEventListener('submit',async e=>{
   e.preventDefault();const b=e.target.querySelector('[type=submit]');b.disabled=true;$('login-error').textContent='';pendingSignIn=true;
   try{await login($('email').value,$('password').value);$('password').value='';}
-  catch(err){pendingSignIn=false;$('login-error').textContent=helpfulError(err);}
-  finally{b.disabled=false;}
-});
-$('register-form').addEventListener('submit',async e=>{
-  e.preventDefault();const b=e.target.querySelector('[type=submit]');b.disabled=true;$('register-error').textContent='';
-  try{const r=await register($('register-email').value,$('register-password').value);$('register-password').value='';await requestVerification(r.user);toast('Account created! Check your inbox to verify your email.');}
-  catch(err){$('register-error').textContent=helpfulError(err);}
+  catch(err){pendingSignIn=false;const invalid=String(err?.code||'').includes('auth/invalid-credential');$('login-error').textContent=invalid?'You are not registered for staff access or these credentials are incorrect. Ask your hospital administrator to confirm your account.':helpfulError(err);}
   finally{b.disabled=false;}
 });
 $('verify-send').addEventListener('click',async()=>{try{await requestVerification();toast('Verification email sent. Check your inbox.');}catch(e){toast(helpfulError(e),true);}});
 $('verify-refresh').addEventListener('click',async()=>{try{if(await refreshVerification())await routeCurrentUser();else toast('Email is not verified yet. Please open the link in your inbox.',true);}catch(e){toast(helpfulError(e),true);}});
-$('hospital-form').addEventListener('submit',async e=>{
-  e.preventDefault();const b=e.target.querySelector('[type=submit]');b.disabled=true;$('hospital-error').textContent='';
-  try{const hospital=await createHospital($('hospital-name').value);localStorage.setItem('turnahead-hospital',hospital.id);await routeCurrentUser();toast(`${hospital.name} is ready. You are its administrator.`);}
-  catch(err){$('hospital-error').textContent=helpfulError(err);}finally{b.disabled=false;}
-});
-$('accept-invite').addEventListener('click',async()=>{
-  const b=$('accept-invite');b.disabled=true;
-  try{const h=await acceptInvitation(inviteId);history.replaceState(null,'','./desk.html');inviteId=null;localStorage.setItem('turnahead-hospital',h.id);await routeCurrentUser();toast(`Welcome to ${h.name}! Your staff access is active.`);}
-  catch(e){toast(helpfulError(e),true);}finally{b.disabled=false;}
-});
-$('skip-invite').addEventListener('click',()=>{history.replaceState(null,'','./desk.html');inviteId=null;if(memberships.length)openHospital(memberships[0]).catch(e=>toast(helpfulError(e),true));else view('onboarding-view');});
+$('access-signout').addEventListener('click',async()=>{try{await logout();}catch(e){toast(helpfulError(e),true);}});
 $('workspace-switch').addEventListener('change',e=>{
   const m=memberships.find(x=>x.hospitalId===e.target.value);
-  if(m)openHospital(m).catch(err=>toast(helpfulError(err),true));
+  if(m&&isStaffRole(m.role))openHospital(m).catch(err=>toast(helpfulError(err),true));
 });
 $('logout').addEventListener('click',async()=>{
   pendingSignOut=true;try{stopSubscriptions();await logout();}catch(e){pendingSignOut=false;toast(helpfulError(e),true);}
