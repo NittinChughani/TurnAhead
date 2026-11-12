@@ -26,3 +26,38 @@
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 .logo-night{display:none}:root[data-theme='dark'] .brand .logo-day{display:none}:root[data-theme='dark'] .brand .logo-night{display:block}
+
+/* v2.1 — identity, organization onboarding & hospital administration */
+[hidden]{display:none!important}
+.visually-hidden{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;clip-path:inset(50%)}
+.workspace-select{max-width:185px;min-height:40px;padding:0 28px 0 12px;background:var(--paper-soft);border:1px solid var(--line);border-radius:10px;color:var(--ink);font:700 12px var(--font);text-overflow:ellipsis}
+.role-chip{display:inline-flex;align-items:center;border:1px solid var(--line);background:var(--paper-soft);border-radius:40px;padding:6px 10px;letter-spacing:.8px;font-size:9px;font-weight:800;color:var(--blue);white-space:nowrap}
+.inline-link{background:none;border:0;padding:0;color:var(--blue);font-weight:800;font-size:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.login-card .inline-link{margin-top:0}.auth-switch{text-align:center;margin:22px 0 0;font-size:12px!important}
+.toast{position:fixed;z-index:120;top:100px;right:24px;max-width:min(415px,calc(100vw - 40px));padding:18px 22px 18px 47px;border:1px solid #b9e6d7;border-radius:14px;background:#f0fff8;color:#0c6c51;font-size:13px;font-weight:800;line-height:1.5;box-shadow:0 22px 55px #0b28402e;animation:slide-in .24s ease-out}
+.toast:before{content:'✓';position:absolute;left:17px;top:17px;width:21px;height:21px;border-radius:50%;display:grid;place-items:center;color:#fff;background:#0eae81;font-size:13px}
+.toast.error{background:#fff2f1;border-color:#f8c6c0;color:#a62f2b}.toast.error:before{content:'!';background:#c74640}
+@keyframes slide-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+.onboard-wrap{min-height:calc(100vh - 225px);display:flex;align-items:center;justify-content:center;padding:35px 0 55px}
+.onboard-card{width:min(100%,560px);padding:45px;background:var(--paper);border:1px solid var(--line);border-radius:26px;box-shadow:0 30px 80px #12214313;position:relative;overflow:hidden}
+.onboard-card:before{content:'';position:absolute;width:250px;height:250px;border-radius:50%;right:-160px;top:-150px;background:var(--wash);pointer-events:none}
+.onboard-card h1{font-size:clamp(35px,4vw,46px);line-height:1.15;letter-spacing:-2.2px;margin:21px 0 12px;position:relative}
+.onboard-card h1 em{font-style:normal;color:var(--blue)}.onboard-card p{font-size:13px;color:var(--muted);line-height:1.85;position:relative}
+.onboard-card form{margin-top:25px}.onboard-card label,.admin-form label{display:block;color:var(--ink);font-size:12px;font-weight:800;margin:18px 0 9px}
+.onboard-card input,.admin-form input,.admin-form select,.admin-inline-form input,.admin-role-select,.invite-copy input{width:100%;min-height:50px;padding:11px 14px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:10px;font-size:13px;min-width:0}
+.onboard-card button[type=submit]{margin-top:16px}.onboard-card>.inline-link{margin-top:24px}.onboard-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:27px}.onboard-actions .btn{flex:1}
+.admin-main{padding-top:54px}.admin-stats{margin-top:25px}.admin-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:20px;margin-top:21px;align-items:stretch}.admin-grid .desk-panel{min-height:0}
+.admin-section-note{color:var(--muted);font-size:12px;line-height:1.8;margin:0 0 22px}
+.admin-list{display:flex;flex-direction:column;gap:8px;max-height:390px;overflow-y:auto;padding-right:3px;scrollbar-width:thin}
+.admin-person{display:flex;align-items:center;gap:12px;padding:15px 13px;border:1px solid var(--line);border-radius:12px;background:var(--bg);min-height:72px}
+.person-avatar{display:grid;place-items:center;flex:0 0 37px;width:37px;height:37px;border-radius:11px;background:var(--wash);color:var(--blue);font:800 14px var(--display)}
+.person-info{min-width:0;flex:1}.person-info strong{display:block;word-break:break-word;font-size:12px;color:var(--ink)}.person-info small{display:block;font-size:10px;color:var(--muted);margin-top:4px;text-transform:capitalize}
+.person-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}.person-actions .btn-small{padding:0 9px;min-height:34px}.admin-role-select{width:auto;max-width:140px;min-height:34px;padding:5px 9px;font-size:11px;font-weight:750}
+.admin-role-select:disabled{opacity:.7}.admin-form{display:flex;flex-direction:column}.admin-form label:first-child{margin-top:0}.admin-form .btn{margin-top:20px}
+.admin-subtitle{margin:30px 0 12px;font-size:14px;color:var(--ink)}.share-invite{background:var(--paper-soft);border:1px solid var(--line);border-radius:13px;padding:18px;margin-top:20px}.share-invite b{display:block;color:var(--ink);font-size:12px}.share-invite p{font-size:11px;color:var(--muted);margin:7px 0 12px}.invite-copy{display:flex;gap:8px}.invite-copy input{font-size:11px;flex:1;min-height:38px}
+.admin-inline-form{display:flex;gap:9px;margin-top:22px}.admin-inline-form input{flex:1}.admin-inline-form .btn{min-height:50px}
+.workspace-security{border:1px solid var(--line);background:var(--paper-soft);padding:20px;border-radius:14px;margin-top:26px}.workspace-security b{font-size:13px;color:var(--ink)}.workspace-security p,.workspace-security small{display:block;color:var(--muted);font-size:11px;line-height:1.8;margin:10px 0 0}
+@media (max-width:1100px){.admin-grid{grid-template-columns:1fr}.admin-main .desk-panel{padding:25px}}
+@media (max-width:850px){.workspace-select{max-width:145px}.admin-main .desk-hero-actions{flex-wrap:wrap}}
+@media (max-width:590px){.workspace-select{max-width:110px;font-size:10px}.onboard-wrap{min-height:calc(100vh - 180px);padding:30px 0}.onboard-card{padding:29px 23px}.onboard-actions{flex-direction:column}.onboard-actions .btn{width:100%}.admin-grid{gap:12px}.admin-main .desk-panel{padding:20px}.admin-person{flex-wrap:wrap}.person-actions{width:100%;justify-content:flex-start;margin-left:49px}.admin-inline-form{flex-direction:column}.admin-inline-form .btn{width:100%}.toast{right:12px;top:80px}.admin-main{padding-top:30px}}
+@media (prefers-reduced-motion:reduce){.toast{animation:none}}

@@ -1,12 +1,12 @@
 {
   "name": "turnahead-web",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
-  "description": "TurnAhead \u2014 static GitHub Pages + Firebase walk-in queue platform",
+  "description": "TurnAhead v2.1: multi-hospital realtime queue platform with verified staff roles",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "node --check public/queue-engine.js && node --check public/desk.js && node --check public/track.js && node --check public/board.js && node --check public/firebase.js"
+    "check": "for file in public/*.js; do node --check \"$file\" || exit 1; done"
   },
   "license": "MIT"
 }

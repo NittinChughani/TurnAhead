@@ -1,11 +1,12 @@
 # Contributing to TurnAhead
 
-Thanks for helping people spend less time wondering when their turn is due.
+Thanks for helping make waiting rooms clearer and calmer. This repository contains a GitHub Pages frontend, browser Firebase integration and Firestore Security Rules.
 
-1. Fork the repository and create a descriptive branch.
-2. Keep the existing branded, accessible, responsive UI and dark/light mode.
-3. Never commit Firebase credentials other than public web app configuration, and never commit private keys.
-4. Check changes with `npm test` and `npm run check` (Node is used only for development/tests, **not** to run the website).
-5. Submit a PR explaining the user problem and how to verify the workflow.
+1. Fork or branch the repository, and keep any Firebase service-account credentials out of Git.
+2. Run `npm run check` and `npm test` (Node.js is for development only; hospital staff don't need it).
+3. Test changes with an isolated Firebase project and a Firestore rules emulator before changing authorization logic.
+4. Verify the owner, administrator, supervisor, receptionist and anonymous visitor permissions. Include negative tests for cross-hospital access and invitation abuse.
+5. Include desktop/mobile testing, two-device queue tracking and theme checks in the PR description.
+6. Keep README, setup documentation, and brand assets consistent with every user-facing change.
 
-See [SECURITY.md](SECURITY.md) for privacy and authorization requirements.
+Small, well-tested fixes are especially welcome. Do not include real patient data in examples or screenshots; follow [SECURITY.md](SECURITY.md).
