@@ -12,7 +12,7 @@ A real-time, QR-powered queue experience designed for the places where waiting s
 
 [![Node.js](https://img.shields.io/badge/Node.js-22%2B-122447?style=for-the-badge&logo=nodedotjs&logoColor=3ad4ad)](https://nodejs.org/) [![JavaScript](https://img.shields.io/badge/JavaScript-Vanilla-122447?style=for-the-badge&logo=javascript&logoColor=ffd966)](https://developer.mozilla.org/docs/Web/JavaScript) [![License: MIT](https://img.shields.io/badge/License-MIT-122447?style=for-the-badge&logo=opensourceinitiative&logoColor=3ad4ad)](LICENSE) [![Status](https://img.shields.io/badge/Release-Walk--in_MVP-0c8c78?style=for-the-badge)](#roadmap)
 
-**[Explore the product](#the-experience)** &nbsp;·&nbsp; **[Run locally](#getting-started)** &nbsp;·&nbsp; **[Technical overview](#under-the-hood)**
+**[Deploy online](#launch-a-live-website)** &nbsp;·&nbsp; **[Explore the product](#the-experience)** &nbsp;·&nbsp; **[Technical overview](#under-the-hood)**
 
 </div>
 
@@ -80,6 +80,20 @@ Reception issues a ticket with a unique QR code. A visitor scans it and sees a l
 
 <br/>
 
+## Launch a live website
+
+**TurnAhead is built to be used in the browser, not through a command line.** After it is deployed, reception staff and visitors just open the public HTTPS website, use reception login, and scan QR tickets. The backend is hosted for you.
+
+<p align="center">
+  <a href="https://render.com/deploy?repo=https://github.com/NittinChughani/TurnAhead"><img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy TurnAhead to Render" /></a>
+</p>
+
+**[Deploy online in a few clicks →](docs/DEPLOY-ONLINE.md)** — Connect a hosting account, choose a reception password, and open the public URL provided by Render. No local Node.js installation is needed to use the website. The deploy button uses the included [`render.yaml`](render.yaml).
+
+> **Demo hosting limitation:** The free Render instance is only suitable for trying the app. Its SQLite data can be lost during restart, sleep, or redeployment. **Do not use the free preview for real patient queues.** For organizations, use a paid persistent disk, security review and backups as explained in the [deployment guide](docs/DEPLOY-ONLINE.md). A GitHub repo is not automatically a live website.
+
+<br/>
+
 ## Getting started
 
 **Requirements:** Node.js **22.13+** (uses the built-in `node:sqlite` module). No `npm install` required.
@@ -118,12 +132,12 @@ npm test        # End-to-end API and queue lifecycle tests
 | `FACILITY_NAME` | Name displayed throughout the application |
 | `TIME_ZONE` | Facility's timezone (default `Asia/Karachi`) |
 | `DATA_DIR` | Persistent directory for the SQLite database (default `./data`) |
-| `PUBLIC_URL` | Public HTTPS origin used in printed QR tickets |
+| `PUBLIC_URL` | Optional public HTTPS origin used in printed QR tickets; automatically uses Render URL when hosted there |
 | `NODE_ENV` | Use `production` for HTTPS deployment with Secure cookies |
 
 ### Deploying
 
-A ready-to-build `Dockerfile` is included. Deploy **one running instance per facility** on a platform that supports a long-running Node server and a **persistent mounted volume** for `DATA_DIR`. Configure HTTPS, `PUBLIC_URL`, and both required secrets.
+A one-click Render preview blueprint (`render.yaml`) and ready-to-build `Dockerfile` are included. Deploy **one running instance per facility** on a platform that supports a long-running Node server and a **persistent mounted volume** for `DATA_DIR`. Configure HTTPS, `PUBLIC_URL`, and both required secrets.
 
 **Do not deploy the database on ephemeral storage** or scale this MVP across multiple instances without moving to shared persistence and a distributed event bus. Static hosting alone (such as GitHub Pages) cannot run the queue backend.
 

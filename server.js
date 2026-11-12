@@ -28,7 +28,9 @@ if (!PASSWORD || PASSWORD.length < 12 || !SESSION_SECRET || SESSION_SECRET.lengt
 }
 const FACILITY_NAME = (process.env.FACILITY_NAME || 'TurnAhead Demo Clinic').slice(0, 65);
 const TIME_ZONE = process.env.TIME_ZONE || 'Asia/Karachi';
-const PUBLIC_URL = process.env.PUBLIC_URL || '';
+// Render provides the canonical HTTPS URL after deployment. Custom domains can
+// override it with PUBLIC_URL. Never bake a localhost address into QR tickets.
+const PUBLIC_URL = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '';
 const dataDir = path.resolve(root, process.env.DATA_DIR || './data');
 fs.mkdirSync(dataDir, { recursive: true });
 const db = new DatabaseSync(path.join(dataDir, 'turnahead.sqlite'));
@@ -162,7 +164,7 @@ function changeStatus(queue, type) {
 }
 function ticketUrl(req, secret) {
   if(PUBLIC_URL) return `${PUBLIC_URL.replace(/\/$/,'')}/track/${secret}`;
-  const protocol=req.socket.encrypted?'https':'http';
+  const protocol=PRODUCTION || req.socket.encrypted || req.headers['x-forwarded-proto']==='https' ? 'https' : 'http';
   return `${protocol}://${req.headers.host || `localhost:${PORT}`}/track/${secret}`;
 }
 const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.webp':'image/webp','.woff2':'font/woff2','.txt':'text/plain; charset=utf-8'};
