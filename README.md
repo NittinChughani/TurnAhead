@@ -6,270 +6,227 @@
 
 ### Less waiting around. More knowing what comes next.
 
-**A beautifully simple, real-time queue experience for hospitals, clinics, and the people they serve.**
+**One calm, real-time queue experience for patients. One secure command center for hospitals.**
 
-Give reception a better way to manage the day. Give visitors the confidence to step away from the counter.
-
-<br />
-
-[![Release](https://img.shields.io/badge/Release-v2.1-0F8577?style=for-the-badge)](docs/SETUP-GITHUB-PAGES-FIREBASE.md)
-[![JavaScript](https://img.shields.io/badge/Vanilla-JavaScript-142C4E?style=for-the-badge&logo=javascript&logoColor=F7DF1E)](public/)
-[![Firebase](https://img.shields.io/badge/Backend-Firebase-142C4E?style=for-the-badge&logo=firebase&logoColor=FFCA28)](https://firebase.google.com/)
-[![GitHub Pages](https://img.shields.io/badge/Hosting-GitHub_Pages-142C4E?style=for-the-badge&logo=githubpages&logoColor=55E0BA)](https://pages.github.com/)
-[![MIT License](https://img.shields.io/badge/License-MIT-142C4E?style=for-the-badge)](LICENSE)
+QR tickets · Live waiting estimates · Designated administrator · Invitation-only staff access
 
 <br />
 
-[**Open website**](https://nittinchughani.github.io/TurnAhead/) · [**Explore features**](#designed-for-everyone-in-the-waiting-room) · [**Hospital setup**](docs/SETUP-GITHUB-PAGES-FIREBASE.md) · [**Security**](SECURITY.md)
+[![Release](https://img.shields.io/badge/Release-v2.2-0F8577?style=for-the-badge)](docs/SETUP-GITHUB-PAGES-FIREBASE.md)
+[![Firebase](https://img.shields.io/badge/Realtime-Firebase-142C4E?style=for-the-badge&logo=firebase&logoColor=FFCA28)](https://firebase.google.com/)
+[![Hosting](https://img.shields.io/badge/Hosting-GitHub_Pages-142C4E?style=for-the-badge&logo=githubpages&logoColor=55E0BA)](https://pages.github.com/)
+[![JavaScript](https://img.shields.io/badge/Frontend-Vanilla_JS-142C4E?style=for-the-badge&logo=javascript&logoColor=F7DF1E)](public/)
+[![License](https://img.shields.io/badge/License-MIT-142C4E?style=for-the-badge)](LICENSE)
 
-<sub>**Deployment note:** The live website remains on v2.0 until the new Firebase rules are published and this release is merged into `main`.</sub>
+<br />
+
+[**Visit the website**](https://nittinchughani.github.io/TurnAhead/) · [**Explore v2.2**](#introducing-v22--one-hospital-one-administrator) · [**Deployment guide**](docs/SETUP-GITHUB-PAGES-FIREBASE.md) · [**Security model**](SECURITY.md)
+
+<sub>v2.2 is staged for a rules-first deployment; the live site serves the previous release until the coordinated update is merged.</sub>
 
 </div>
 
 ---
 
-## The problem we're solving
+## A better waiting day starts with one scan
 
-The waiting room doesn't have to feel like a guessing game.
+A hospital ticket shouldn't leave patients wondering how long they'll be waiting. TurnAhead gives every walk-in a **sequential ticket number with a unique QR code**. Patients scan it and see their position, estimated waiting time, and current service status—in a browser, without an app or account.
 
-A visitor receives a ticket. The number doesn't tell them how many people are ahead, whether the counter is paused, or when their turn might come. Reception gets interrupted with the same question. Again and again.
-
-**TurnAhead replaces uncertainty with one simple scan.**
-
-Reception creates a queue ticket with a unique QR code. The patient opens it in any browser and watches their place update live. When a receptionist calls the next number, the patient sees it on their own phone. No patient signup. No app to install. No repeated trip to the desk.
+At reception, calling the next person instantly moves the shared queue forward. A public waiting-room board and the patient's own phone follow the same live Firestore updates.
 
 <div align="center">
-  <img src="docs/assets/flow.svg" alt="TurnAhead process: issue ticket, scan QR, track progress and move through the queue" width="94%" />
+<img src="docs/assets/flow.svg" alt="TurnAhead: reception issues ticket, patient scans QR, live queue updates" width="94%" />
 </div>
 
-## Introducing v2.1 — hospital & staff management
+## Introducing v2.2 — one hospital, one administrator
 
-**From one reception desk to an entire organization.**
-
-This release keeps everything people liked about the original TurnAhead experience while adding the foundation hospitals need to use it with their own teams.
+**A much clearer separation between management, staff, and the public.** The person responsible for hospital access has a dedicated secure dashboard. The front desk gets a straightforward login—**no public staff registration button and no hospital creation screen**.
 
 <table>
-<tr>
-<td valign="top" width="50%">
+<tr><td valign="top" width="50%">
 
-### 01 · Organization workspaces
+### 01 · Private administrator portal
 
-- Create a hospital or clinic workspace from the website.
-- Keep each hospital's queues, staff, invitations and internal operations separate.
-- Switch between hospitals you have permission to access.
-- Set your hospital's display name and public board link.
+- One designated **hospital owner/administrator** per hospital.
+- Dedicated **Admin Login** in the main navigation.
+- Live waiting, in-service and completed counts.
+- Department status and estimated service durations.
+- Recent anonymous patient tickets with token, department, time and status.
 
-</td>
-<td valign="top" width="50%">
+</td><td valign="top" width="50%">
 
-### 02 · Staff invitations & roles
+### 02 · Administrator-approved staff
 
-- Owner- and admin-managed staff invitations.
-- Verified-email invitation acceptance and 7-day expiry.
-- Receptionist, supervisor, administrator and owner roles.
-- Change roles or disable staff access without editing Firebase UIDs by hand.
+- Add a staff member's **exact work email** from the admin panel.
+- Assign **Receptionist** or **Supervisor** access.
+- Generate an invitation-specific activation link, valid for seven days.
+- Staff activate with their **verified invited email** and set their own password.
+- Change roles, revoke invitations, or disable active members.
 
-</td>
-</tr>
-<tr>
-<td valign="top" width="50%">
+</td></tr><tr><td valign="top">
 
-### 03 · A more polished login
+### 03 · A simpler staff login
 
-- Clear **login successful** and **signed out** confirmations.
-- Open the dashboard immediately after sign-in—no scrolling to find it.
-- Dedicated staff registration and email verification.
-- Authenticated sessions and helpful permission messages.
+- Dedicated **Staff Login**; no visible create-account option.
+- Only active, authorized hospital members reach reception data.
+- A nonmember is shown an **access not granted** message.
+- Successful sign-in opens the dashboard, not a scrolled login page.
+- Friendly login and sign-out confirmations remain.
 
-</td>
-<td valign="top" width="50%">
+</td><td valign="top">
 
-### 04 · Reception stays simple
+### 04 · Faster-feeling live experience
 
-- One-tap **Call next**, **Complete**, **Skip**, **Pause** and **Resume**.
-- Independent departmental queues and sequential numbers.
-- Printable QR tickets, live waiting room boards and real-time patient updates.
-- Original premium UI, smooth interactions and light/dark themes.
+- Reception subscribes to queue changes **before** daily maintenance work.
+- Patient ticket and waiting-room board listeners start immediately while hospital details load separately.
+- Firestore streams updates to all watching devices.
+- No interval-based polling, third-party QR generator, or page refresh needed for ordinary queue changes.
 
-</td>
-</tr>
+</td></tr>
 </table>
 
-> **Designed around a principle:** Powerful for administrators. Effortless for receptionists. Reassuring for patients.
+> **A note about account creation:** Administrators approve email addresses and generate invitations; first-time staff must still activate their own Firebase account and verify their email. This avoids handing staff passwords to administrators. The login page has no public signup. Firebase Authentication can still receive account-creation requests independently, but Firestore **never grants hospital access without an approved, verified invitation or existing authorized membership**.
 
----
+## Three experiences. One synchronized queue.
 
-## Designed for everyone in the waiting room
+| Area | Path | Who can access | Purpose |
+|:--|:--|:--|:--|
+| **Hospital Administration** | [`admin.html`](public/admin.html) | The hospital's designated owner | Team access, departments, live analytics, anonymous ticket history, settings |
+| **Staff Reception** | [`desk.html`](public/desk.html) | Approved receptionists and supervisors | Ticket issuing, calling, completing, skipping and pausing queues |
+| **Staff Activation** | [`activate.html`](public/activate.html) | People with an invitation matching their verified email | Complete first-time account setup and accept hospital access |
+| **Public Board** | [`board.html`](public/board.html) | Visitors with a hospital board link | Display anonymous now-serving tokens and waiting counts |
+| **Patient Tracking** | [`track.html`](public/track.html) | Person holding the unique QR ticket | Live queue position and estimated wait, no signup |
 
-| Experience | Who it's for | What they can do |
-|:--|:--|:--|
-| **Home** · `index.html` | Everyone | Understand TurnAhead and find staff access |
-| **Reception** · `desk.html` | Authorized staff | Issue tickets, move queues and watch daily activity |
-| **Administration** · `admin.html` | Hospital owner and admins | Invite staff, change roles, manage departments and hospital settings |
-| **My Turn** · `track.html?hospital=...&ticket=...` | Ticket holder | View live number ahead, estimated wait and service status |
-| **Live board** · `board.html?hospital=...` | Waiting-room visitors | View the hospital's anonymous now-serving numbers |
+### How an administrator adds staff
 
-### A real hospital workflow
+1. The hospital's designated administrator signs in through **Admin Login**.
+2. They enter `reception@hospital.example` and select **Receptionist**.
+3. TurnAhead saves a pending, time-limited invitation for that **exact email**.
+4. The administrator privately shares the activation link with that employee. **No email is sent automatically.**
+5. The employee sets their own password (or signs in to an existing account), verifies their email, and accepts the invitation.
+6. From then on, they use **Staff Login** only. Access can be disabled from the administrator dashboard at any time.
 
-1. **Create:** A hospital owner creates a workspace and adds service departments.
-2. **Invite:** The owner or an administrator creates role-based staff invitations, copies the link and shares it with the right people.
-3. **Join:** Staff verify their invited email, accept access and sign in to the reception dashboard.
-4. **Issue:** Reception prints a ticket with a unique QR code and sequential queue number.
-5. **Track:** The patient scans once and sees real-time queue progress on their phone.
-6. **Move:** Reception calls the next person. The patient's screen and that hospital's public board update automatically.
+A person who knows the hospital URL but has **no active authorized membership** cannot read the private queue controls or patient ticket collection. The front end displays an access-denied message; **Firestore Security Rules** enforce it on the backend.
 
-**Important:** Version 2.1 generates invitation links for administrators to share; it does **not** automatically email staff members. Patients never require accounts.
+### Permissions
 
-## Roles that make sense
+| Capability | Hospital administrator | Supervisor | Receptionist |
+|:--|:--:|:--:|:--:|
+| View private admin insights and team details | ✓ | — | — |
+| Add, disable, reassign staff | ✓ | — | — |
+| Change hospital display name | ✓ | — | — |
+| Manage department creation | ✓ | ✓ | — |
+| Issue QR tickets and operate reception | — | ✓ | ✓ |
+| View public queue boards and tracking | ✓ | ✓ | ✓ |
 
-| Capability | Owner | Administrator | Supervisor | Receptionist |
-|:--|:--:|:--:|:--:|:--:|
-| Sign in and run reception queues | ✓ | ✓ | ✓ | ✓ |
-| Issue and print QR tickets | ✓ | ✓ | ✓ | ✓ |
-| Create service departments | ✓ | ✓ | ✓ | — |
-| Invite and manage reception/supervisor staff | ✓ | ✓ | — | — |
-| Invite and manage other administrators | ✓ | — | — | — |
-| Update hospital display name | ✓ | ✓ | — | — |
-| Create or transfer the owner role | — | — | — | — |
+**One administrator means one owner membership** for each hospital. Older v2.1 secondary `admin` roles cannot manage staff under the v2.2 rules; the owner can downgrade them to supervisor or receptionist.
 
-Role restrictions are enforced in **Firestore Security Rules**, not only by disabled buttons in the interface. Every hospital has its own membership and collection paths. An email/password login alone does not grant hospital staff access.
-
----
-
-## Architecture: a website, not an installation
-
-TurnAhead runs on **GitHub Pages + Firebase**. No persistent Node server, local database, Render account or desktop app is required for anyone using the website.
+## Built on familiar, lightweight technology
 
 ```mermaid
 flowchart LR
-  classDef screen fill:#E9F4FF,stroke:#3177D3,color:#16395C
-  classDef data fill:#E8F9F2,stroke:#1A9E7D,color:#17493B
-  H[Hospital owner / admin]:::screen --> A[Administration]:::screen
-  R[Receptionist]:::screen --> D[Reception desk]:::screen
-  D --> T[QR ticket]:::screen
-  T --> P[Patient phone]:::screen
-  A --> F[(Firebase Auth + Firestore)]:::data
-  D <--> F
-  F --> P
-  F --> B[Hospital live board]:::screen
+    A[Designated administrator] --> AD[Admin portal]
+    S[Authorized staff] --> R[Reception dashboard]
+    I[Private staff invitation] --> V[Verified-email activation]
+    V --> R
+    AD --> F[(Firebase Auth + Firestore)]
+    R <--> F
+    R --> Q[Locally generated QR ticket]
+    Q --> P[Patient phone]
+    F --> P
+    F --> B[Public hospital board]
 ```
 
-| Layer | Technology | Why it matters |
-|:--|:--|:--|
-| Frontend | HTML, custom CSS, vanilla JavaScript | Responsive, polished and lightweight |
-| Static hosting | GitHub Pages + GitHub Actions | One HTTPS website, automatically deployed from `main` |
-| Authentication | Firebase Email/Password + verified email | Individual staff identity and secure invitation claims |
-| Shared data | Cloud Firestore + live snapshot listeners | Two or more devices see the same queue state |
-| Consistency | Firestore transactions and atomic membership claims | Unique ticket numbers and safer concurrent updates |
-| Authorization | Hospital-scoped Firestore Security Rules | Cross-hospital isolation and role restrictions |
-| QR tickets | Bundled, locally generated QR encoder | No third-party QR API required |
-| Quality checks | Node.js built-in tests + GitHub Actions CI | Testable queue and permission logic; Node is **development-only** |
+- **Website:** HTML, custom CSS, and JavaScript, hosted on GitHub Pages over HTTPS.
+- **Authentication:** Firebase Email/Password with email verification and per-hospital active memberships.
+- **Data:** Firestore with hospital-scoped queues, tickets, invitations and access controls.
+- **Live state:** Firestore snapshot listeners. Optimized to begin queue/board/ticket listeners without blocking on unrelated metadata or queue maintenance.
+- **Consistency:** Firestore transactions coordinate sequential tickets and queue operations.
+- **Authorization:** Firestore Rules guard every private read and write. Hiding a button is never treated as security.
+- **Brand:** Original TurnAhead illustrations, matching light/dark logos, responsive typography and smooth themes.
 
-### Privacy by design
+### Patient privacy is intentional
 
-- Tickets contain anonymous token codes, queue status and times—**not patient names or medical details**.
-- A public board can only show anonymous queue status for a known hospital workspace ID.
-- Secret ticket IDs remain out of public collection listings. Ticket URLs work as possession-based links and should not be published openly.
-- Staff access is tied to a hospital membership, verified email and active role. Admin actions do not give staff permission in unrelated hospitals.
-- Ownership is not transferable from the browser, and administrators cannot assign themselves the owner role.
+The current release is a **queue management product**, not an electronic health record. Administrator patient detail cards contain **anonymous ticket ID/code, queue, status and arrival time**, not names, diagnoses, prescriptions, phone numbers or medical records. Ticket URLs are bearer links: a person holding the link can read that ticket's anonymous status.
 
-Read the full [security model and limitations](SECURITY.md).
+Read [SECURITY.md](SECURITY.md) for security limitations and operational requirements.
 
----
+## Deploy v2.2 safely
 
-## Get TurnAhead running
+> **Do not merge the frontend before publishing its matching Firestore rules.** Version 2.1 can remain live until the rules are verified. This upgrade removes public owner and hospital self-registration, so **existing v2.1 hospital owners continue to sign in**; onboarding a *new* organization requires trusted operator provisioning.
 
-**Already running v2.0? Use the safe release procedure below.** The new frontend requires the new Firestore rules; the two changes should not be separated casually.
+1. Open [Firebase Firestore Rules](https://console.firebase.google.com/project/turnahead-b34f9/firestore/rules) and publish the complete new [`firestore.rules`](firestore.rules) from the v2.2 branch.
+2. Confirm **Email/Password** Authentication, verified email and `nittinchughani.github.io` under authorized domains.
+3. Check the existing administrator's membership still has `role: "owner"` and `active: true`. A secondary `admin` account is **not** the owner.
+4. Test rules with Firebase's Security Rules emulator and, ideally, a separate test Firebase project. Check that unauthorized sign-ins, cross-hospital reads, and staff promotions fail.
+5. Merge the v2.2 pull request into `main` only after those checks. GitHub Actions will publish `public/` to the existing website.
+6. Sign in at **Admin Login**, add a test staff email, complete invitation activation, then verify QR tracking between desktop and phone.
 
-<div align="center">
+**Full walkthrough:** [Firebase setup, migration and verification](docs/SETUP-GITHUB-PAGES-FIREBASE.md).
 
-### [Read the v2.1 release & Firebase setup guide →](docs/SETUP-GITHUB-PAGES-FIREBASE.md)
-
-</div>
-
-1. **Publish the new Firestore rules** from [`firestore.rules`](firestore.rules) in Firebase Console. The rules temporarily preserve existing v2.0 writes through **11 December 2026**.
-2. **Merge v2.1 to `main`.** The included GitHub Pages workflow deploys the `public/` directory to the existing live URL.
-3. **Verify your email** and sign in. A hospital owner creates their workspace and becomes its initial owner.
-4. **Invite staff and add departments** in `admin.html`. Copy each invite link to the intended email owner; email verification is mandatory.
-5. **Test on separate devices** by issuing a new QR ticket and calling the next visitor. Share the correct hospital-specific live board link.
-
-> **Migration warning:** Existing v2.0 queue documents remain in Firestore but do **not** automatically become the new hospital's live queues. Finish outstanding older tickets before cutover. The old QR page will explain that the ticket is historical. Please don't switch during active patient service without a planned transition.
-
-### Project layout
+### Repository layout
 
 ```text
 TurnAhead/
 ├── public/
-│   ├── index.html         # Product website
-│   ├── desk.html          # Staff sign-in, onboarding and reception
-│   ├── admin.html         # Hospital owner/admin console
-│   ├── track.html         # QR-linked patient progress
-│   ├── board.html         # Hospital-specific live display
-│   ├── org-store.js       # Memberships, invites and role actions
-│   ├── org-model.js       # Testable organization permissions
-│   ├── store.js           # Hospital-scoped Firestore queues
-│   ├── queue-engine.js    # Ticket ordering and estimates
-│   ├── firebase.js        # Browser Firebase initialization
-│   ├── styles.css         # Responsive premium brand system
-│   └── assets/            # Original light/dark logo & favicon
-├── firestore.rules        # Hospital isolation & role enforcement
-├── docs/                  # Illustrated workflow & setup guide
-├── test/                  # Queue and organization unit tests
-└── .github/workflows/     # CI & Pages deployment
+│   ├── index.html          # Premium landing page + three navigation paths
+│   ├── admin.html          # Owner-only administration portal
+│   ├── desk.html           # Staff login and fast reception dashboard
+│   ├── activate.html       # Invitation-only staff account activation
+│   ├── track.html          # Patient QR ticket status
+│   ├── board.html          # Hospital waiting-room board
+│   ├── admin.js            # Staff management and live operational insights
+│   ├── org-store.js        # Verified memberships, invitations, roles
+│   ├── org-model.js        # Pure, tested authorization model
+│   ├── store.js            # Firestore transactions and snapshots
+│   ├── queue-engine.js     # Queue ordering and wait estimates
+│   └── assets/             # Original logo, favicon and visuals
+├── firestore.rules         # Backend authorization by hospital and role
+├── docs/                   # Setup guide and approved illustrations
+├── test/                   # Queue, organization and security checks
+└── .github/workflows/      # GitHub Pages publishing and CI
 ```
 
-### Developer commands (optional)
+Developers can run `npm run check` and `npm test` using Node.js 22; **hospital staff and patients need only a browser**. CI and unit tests do not substitute for live Firebase Rules tests or penetration testing.
 
-```bash
-npm run check
-npm test
-```
+## The road ahead
 
-Hospital users **never** need to run these commands. All functionality is accessed from the normal HTTPS website.
+**Delivered with v2.2**
+
+- [x] Dedicated administrator and staff sign-in navigation
+- [x] One designated administrator per hospital
+- [x] Administrator-controlled staff emails and invitation-only activation
+- [x] Access-denied state for unregistered hospital staff
+- [x] Staff role changes and account disabling
+- [x] Live hospital-wide operational insights and recent anonymous ticket records
+- [x] Faster startup for reception, patient tracking and public board streams
+- [x] Premium README and coordinated Firebase upgrade guide
+
+**Still to build before commercial deployment**
+
+- [ ] Trusted platform onboarding for new hospitals and owner recovery/transfer
+- [ ] Admin SDK-based account pre-provisioning / automated staff invitation email delivery
+- [ ] Full Firebase Rules emulator suite, independent security audit, monitoring and operational alerts
+- [ ] Data backups, deletion policy, recovery exercises and healthcare compliance evaluation
+- [ ] High-volume queue scalability and latency/load testing on real networks
+- [ ] Optional appointment scheduling, multi-branch organizations and consent-based notifications
+
+**Production reality:** TurnAhead is a polished **pilot**, not a certified hospital information system. There is no medical record storage, identity verification of organizations, guarantee of low latency, or formal compliance certification. Real deployments require security testing, privacy review, staff training, backup planning and a support process.
 
 ---
 
-## What's next
+## Open source. Built to make waiting easier.
 
-**Delivered in v2.1**
-
-- [x] Independent hospital/clinic workspaces
-- [x] Owner onboarding and verified staff accounts
-- [x] Seven-day staff invitations with accept/revoke flow
-- [x] Admin, supervisor, receptionist and owner roles
-- [x] Admin dashboard for members, settings and departments
-- [x] Hospital-specific queue data and QR tracking links
-- [x] Login/logout confirmations and direct dashboard navigation
-- [x] Original premium branding, responsive design and themes
-
-**Still on the roadmap**
-
-- [ ] End-to-end Firebase emulator security tests and third-party audit
-- [ ] Staff audit trail, automatic retention and backup strategy
-- [ ] Organization approval/licensing and billing
-- [ ] Automatic invitation email delivery
-- [ ] Large-queue scaling and multi-branch administration
-- [ ] Appointments and hybrid scheduled/walk-in queues
-- [ ] Optional patient notifications with proper consent
-
-**Production reality:** This release is a **multi-hospital pilot**, not a certified hospital management platform. It has no audited regulatory compliance, billing, guaranteed uptime, disaster recovery plan or clinic credential verification. Firebase costs/quotas and rules apply. Professional testing is necessary before any hospital relies on it in daily operations.
-
----
-
-## Open source. Built to be useful.
-
-Thoughtful contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), respect [SECURITY.md](SECURITY.md) and keep patient data out of examples. The project is published under the [MIT License](LICENSE); bundled QR encoder attribution is retained in [`lib/qr/LICENSE`](lib/qr/LICENSE).
+Thoughtful contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), follow [SECURITY.md](SECURITY.md), and keep real patient information out of examples. Licensed under [MIT](LICENSE); the QR encoder's attribution remains at [`lib/qr/LICENSE`](lib/qr/LICENSE).
 
 <div align="center">
 
-<br />
-
 **TURNAHEAD**
 
-*Less uncertainty. A better waiting day.*
+*Know when it's your turn.*
 
-Made by [Nittin Chughani](https://github.com/NittinChughani) · Designed for real people, one queue at a time.
+Made by [Nittin Chughani](https://github.com/NittinChughani) · Designed for the moments that matter.
 
-[Back to top ↑](#the-problem-were-solving)
+[Back to top ↑](#a-better-waiting-day-starts-with-one-scan)
 
 </div>

@@ -13,8 +13,10 @@ async function startBoard(){
     return;
   }
   try{
-    const hospital=await getHospital(hospitalId);
-    document.getElementById('board-facility').textContent=`${hospital.name} · Live queue overview`;
+    // Firestore updates stream immediately while hospital metadata loads in parallel.
+    getHospital(hospitalId).then(hospital=>{
+      document.getElementById('board-facility').textContent=`${hospital.name} · Live queue overview`;
+    }).catch(error=>{document.getElementById('board-facility').textContent=helpfulError(error);});
     observeQueues(hospitalId,queues=>{
       el.innerHTML=queues.map(q=>{
         if(q.dayKey!==dayKey())return `<article class="board-card"><div class="board-card-top">${esc(q.name)} <span>NEW DAY</span></div><div class="board-card-middle"><small>QUEUE NOT STARTED</small><strong>—</strong></div><div class="board-card-bottom"><span>People waiting</span><b>0</b></div></article>`;

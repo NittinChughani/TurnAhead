@@ -41,8 +41,8 @@ export function observeQueues(hid,next,error) {
     next(snapshot.docs.map(d=>publicQueue(d.id,d.data())).sort((a,b)=>a.prefix.localeCompare(b.prefix)));
   },error);
 }
-export function observeTickets(hid,next,error) {
-  return onSnapshot(query(collection(db,'hospitals',hid,'tickets'),orderBy('createdAt','desc'),limit(25)),
+export function observeTickets(hid,next,error,maxItems=25) {
+  return onSnapshot(query(collection(db,'hospitals',hid,'tickets'),orderBy('createdAt','desc'),limit(Math.max(1,Math.min(100,maxItems)))),
     snap=>next(snap.docs.map(d=>({id:d.id,...d.data()}))),error);
 }
 export function observeTicket(hid,id,next,error) {

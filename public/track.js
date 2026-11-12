@@ -49,10 +49,8 @@ if(!configured) fail('This website is not connected to Firebase yet. Please cont
 else if(!ticketId||!/^[A-Za-z0-9]{20}$/.test(ticketId)||(hospitalId&&!/^[A-Za-z0-9]{20}$/.test(hospitalId)))
   fail('No valid ticket was supplied. Scan the QR code on your receipt to open your queue status.');
 else (async()=>{
-  if(!legacy){
-    try{facility=(await getHospital(hospitalId)).name;}
-    catch(e){fail(helpfulError(e));return;}
-  }
+  // Start watching the ticket immediately; fetching the hospital name must not delay live status.
+  if(!legacy)getHospital(hospitalId).then(h=>{facility=h.name;update();}).catch(e=>fail(helpfulError(e)));
   observeTicket(hospitalId,ticketId,t=>{
     if(!t){fail('We could not find that ticket. Please check your QR code or ask reception.');return;}
     currentTicket=t;

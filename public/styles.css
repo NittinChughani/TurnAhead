@@ -61,3 +61,14 @@
 @media (max-width:850px){.workspace-select{max-width:145px}.admin-main .desk-hero-actions{flex-wrap:wrap}}
 @media (max-width:590px){.workspace-select{max-width:110px;font-size:10px}.onboard-wrap{min-height:calc(100vh - 180px);padding:30px 0}.onboard-card{padding:29px 23px}.onboard-actions{flex-direction:column}.onboard-actions .btn{width:100%}.admin-grid{gap:12px}.admin-main .desk-panel{padding:20px}.admin-person{flex-wrap:wrap}.person-actions{width:100%;justify-content:flex-start;margin-left:49px}.admin-inline-form{flex-direction:column}.admin-inline-form .btn{width:100%}.toast{right:12px;top:80px}.admin-main{padding-top:30px}}
 @media (prefers-reduced-motion:reduce){.toast{animation:none}}
+
+/* v2.2 · Administrator cockpit and invitation-only staff access */
+.admin-operations{grid-template-columns:repeat(4,minmax(0,1fr));}
+.admin-auth-shell .login-wrap{max-width:1120px;margin:35px auto 0}
+.admin-patients-panel .admin-list{max-height:470px}
+.admin-patients-panel .activity-token{flex-shrink:0}
+.admin-patients-panel .activity-state{margin-left:auto}
+.admin-patients-panel .admin-person{gap:15px}
+.onboard-card .inline-link{min-height:40px}
+@media(max-width:850px){.admin-operations{grid-template-columns:repeat(2,minmax(0,1fr))}.nav-links{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}.nav-links a{font-size:11px}}
+@media(max-width:590px){.admin-operations{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-operations .stat-card{padding:17px 14px;min-height:125px}.admin-operations .stat-card strong{font-size:29px}.nav-links{display:flex;gap:8px;justify-content:flex-end}.nav-links a{font-size:10px}.nav-links a:first-child{display:none}.nav .nav-actions .btn-small{font-size:10px}.marketing .nav{flex-wrap:wrap;padding-top:7px;padding-bottom:10px}.marketing .nav-links{order:3;width:100%;justify-content:space-around}.marketing .nav-actions{margin-left:auto}}
