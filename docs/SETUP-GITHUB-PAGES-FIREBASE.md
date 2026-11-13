@@ -1,100 +1,83 @@
-# TurnAhead v2.2 · Coordinated Firebase upgrade
+# TurnAhead v2.3 · Firebase rules-first deployment
 
-**Use this guide for an existing TurnAhead v2.1 installation.** The website is hosted on GitHub Pages. No Node.js or local installation is required for staff or patients.
+**GitHub Pages hosts the static website; Firebase Authentication and Firestore power staff permissions, QR status, and private historical records.** No Node.js is needed on staff or patient devices.
 
-> **Order matters:** Publish and test the new Firestore security rules **before merging v2.2 into `main`**. Merging first can break the live reception and admin panels. Complete any active queues before changing access arrangements.
+> **Do not merge the v2.3 PR to `main` until you have published and tested its matching `firestore.rules`.** Your current working v2.2 website stays available during preparation. Finish any active queues first.
 
-## Step 1 — Check the designated hospital owner
+## Step 1 · Confirm the project and administrator
 
-1. Open [Firebase Console](https://console.firebase.google.com/project/turnahead-b34f9/overview).
-2. Go to **Firestore Database → Data → `hospitals`**. Open your existing hospital document and note its document ID (`hospitalId`) and `ownerUid`.
-3. Go to **Authentication → Users** and locate the matching UID. This is the designated **hospital administrator**. The account must use Email/Password sign-in and have a verified email.
-4. Go to **Firestore → Data → `memberships`**. Confirm that the document ID is `hospitalId_ownerUid` (with underscore) and that its `uid`, `hospitalId`, `role: "owner"`, and `active: true` match.
-5. **Do not paste passwords or Firebase service-account credentials into ChatGPT, GitHub, Firestore, or screenshots.**
+Open the [TurnAhead Firebase project](https://console.firebase.google.com/project/turnahead-b34f9/overview). Confirm **Authentication → Sign-in method → Email/Password** is enabled, and `nittinchughani.github.io` appears under **Authorized domains**.
 
-**Existing owners continue to work.** Any v2.1 secondary role named `admin` is now a *legacy role*: it cannot open the sole-administrator dashboard. After deployment, the owner can change it to **Supervisor** or **Receptionist**. Do not delete the owner's membership.
+Your existing hospital administrator should have an active `owner` membership and should match the hospital document's `ownerUid`. Do not create an extra owner account or allow public owner registration.
 
-## Step 2 — Publish the new Firestore rules
+## Step 2 · Review what changes
 
-1. Open [TurnAhead's Firebase Firestore Rules](https://console.firebase.google.com/project/turnahead-b34f9/firestore/rules).
-2. Open [`firestore.rules`](../firestore.rules) on the **v2.2 branch** in another tab.
-3. Copy the entire file. In Firebase's Rules editor, select all old text and paste the new rules.
-4. Confirm the file begins with `rules_version = '2';`.
-5. Click **Publish**. If Firebase rejects the rules, do **not** merge the new website; fix the error first.
-6. Where possible, test the rules in the Firestore emulator against a disposable project before enabling production use. Unit tests alone cannot prove security rules work correctly.
+The updated Firestore rules:
 
-The rules deny public hospital creation and new owner membership creation, allow staff activation only through an existing invitation for an **exact verified email**, and let only the hospital owner manage staff. An unrelated signed-in account cannot read private hospital data.
+- Accept the new `patientName` and `attendance` fields on tickets.
+- Allow authorized receptionists to **write** matching date/department history records in Firestore transactions.
+- Allow **only the hospital's designated owner** to list or read the named historical records.
+- Permit reception to get a date-marker document (without patient data) to atomically initialize each day's history.
+- Permit a supervisor/owner to reserve a unique three-letter department prefix.
+- Support `displayName` and `gender` in invitations and staff memberships, while retaining compatibility with existing v2.2 accounts and invitations.
 
-The old v2.0 compatibility rules remain time-limited through **11 December 2026**. Remove them after old clients stop using the root-level collections and your archival plan is complete.
+### Before live use, test these permissions in a Firebase emulator or separate project
 
-## Step 3 — Confirm Authentication
-
-Go to [Authentication → Sign-in method](https://console.firebase.google.com/project/turnahead-b34f9/authentication/providers). **Email/Password** must be enabled. Under Authentication → Settings → Authorized domains, verify `nittinchughani.github.io` is allowed.
-
-No anonymous sign-in, public staff registration, or new Firebase project is required.
-
-## Step 4 — Verify access security before merging
-
-Use a test project where possible and verify these cases with **Firestore Rules emulator tests**:
-
-| Attempt | Required result |
+| Test | Expected |
 |:--|:--|
-| Active owner reads hospital staff and tickets | Allowed |
-| Receptionist accesses another hospital's members | Denied |
-| Uninvited verified email creates a hospital membership | Denied |
-| Any ordinary user creates a hospital or owner role | Denied |
-| Staff account assigns itself Supervisor or administrator role | Denied |
-| Hospital owner invites a receptionist or supervisor | Allowed |
-| Another staff member promotes themselves to administrator | Denied |
-| Revoked/expired invitation is claimed | Denied |
-| Patient with ticket link reads its anonymous status | Allowed |
-| Patient lists all private hospital tickets | Denied |
+| Valid staff issues a named ticket and archive in one transaction | Allowed |
+| Valid staff marks called, then completed or skipped | Ticket and archive status change together |
+| Patient with exact QR ticket ID reads name and status | Allowed |
+| Anonymous visitor lists all hospital tickets or dated history | Denied |
+| Receptionist lists or gets a private dated patient record | Denied |
+| Hospital owner opens dated patient history | Allowed |
+| Staff attempts to read another hospital's archive | Denied |
+| Staff attempts to create themselves as owner or change own role | Denied |
+| Owner updates staff name/gender or sends a password reset | Allowed through owner controls / Firebase Auth |
 
-**Important:** The repository includes static logic tests, not a full Firebase emulator test of deployed security rules. If you have not verified these cases, keep it a pilot rather than handing it to a hospital.
+**We have automated JavaScript tests, but have not run a live Firestore Rules emulator/security audit or verified Firebase production deployment in this environment.** Do not treat this as medical-software certification.
 
-## Step 5 — Merge the v2.2 release
+## Step 3 · Publish the rules
 
-1. Open the v2.2 GitHub pull request and inspect the changed code and CI checks.
-2. Click **Ready for review**, then **Merge pull request** and **Confirm merge** after Steps 1–4 are completed.
-3. Open [GitHub Actions](https://github.com/NittinChughani/TurnAhead/actions) and verify **Deploy TurnAhead to GitHub Pages** succeeds.
-4. Visit [TurnAhead](https://nittinchughani.github.io/TurnAhead/). The navigation should show **Admin Login**, **Staff Login** and **Public Board**.
+1. Open the [v2.3 `firestore.rules` file on GitHub](../firestore.rules) **on the release branch**.
+2. Select the entire file and copy it.
+3. Open [Firestore Database → Rules](https://console.firebase.google.com/project/turnahead-b34f9/firestore/rules).
+4. Replace the old rules and click **Publish**. Confirm the publication succeeded.
+5. Recheck that your existing v2.2 staff sign-in and current queue still function. The new rules intentionally preserve legacy document layouts during this transition.
 
-## Step 6 — Add one authorized staff member
+## Step 4 · Merge the PR and deploy the website
 
-1. Open **Admin Login**, sign in using the hospital's designated owner account and verify your email if prompted.
-2. In **Add authorized staff**, enter the employee's exact work email, choose **Receptionist** or **Supervisor**, and click **Add staff email**.
-3. Copy the resulting `activate.html?invite=<hospitalId>` URL and share it privately with the employee. The invite is valid for **7 days**. TurnAhead currently **does not email the invitation automatically**.
-4. The employee opens the link. If new, they create their own password on the **separate activation page**, then verify their email. Existing Firebase users can sign in there instead.
-5. They click **Join hospital** after verification. This creates the active membership atomically with claiming the approved invitation.
-6. The employee now opens **Staff Login** at `desk.html`. There is **no signup button** on the staff login page.
-7. Test with a second account not in the invitation list. It must **not** reach hospital reception data. Some unregistered emails will first receive Firebase's generic incorrect-credentials response; the app does not disclose whether arbitrary accounts exist.
-8. From the administrator dashboard, disable the staff membership and verify that private operations are no longer permitted.
+1. Open the v2.3 GitHub pull request, review changed files and green CI.
+2. Click **Ready for review → Merge pull request → Confirm merge**.
+3. Check [GitHub Actions](https://github.com/NittinChughani/TurnAhead/actions) for the Pages deployment to complete.
+4. Visit [TurnAhead](https://nittinchughani.github.io/TurnAhead/) and test the new issue form and admin panel.
 
-**Important distinction:** The admin approves the email and creates the pending invitation; the employee activates their Firebase Authentication user. TurnAhead does **not** secretly create Firebase Auth users or assign passwords on their behalf. Creating Auth users directly from an admin panel without employee activation requires a trusted Firebase Admin SDK backend, secure invitation delivery, and a separate deployment model.
+## Step 5 · Verify functionality on two devices
 
-## Step 7 — Check live performance
+1. In Admin Login, invite a receptionist by entering exact email, staff name, Male/Female selection, and role. Share the generated activation link privately. Staff verify email and set their **own** password.
+2. Log in as staff and confirm the right-side **Mr / Ms Name** greeting appears. Use Update details in the admin panel to correct a name or send a password-reset email.
+3. Create a **Cardiology** queue, or finish the old day's queue to allow an existing prefix to migrate at the next reset.
+4. Issue a ticket with a fictional name. Confirm the receipt and QR page display the name and `CAR-000` or the next correct sequence number.
+5. Scan the QR using a separate phone. Confirm the phone shows waiting position and an approximate local clock time (not a guaranteed appointment).
+6. Click **Call next** on reception: the phone must display **YOUR TURN** once the state is synchronized. Click **Complete**: the phone must display **COMPLETED**, *not* **YOUR TURN**. Repeat with **Skip** and confirm **SKIPPED**.
+7. Open the public board and confirm anonymous token numbers and the updating **HH:MM:SS Pakistan time** clock, with no names.
+8. Open Administrator → **Patient attendance archive**, choose the date and department, search a code like `CAR-000`, and check name, issued time, called time and attended/missed outcome.
+9. After midnight Pakistan time, the next ticket should restart at `CAR-000` without deleting the previous day's dated archive.
+10. Verify a nonmember and another hospital's member cannot read the first hospital's private archive.
 
-1. Start **Staff Login** on a computer and issue a QR ticket.
-2. Scan the ticket on a separate phone. The tracking page now begins observing ticket status immediately, even while the hospital display name is loading.
-3. Call the next patient, complete the ticket, then open the hospital-specific Public Board link.
-4. Updates should arrive via **real-time Firestore listeners** without refreshing. Performance still depends on network latency, Firebase service health, device processing speed and project quota limits. This update removes unnecessary startup waiting; it is not a guarantee of an exact update time.
+## Migration and historical data
 
-## Provisioning a **new** hospital after v2.2
+- **Existing v2.2 tickets remain in Firestore**, but are not automatically backfilled into the new archive. The new archive begins with the first ticket issued using v2.3.
+- **Existing department prefixes** (`A`, `B`, etc.) are upgraded on first activity after the next midnight rollover, avoiding changes mid-queue. A truly untouched legacy queue can adopt its new three-letter prefix immediately.
+- Ticket numbers are formatted with **at least three digits**, beginning at `000` each Pakistan calendar day and continuing past `999` to `1000`, `1001`, etc. A queue's sequence is separate from every other department.
+- New department names with the same initial three letters as an existing department are rejected to avoid ambiguous ticket codes.
+- Archive documents are created and updated **immediately**, not by a scheduled 24-hour task. Day-index documents group records by date. If no browser is open at midnight, numbering resets automatically on the next issuance or authorized queue rollover.
 
-Public users cannot register their own organization or make themselves an owner. For an entirely new hospital, the platform operator must use an **authorized server-side provisioning process** (recommended: Firebase Admin SDK / Cloud Functions with organization approval) to create a hospital document and exactly one owner membership. The first owner can then invite and manage staff through the website. The current v2.2 website intentionally contains **no public or operator-provisioning button**. This is a deliberate safety limit, not a missing UI feature.
+## Privacy and performance
 
-## Troubleshooting
+- Patient names are displayed to anyone who knows the **unique QR ticket URL**; public boards contain only anonymous numbers. Keep QR links private, and avoid medical information.
+- Historical named records are restricted to the designated owner by Firestore rules. **Automatic record deletion/retention is not implemented**, so define organizational policy before real-world use.
+- Firebase response speeds vary. Both logins show a loading animation immediately, but there is **no guaranteed three-second completion**; delayed networks can take longer. TurnAhead avoids artificial waiting and performs independent live subscriptions promptly.
+- Browser-only JavaScript does not send automated staff invitations, create Firebase Authentication accounts for them, or perform true server-side timed archival jobs. An owner authorizes emails and staff self-activate with verified addresses.
 
-| Symptom | Check |
-|:--|:--|
-| Admin Login says access denied | Is this the hospital's existing `ownerUid` user, email verified, with an active `owner` membership? |
-| Staff Login says not registered | The employee must have **accepted** an invitation using the exact verified email. A pending invitation alone is not an active membership. |
-| Staff invitation cannot be accepted | Check correct hospital ID, unexpired pending invitation, Firebase authorized domain and verified email. |
-| Firestore permission denied after merge | Verify v2.2 rules were published before the frontend and that memberships have correct roles. |
-| Someone wants to create another administrator | v2.2 supports exactly **one owner**. Additional administrator accounts are intentionally disabled. |
-| Public Board does not show queues | Use the hospital-specific link copied from the admin panel, with `?hospital=...`. |
-| Old tickets do not appear | v2.0 root-level tickets and v2.1 hospital tickets are separate. They are not automatically migrated. |
-
-## Commercial deployment caveat
-
-TurnAhead remains a queue-management **pilot**. It does not store medical records, supply verified medical identities, guarantee update latencies or provide healthcare compliance certification. Before a commercial hospital installation, arrange an external security assessment, Firebase Rules tests, staff revocation tests, backups and retention policies, infrastructure monitoring, incident response and data protection review.
+**TurnAhead v2.3 is still a pilot.** Test full data protections, backup/recovery, privacy obligations and operational reliability before use in a real healthcare organization.

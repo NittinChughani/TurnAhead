@@ -1,7 +1,7 @@
 import {configured, auth, helpfulError} from './firebase.js';
 import {observeAuth, login, logout, requestVerification, refreshVerification,
   myMemberships, getHospital, watchMembership} from './org-store.js';
-import {canManageStaff, canManageDepartments, boardLink, isStaffRole} from './org-model.js';
+import {canManageStaff, canManageDepartments, boardLink, isStaffRole, staffGreeting} from './org-model.js';
 import {bootstrap, rollOverAll, observeQueues, observeTickets,
   issueTicket, createQueue, performAction} from './store.js';
 import {dayKey} from './queue-engine.js';
@@ -13,12 +13,15 @@ if(new URLSearchParams(location.search).has('invite')) location.replace('./activ
 let currentHospital=null,currentMember=null,memberships=[],queues=[],tickets=[],selectedQueue=null,currentTicket=null;
 let stopQueues=null,stopTickets=null,stopMember=null,authEpoch=0,toastTimer,noticeTimer;
 let pendingSignIn=false,pendingSignOut=false;
+const loginButton=$('login-form').querySelector('[type=submit]');
+const loginOriginal=loginButton.textContent;
+function loadingLogin(busy){loginButton.disabled=busy;loginButton.classList.toggle('is-loading',busy);loginButton.textContent=busy?'Signing in…':loginOriginal;}
 const show=(id,visible)=>$(id).hidden=!visible;
-function view(name){views.forEach(v=>show(v,v===name));show('logout',Boolean(auth?.currentUser));show('workspace-switch',name==='dashboard'&&memberships.filter(m=>isStaffRole(m.role)).length>1);show('public-board-link',name==='dashboard');show('admin-link',name==='dashboard'&&canManageStaff(currentMember?.role));window.scrollTo(0,0);}
+function view(name){if(name!=='login-view')loadingLogin(false);views.forEach(v=>show(v,v===name));show('logout',Boolean(auth?.currentUser));show('workspace-switch',name==='dashboard'&&memberships.filter(m=>isStaffRole(m.role)).length>1);show('public-board-link',name==='dashboard');show('staff-greeting',name==='dashboard'&&Boolean(currentMember));show('admin-link',name==='dashboard'&&canManageStaff(currentMember?.role));window.scrollTo(0,0);}
 function toast(message,error=false){const el=$('toast');el.textContent=message;el.classList.toggle('error',error);show('toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('toast',false),4600);}
 function notice(message,error=false){const el=$('notice');el.textContent=message;el.classList.toggle('error',error);show('notice',true);clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>show('notice',false),6000);}
 function stopSubscriptions(){stopQueues?.();stopTickets?.();stopMember?.();stopQueues=stopTickets=stopMember=null;}
-function refreshRole(){show('new-queue',canManageDepartments(currentMember?.role));show('admin-link',canManageStaff(currentMember?.role));$('role-chip').textContent=(currentMember?.role||'receptionist').toUpperCase();}
+function refreshRole(){show('new-queue',canManageDepartments(currentMember?.role));show('admin-link',canManageStaff(currentMember?.role));$('role-chip').textContent=(currentMember?.role||'receptionist').toUpperCase();$('staff-greeting').textContent=currentMember?staffGreeting(currentMember):'';}
 function render(){
   if(!currentHospital)return;
   $('facility-heading').textContent=`${currentHospital.name} · ${new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'})}`;
@@ -37,7 +40,7 @@ function render(){
   }else $('queue-detail').innerHTML='<div class="empty-state">No department yet. Ask your hospital administrator to create one.</div>';
   const latest=tickets.filter(t=>t.dayKey===dayKey());
   $('activity-count').textContent=`${latest.length} recent`;
-  $('recent-tickets').innerHTML=latest.length?latest.slice(0,14).map(t=>`<div class="activity-item"><div class="activity-token">${esc(t.code)}</div><div class="activity-main"><b>${esc(t.queueName||'Service desk')}</b><small>${esc(fmt(t.createdAt))}</small></div><span class="activity-state">${esc(t.status)}</span></div>`).join(''):'<div class="empty-state">No tickets today. Create the first walk-in ticket to get started.</div>';
+  $('recent-tickets').innerHTML=latest.length?latest.slice(0,14).map(t=>`<div class="activity-item"><div class="activity-token">${esc(t.code)}</div><div class="activity-main"><b>${esc(t.patientName||'Older ticket')} · ${esc(t.queueName||'Service desk')}</b><small>${esc(fmt(t.createdAt))}</small></div><span class="activity-state">${esc(t.status)}</span></div>`).join(''):'<div class="empty-state">No tickets today. Create the first walk-in ticket to get started.</div>';
 }
 async function action(id,kind,button){const label=button.textContent;button.disabled=true;button.textContent='Updating…';try{const r=await performAction(currentHospital.id,id,kind);notice(`${r.code?r.code+' · ':''}${{next:'Called to reception',complete:'Marked complete',skip:'Skipped',pause:'Queue paused',resume:'Queue resumed'}[kind]}.`);}catch(e){notice(helpfulError(e),true);}finally{button.textContent=label;button.disabled=false;}}
 async function openHospital(member){
@@ -67,9 +70,7 @@ async function routeCurrentUser(){
   try{
     if(!user.emailVerified){$('verify-detail').textContent=`We sent a verification link to ${user.email}. Open the email, confirm your address, then return here.`;view('verify-view');return;}
     memberships=await myMemberships(user);if(seq!==authEpoch)return;
-    const names=await Promise.all(memberships.map(m=>getHospital(m.hospitalId).catch(()=>({name:'Unknown hospital'}))));
-    if(seq!==authEpoch)return;
-    memberships=memberships.map((m,i)=>({...m,hospitalName:names[i].name}));
+    // Resolve only the selected hospital before showing the dashboard; other names are not blocking login.
     if(!memberships.some(m=>isStaffRole(m.role))){
       // Account login is NOT authorization. Never expose operational data to an unregistered email.
       $('no-access-detail').textContent='You are not registered as authorized hospital staff. Ask your hospital administrator to add your work email.';
@@ -80,13 +81,16 @@ async function routeCurrentUser(){
     if(seq!==authEpoch)return;
     await openHospital(chosen);
   }catch(e){if(seq!==authEpoch)return;toast(helpfulError(e),true);view('no-access-view');}
-  finally{if(pendingSignIn && currentHospital){toast('Logged in successfully. Welcome back!');pendingSignIn=false;}}
+  finally{if(pendingSignIn && currentHospital){toast('Logged in successfully. Welcome back!');pendingSignIn=false;}if(!currentHospital)loadingLogin(false);}
 }
 $('login-form').addEventListener('submit',async e=>{
-  e.preventDefault();const b=e.target.querySelector('[type=submit]');b.disabled=true;$('login-error').textContent='';pendingSignIn=true;
+  e.preventDefault();if(loginButton.disabled)return;
+  loadingLogin(true);$('login-error').textContent='';pendingSignIn=true;
   try{await login($('email').value,$('password').value);$('password').value='';}
-  catch(err){pendingSignIn=false;const invalid=String(err?.code||'').includes('auth/invalid-credential');$('login-error').textContent=invalid?'You are not registered for staff access or these credentials are incorrect. Ask your hospital administrator to confirm your account.':helpfulError(err);}
-  finally{b.disabled=false;}
+  catch(err){pendingSignIn=false;loadingLogin(false);
+    const invalid=String(err?.code||'').includes('auth/invalid-credential');
+    $('login-error').textContent=invalid?'You are not registered for staff access or these credentials are incorrect. Ask your hospital administrator to confirm your account.':helpfulError(err);
+  }
 });
 $('verify-send').addEventListener('click',async()=>{try{await requestVerification();toast('Verification email sent. Check your inbox.');}catch(e){toast(helpfulError(e),true);}});
 $('verify-refresh').addEventListener('click',async()=>{try{if(await refreshVerification())await routeCurrentUser();else toast('Email is not verified yet. Please open the link in your inbox.',true);}catch(e){toast(helpfulError(e),true);}});
@@ -98,17 +102,25 @@ $('workspace-switch').addEventListener('change',e=>{
 $('logout').addEventListener('click',async()=>{
   pendingSignOut=true;try{stopSubscriptions();await logout();}catch(e){pendingSignOut=false;toast(helpfulError(e),true);}
 });
-$('issue-ticket').addEventListener('click',async()=>{
-  const q=queues.find(x=>x.id===selectedQueue);if(!q||!currentHospital)return;
-  const b=$('issue-ticket');b.disabled=true;
+$('issue-ticket').addEventListener('click',()=>{
+  if(!queues.some(x=>x.id===selectedQueue)||!currentHospital)return;
+  $('patient-name').value='';show('issue-modal',true);$('patient-name').focus();
+});
+$('issue-form').addEventListener('submit',async e=>{
+  e.preventDefault();const q=queues.find(x=>x.id===selectedQueue);if(!q||!currentHospital)return;
+  const b=e.target.querySelector('[type=submit]');b.disabled=true;b.classList.add('is-loading');
   try{
-    currentTicket=await issueTicket(currentHospital.id,q.id);
+    currentTicket=await issueTicket(currentHospital.id,q.id,$('patient-name').value);
     $('receipt-facility').textContent=currentHospital.name;$('receipt-code').textContent=currentTicket.code;
+    $('receipt-patient').textContent=currentTicket.patientName;
     $('receipt-queue').textContent=currentTicket.queue;
     $('receipt-qr').src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(window.turnaheadQR.svg(currentTicket.trackingUrl));
-    $('receipt-link').textContent=currentTicket.trackingUrl;show('ticket-modal',true);
-  }catch(err){notice(helpfulError(err),true);}finally{b.disabled=false;}
+    $('receipt-link').textContent=currentTicket.trackingUrl;
+    show('issue-modal',false);show('ticket-modal',true);
+  }catch(err){notice(helpfulError(err),true);}finally{b.disabled=false;b.classList.remove('is-loading');}
 });
+$('close-issue').addEventListener('click',()=>show('issue-modal',false));
+$('issue-modal').addEventListener('click',e=>{if(e.target===$('issue-modal'))show('issue-modal',false);});
 $('close-ticket').addEventListener('click',()=>show('ticket-modal',false));
 $('ticket-modal').addEventListener('click',e=>{if(e.target===$('ticket-modal'))show('ticket-modal',false);});
 $('print-button').addEventListener('click',()=>window.print());
@@ -120,7 +132,9 @@ $('queue-form').addEventListener('submit',async e=>{
   e.preventDefault();const b=e.target.querySelector('[type=submit]');b.disabled=true;
   try{const q=await createQueue(currentHospital.id,$('queue-name').value);selectedQueue=q.id;$('queue-name').value='';show('queue-modal',false);notice(`${q.name} has been created.`);}catch(err){notice(helpfulError(err),true);}finally{b.disabled=false;}
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){show('ticket-modal',false);show('queue-modal',false);}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){show('ticket-modal',false);show('queue-modal',false);show('issue-modal',false);}});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentHospital)rollOverAll(currentHospital.id).catch(e=>notice(helpfulError(e),true));});
+let lastSeenDay=dayKey();
+setInterval(()=>{const today=dayKey();if(today!==lastSeenDay){lastSeenDay=today;if(currentHospital)rollOverAll(currentHospital.id).catch(e=>notice(helpfulError(e),true));}},15000);
 if(!configured){$('login-error').textContent='Firebase is not configured yet. See the repository setup guide.';view('login-view');}
 else observeAuth(()=>routeCurrentUser());

@@ -1,35 +1,38 @@
-# TurnAhead security and privacy · v2.2
+# TurnAhead v2.3 · Security and patient-data privacy
 
-TurnAhead is a real-time queue management **pilot**, not an electronic health record or a certified hospital system. Do not store names, diagnoses, contact details, identity numbers or clinical records in queue names, public boards or ticket documents.
+TurnAhead is a **queue-management pilot**, not an electronic health record, medical identity-verification tool, or certified hospital platform. Public use with real patient names requires a privacy/security review and a lawful organizational basis for data collection.
 
-## Account and authorization boundaries
+## Access model
 
-- Each hospital has **one** designated administrator: its active **owner** membership must match the hospital document's `ownerUid`. There is no public browser flow to create additional hospital owners or organizations.
-- Only the designated hospital owner can add staff email invitations, change staff roles, disable staff access and update hospital settings.
-- **Supervisor** can operate reception and create departments. **Receptionist** can operate reception. Neither can read the owner-only staff directory or invite colleagues.
-- First-time staff account setup uses a separate invitation-activation page, not the public staff login page. An invitation is bound to the exact normalized email, hospital ID, role and expiration timestamp; accepting requires a Firebase-authenticated, **email-verified** account matching that email.
-- Authentication and authorization are separate. Someone may hold a valid Firebase Auth account, including one created outside the TurnAhead UI, and **still have no hospital access**. Firestore rules deny access without an active authorized membership. The login UI displays an unregistered/access-denied state in that case.
-- Legacy v2.1 secondary `admin` role memberships are no longer admin-authorized; the owner may downgrade them to supervisor or receptionist. Hospital owners cannot be changed from the browser.
-- Client-side controls are for convenience; backend authorization is enforced by [`firestore.rules`](firestore.rules). Avoid assuming hiding buttons alone grants security.
+- One authorized hospital owner (`role: owner`, matching `hospital.ownerUid`) operates its admin dashboard.
+- Supervisors and receptionists need active hospital memberships from verified, exact-email invitations.
+- The public staff login has **no signup option**. Staff create or access their Firebase Auth account only through an admin-issued invitation activation flow.
+- The administrator can correct staff names, gender/title, role and status; password resets are delivered by Firebase to staff email. Administrators cannot read, choose or recover staff passwords.
+- Firestore rules restrict private dated history (`hospitals/{hospitalId}/history/{day}/departments/{departmentId}/records/{ticketId}`) to the **designated hospital owner**. Reception staff can create/update those records as part of queue transactions, but cannot list or read patient history.
 
-## Ticket privacy
+## Patient data: new in v2.3
 
-- Staff and owners see anonymous ticket codes, service departments, statuses and timestamps. No patient identity fields are collected.
-- Each ticket URL uses a non-enumerable Firestore document ID. Anyone with the URL can read that **anonymous** ticket; this is a bearer link, not authentication or a way to verify patient identity.
-- A hospital-specific public board intentionally reveals anonymous current-serving codes and queue waiting counts.
-- Firestore rules deny unauthenticated listing of ticket collections, members and private queue controls.
+- Patient name is collected by reception and saved to the individual ticket, and to a separate private date/department archive. Ticket code, department, timestamps, status and attendance are also stored.
+- **The patient QR link is a bearer secret, not a login.** Any person with that unpredictable URL can read that ticket's **name and queue status**. Do not share, publish, photograph publicly or index QR links. Public boards show codes, waiting counts and time—never names.
+- Do not enter diagnoses, national ID numbers, contact information, treatments, medications or other medical records. The app does not verify patient identity.
+- `Completed` represents reception marking an encounter served/attended; `Skipped` represents reception marking it missed. These are operational actions, not independent proof of medical attendance.
+- Dated archive records are written when tickets are issued and updated when the ticket is called, completed or skipped. A separate midnight cron job is **not** needed. Old v2.2 records are not backfilled automatically.
+- **Automatic deletion is not implemented.** Data remains in Firestore until removed by an authorized organization/operator procedure. Agree on retention and deletion policies before collecting real patient names.
 
-## Rollout and reliability
+## Deployment protections
 
-- **Publish new Firestore rules before merging a new frontend.** Always test authorization on a non-production Firebase project or the emulator first.
-- Root-level v2.0 compatibility is temporarily retained until **12 December 2026** and must be cleaned up after all legacy clients have stopped operating and archival requirements are addressed.
-- Firestore snapshot listeners provide live updates; reception and patient views now subscribe without waiting for unrelated data. Network latency, offline clients and service quotas still affect speed.
-- Operations and memberships should be audited, backed up and monitored before a hospital relies on the service. No full independent security audit or compliant clinical data processing review has been completed.
+1. **Publish rules first** from the same release branch, then deploy the GitHub Pages frontend. Finish active queues before migration.
+2. Test rules using the Firebase Emulator or a dedicated nonproduction Firebase project. Unit tests verifying file structure are **not** a substitute for testing actual authorization behavior.
+3. Confirm only a verified owner can list dated history; ordinary reception staff can create/update a patient ticket and its matching history record atomically but cannot retrieve archive data.
+4. Test cross-hospital access, invitation expiry/revocation, staff disabling, and direct Firestore requests—not just hidden buttons in the UI.
+5. Test QR links on separate devices for waiting → called → completed and waiting → called → skipped; verify no contradictory terminal states.
+6. Apply least privilege to Firebase project operators, restrict service-account credentials, and add backups, monitoring, incident reporting and auditing before real-world rollout.
 
-## Future account provisioning
+## Limits
 
-v2.2 administrators **authorize a staff email invitation**, and staff activate their own account and password. Administrators do **not** create Firebase Auth users or know staff passwords. Fully server-managed account creation and trusted onboarding of new hospitals require Firebase Admin SDK or equivalent trusted backend processes, secure delivery of setup instructions, platform-operator verification, and operational access logging. Never embed Firebase Admin SDK secrets or a service-account JSON in the browser or GitHub repository.
+- Firebase latency and sign-in time depend on connectivity and service health. No exact 1.5-second or 3-second upper bound can be promised; the UI shows progress while authorization is pending.
+- Browser-only hospital software cannot run reliable server-side jobs while every browser is closed. Archive writes are transactional; midnight ticket rollover occurs upon the next authorized queue activity.
+- A patient's name on a bearer QR URL is a privacy tradeoff. For deployment in a real hospital, consider a **separate, authenticated or expiring patient-view token** and stronger data minimization rather than treating the current pilot as production-ready.
+- The Firestore rules have not been independently audited. Security tests and policy/compliance evaluation remain required.
 
-## Reporting vulnerabilities
-
-Please do not expose credentials, patient information or exploit instructions in public GitHub issues. Use the repository's private security advisory reporting, where available, or notify its maintainer privately through GitHub. Reproduce issues using test Firebase projects and synthetic data.
+For vulnerabilities, use private maintainer contact or GitHub's vulnerability reporting if enabled; do not open a public issue containing patient information or sensitive exploitation details.

@@ -15,5 +15,5 @@
 })();
 window.turnahead = {
   esc(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));},
-  fmt(date){if(!date)return '—';return new Date(date).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+  fmt(date){if(!date)return '—';return new Date(date).toLocaleTimeString('en-PK',{timeZone:'Asia/Karachi',hour:'2-digit',minute:'2-digit'});}
 };

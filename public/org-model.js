@@ -14,7 +14,6 @@ export function validHospitalName(name) {
   return clean;
 }
 // One designated hospital owner/administrator. Supervisor is operational, not administrative.
-// One designated hospital owner/administrator. Supervisor is operational, not administrative.
 export function canManageStaff(role) { return role === 'owner'; }
 export function canManageDepartments(role) { return role === 'owner' || role === 'supervisor'; }
 export function canInviteRole(actorRole, inviteRole) {
@@ -44,4 +43,17 @@ export function ticketLink(hospitalId, ticketId, baseUrl) {
   url.searchParams.set('hospital', hospitalId);
   url.searchParams.set('ticket', ticketId);
   return url.toString();
+}
+
+/** Staff identity is administrator-approved; passwords stay private to Firebase Auth. */
+export function validStaffProfile(name,gender){
+  const displayName=String(name||'').trim().replace(/\s+/g,' ');
+  if(displayName.length<2||displayName.length>70)throw Error('Staff name must be 2–70 characters.');
+  if(!['male','female'].includes(gender))throw Error('Select Male or Female for the staff title.');
+  return {displayName,gender};
+}
+export function staffGreeting(member){
+  const title=member?.gender==='male'?'Mr':member?.gender==='female'?'Ms':'';
+  const name=String(member?.displayName||member?.email?.split('@')[0]||'Staff').trim();
+  return `${title?title+' ':''}${name}`;
 }
