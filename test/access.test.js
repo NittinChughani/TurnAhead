@@ -39,11 +39,13 @@ test('Firestore rules block self-service owner and hospital creation',()=>{
  assert.doesNotMatch(rules,/Self-service hospital creation/);
  assert.match(rules,/allow list: if isMember\(hid\)/);
 });
-test('admin dashboard exposes anonymous operational data only',()=>{
+test('admin dashboard has private named ticket archive and staff profile editing',()=>{
  const html=read('public/admin.html');
  for(const id of ['admin-waiting','admin-serving','admin-completed','admin-average','patient-ticket-list','staff-list','department-list'])assert.match(html,new RegExp(`id="${id}"`));
- assert.match(html,/No names, diagnoses, phone numbers or medical records/);
- assert.doesNotMatch(html,/patient-name|diagnosis-input/);
+ assert.match(html,/id="history-days"/);
+ assert.match(html,/id="staff-edit-form"/);
+ assert.match(html,/id="invite-gender"/);
+ assert.doesNotMatch(html,/diagnosis-input/);
 });
 test('all local page links and script references exist',()=>{
  for(const file of ['index','desk','admin','activate','board','track']){
@@ -53,4 +55,30 @@ test('all local page links and script references exist',()=>{
      assert.ok(existsSync(resolve(root,'public',dest)),`${file}: ${dest} not found`);
    }
  }
+});
+
+test('history is private and QR tickets use unpredictable document identifiers',()=>{
+ const rules=read('firestore.rules');
+ assert.match(rules,/match \/history\/\{date\}/);
+ assert.match(rules,/allow get, list: if owner\(hid\)/);
+ assert.match(rules,/match \/departments\/\{qid\}\/records\/\{ticketId\}/);
+ assert.match(rules,/getAfter\(ticketPath/);
+ assert.match(rules,/allow list: if isMember\(hid\)/);
+});
+test('ticket flow saves dated archive documents in same Firestore transaction',()=>{
+ const store=read('public/store.js');
+ assert.match(store,/tx\.set\(historyDoc\(/);
+ assert.match(store,/tx\.update\(historyDoc\(/);
+ assert.match(store,/dayDoc\(hid,today\)/);
+});
+test('public board hides names but displays current clock',()=>{
+ assert.match(read('public/board.html'),/id="board-time"/);
+ assert.match(read('public/board.js'),/setInterval\(\(\)=>\{clock\(\)/);
+ assert.match(read('public/board.js'),/renderBoard\(displayedQueues\)/);
+ assert.doesNotMatch(read('public/board.js'),/patientName/);
+});
+test('staff and admin show loading state during login',()=>{
+ assert.match(read('public/desk.js'),/loadingLogin\(true\)/);
+ assert.match(read('public/admin.js'),/loadingLogin\(true\)/);
+ assert.match(read('public/styles.css'),/is-loading::before/);
 });

@@ -1,7 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // v2.1: Firestore is the authority for hospital identity, role and tenant isolation.
+    // v2.3: Hospital-scoped access; dated patient archives are owner-only for reads.
     function signedIn() { return request.auth != null; }
     function verified() { return signedIn() && request.auth.token.email_verified == true && request.auth.token.email is string; }
     function email() { return request.auth.token.email.lower(); }
@@ -16,6 +16,7 @@ service cloud.firestore {
     }
     function hospitalPath(hid) { return /databases/$(database)/documents/hospitals/$(hid); }
     function invitePath(hid,mail) { return /databases/$(database)/documents/hospitals/$(hid)/invites/$(mail); }
+    function ticketPath(hid,id) { return /databases/$(database)/documents/hospitals/$(hid)/tickets/$(id); }
     function isMember(hid) {
       return verified() && exists(memberPath(hid,request.auth.uid)) &&
         get(memberPath(hid,request.auth.uid)).data.active == true &&
@@ -33,26 +34,30 @@ service cloud.firestore {
         data.createdAt is timestamp && data.updatedAt is timestamp;
     }
     function validMembership(data,hid,uid) {
-      return data.keys().hasOnly(['uid','hospitalId','email','role','active','createdAt','updatedAt','invitedBy']) &&
+      return data.keys().hasOnly(['uid','hospitalId','email','role','active','createdAt','updatedAt','invitedBy','displayName','gender']) &&
         data.uid == uid && data.hospitalId == hid && data.email is string &&
         data.email.size() <= 254 && data.role in ['owner','supervisor','receptionist'] &&
         data.active is bool && data.createdAt is timestamp &&
-        data.updatedAt is timestamp && data.invitedBy is string;
+        data.updatedAt is timestamp && data.invitedBy is string &&
+        data.get('displayName','') is string && data.get('displayName','').size() <= 70 &&
+        data.get('gender','unspecified') in ['male','female','unspecified'];
     }
     function validInvite(data,mail) {
-      return data.keys().hasOnly(['email','role','status','createdBy','createdAt','expiresAt','acceptedUid','acceptedAt']) &&
+      return data.keys().hasOnly(['email','role','status','createdBy','createdAt','expiresAt','acceptedUid','acceptedAt','displayName','gender']) &&
         data.email == mail && data.email is string && data.email.size() <= 254 &&
         data.role in ['supervisor','receptionist'] &&
         data.status == 'pending' && data.createdBy == request.auth.uid &&
         data.createdAt == request.time && data.expiresAt is timestamp &&
         data.expiresAt > request.time &&
-        data.acceptedUid == null && data.acceptedAt == null;
+        data.acceptedUid == null && data.acceptedAt == null &&
+        (!('displayName' in data) || (data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 70)) &&
+        (!('gender' in data) || data.gender in ['male','female']);
     }
     function validQueue(data) {
       return data.keys().hasOnly(['name','prefix','dayKey','lastNumber','waitingNumbers','active','served','avgMinutes','paused','createdAt','updatedAt']) &&
         data.name is string && data.name.size() >= 3 && data.name.size() <= 45 &&
         data.prefix is string && data.dayKey is string &&
-        data.lastNumber is int && data.lastNumber >= 0 && data.lastNumber <= 9999 &&
+        data.lastNumber is int && data.lastNumber >= -1 && data.lastNumber <= 999999 &&
         data.waitingNumbers is list && data.waitingNumbers.size() <= 2000 &&
         data.served is int && data.avgMinutes is int && data.paused is bool &&
         data.createdAt is number && data.updatedAt is number;
@@ -62,11 +67,23 @@ service cloud.firestore {
         data.pending is list && data.pending.size() <= 2000;
     }
     function validTicket(data) {
-      return data.keys().hasOnly(['queueId','queueName','code','number','dayKey','status','createdAt','calledAt','finishedAt']) &&
+      return data.keys().hasOnly(['queueId','queueName','code','number','dayKey','status','createdAt','calledAt','finishedAt','patientName','attendance']) &&
         data.queueId is string && data.queueName is string && data.code is string &&
-        data.number is int && data.number >= 1 && data.dayKey is string &&
+        data.number is int && data.number >= 0 && data.dayKey is string &&
         data.status in ['waiting','called','completed','skipped'] &&
-        data.createdAt is number;
+        data.createdAt is number &&
+        data.get('patientName','') is string && data.get('patientName','').size() <= 80 &&
+        data.get('attendance','pending') in ['pending','present','missed'];
+    }
+    function validHistoryRecord(data,hid,day,qid,ticketId) {
+      return data.keys().hasOnly(['ticketId','queueId','queueName','code','number','dayKey','patientName','status','attendance','issuedAt','calledAt','finishedAt','updatedAt']) &&
+        data.ticketId == ticketId && data.queueId == qid && data.dayKey == day &&
+        data.queueName is string && data.code is string && data.number is int &&
+        data.patientName is string && data.patientName.size() >= 2 && data.patientName.size() <= 80 &&
+        data.status in ['waiting','called','completed','skipped'] && data.attendance in ['pending','present','missed'] &&
+        data.issuedAt is number && data.updatedAt is number &&
+        // Same-transaction ticket write is the source of truth.
+        getAfter(ticketPath(hid,ticketId)).data.status == data.status;
     }
     match /hospitals/{hid} {
       // Public landing/board can fetch a *known* hospital ID, never enumerate hospitals.
@@ -117,11 +134,39 @@ service cloud.firestore {
         allow delete: if false;
       }
       match /tickets/{ticketId} {
-        // Unpredictable ticket ID is a bearer link. No PII stored on tickets.
+        // Bearer QR link includes the patient name, visible only to anyone with that unpredictable link.
+        // Never publish QR URLs or ticket documents in the public waiting board.
         allow get: if true;
         allow list: if isMember(hid);
         allow create, update: if isMember(hid) && validTicket(request.resource.data);
         allow delete: if false;
+      }
+      match /history/{date} {
+        // Every day's index is written at first ticket issue, not by an unreliable browser cron.
+        // Staff may check existence of a day marker before issuing a ticket;
+        // only the owner may enumerate days or read named records.
+        allow get: if isMember(hid);
+        allow list: if owner(hid);
+        allow create: if isMember(hid) && request.resource.data.keys().hasOnly(['dayKey','createdAt']) &&
+          request.resource.data.dayKey == date && request.resource.data.createdAt is number;
+        allow update, delete: if false;
+        match /departments/{qid}/records/{ticketId} {
+          allow get, list: if owner(hid);
+          allow create: if isMember(hid) && validHistoryRecord(request.resource.data,hid,date,qid,ticketId) &&
+            getAfter(ticketPath(hid,ticketId)).data.patientName == request.resource.data.patientName &&
+            getAfter(ticketPath(hid,ticketId)).data.code == request.resource.data.code;
+          allow update: if isMember(hid) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','attendance','calledAt','finishedAt','updatedAt']) &&
+            validHistoryRecord(request.resource.data,hid,date,qid,ticketId) &&
+            getAfter(ticketPath(hid,ticketId)).data.attendance == request.resource.data.attendance;
+          allow delete: if false;
+        }
+      }
+      match /prefixes/{prefix} {
+        allow get: if manager(hid);
+        allow list, update, delete: if false;
+        allow create: if manager(hid) && prefix.matches('^[A-Z]{3}$') &&
+          request.resource.data.keys().hasOnly(['queueId']) && request.resource.data.queueId is string;
       }
       match /meta/{key} {
         allow get: if isMember(hid) && key == 'sequence';
@@ -147,15 +192,20 @@ service cloud.firestore {
         get(invitePath(request.resource.data.hospitalId,email())).data.status == 'pending' &&
         get(invitePath(request.resource.data.hospitalId,email())).data.role == request.resource.data.role &&
         get(invitePath(request.resource.data.hospitalId,email())).data.createdBy == request.resource.data.invitedBy &&
+        get(invitePath(request.resource.data.hospitalId,email())).data.get('displayName',request.resource.data.get('displayName','')) == request.resource.data.get('displayName','') &&
+        get(invitePath(request.resource.data.hospitalId,email())).data.get('gender',request.resource.data.get('gender','unspecified')) == request.resource.data.get('gender','unspecified') &&
         get(invitePath(request.resource.data.hospitalId,email())).data.expiresAt > request.time &&
         getAfter(invitePath(request.resource.data.hospitalId,email())).data.status == 'accepted' &&
         getAfter(invitePath(request.resource.data.hospitalId,email())).data.acceptedUid == request.auth.uid;
 
       allow update: if verified() && owner(resource.data.hospitalId) &&
         resource.data.role != 'owner' &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role','active','updatedAt']) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role','active','updatedAt','displayName','gender']) &&
         request.resource.data.role in ['supervisor','receptionist'] &&
         request.resource.data.active is bool &&
+        request.resource.data.get('displayName','') is string &&
+        request.resource.data.get('displayName','').size() <= 70 &&
+        request.resource.data.get('gender','unspecified') in ['male','female','unspecified'] &&
         request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }

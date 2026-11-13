@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {normalizeEmail,validHospitalName,canManageStaff,canManageDepartments,
-  canInviteRole,canChangeRole,membershipId,boardLink,invitationLink,ticketLink} from '../public/org-model.js';
+  canInviteRole,canChangeRole,membershipId,boardLink,invitationLink,ticketLink,validStaffProfile,staffGreeting} from '../public/org-model.js';
 const hid='ABcdEFghIJklMNopQR12',uid='Firebase_User_123';
 const base='https://nittinchughani.github.io/TurnAhead/desk.html';
 test('email invitations normalize casing and reject invalid addresses',()=>{
@@ -49,4 +49,12 @@ test('share links use independent hospital-specific query values',()=>{
   assert.equal(patient.pathname,'/TurnAhead/track.html');
   assert.equal(patient.searchParams.get('hospital'),hid);
   assert.equal(patient.searchParams.get('ticket'),'SomeRandomTicketId123');
+});
+
+test('admin validates staff display names and gender titles',()=>{
+ assert.deepEqual(validStaffProfile('  Sara   Khan ','female'),{displayName:'Sara Khan',gender:'female'});
+ assert.equal(staffGreeting({displayName:'Sara Khan',gender:'female'}),'Ms Sara Khan');
+ assert.equal(staffGreeting({displayName:'Ali Khan',gender:'male'}),'Mr Ali Khan');
+ assert.throws(()=>validStaffProfile('x','female'));
+ assert.throws(()=>validStaffProfile('Ali','not-set'));
 });

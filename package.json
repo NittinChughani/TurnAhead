@@ -1,9 +1,9 @@
 {
   "name": "turnahead-web",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
   "type": "module",
-  "description": "TurnAhead v2.2: multi-hospital realtime queue platform with verified staff roles",
+  "description": "TurnAhead v2.3: named QR queues, synchronized status, private daily patient archives and hospital staff management",
   "scripts": {
     "test": "node --test test/*.test.js",
     "check": "for file in public/*.js; do node --check \"$file\" || exit 1; done"

@@ -5,11 +5,11 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  sendEmailVerification, signOut, reload
+  sendEmailVerification, sendPasswordResetEmail, signOut, reload
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import {auth, db} from './firebase.js';
 import {normalizeEmail, validHospitalName, canInviteRole, canChangeRole,
-  membershipId, INVITE_DAYS} from './org-model.js';
+  membershipId, INVITE_DAYS, validStaffProfile} from './org-model.js';
 
 export const observeAuth = callback => onAuthStateChanged(auth, callback);
 export const login = (email,password) => signInWithEmailAndPassword(auth,normalizeEmail(email),password);
@@ -63,21 +63,23 @@ export async function acceptInvitation(hospitalId,user=auth.currentUser) {
   const data=invite.data(), batch=writeBatch(db);
   batch.set(memberRef(hospitalId,user.uid),{
     uid:user.uid,hospitalId,email,role:data.role,active:true,
-    createdAt:serverTimestamp(),updatedAt:serverTimestamp(),invitedBy:data.createdBy
+    createdAt:serverTimestamp(),updatedAt:serverTimestamp(),invitedBy:data.createdBy,
+    displayName:data.displayName||email.split('@')[0],gender:data.gender||'unspecified'
   });
   batch.update(ref,{status:'accepted',acceptedUid:user.uid,acceptedAt:serverTimestamp()});
   await batch.commit();
   return await getHospital(hospitalId);
 }
-export async function inviteStaff(hospitalId,email,role,actorRole,user=auth.currentUser) {
+export async function inviteStaff(hospitalId,email,role,actorRole,name,gender,user=auth.currentUser) {
   email=normalizeEmail(email);
   if(email===normalizeEmail(user.email)) throw Error('You already have an account in this workspace.');
   if(!canInviteRole(actorRole,role)) throw Error('Only the designated hospital administrator can add authorized staff.');
+  const profile=validStaffProfile(name,gender);
   const now=Date.now();
   await setDoc(inviteRef(hospitalId,email),{
     email,role,status:'pending',createdBy:user.uid,
     createdAt:serverTimestamp(),expiresAt:Timestamp.fromMillis(now+INVITE_DAYS*86400000),
-    acceptedUid:null,acceptedAt:null
+    acceptedUid:null,acceptedAt:null,...profile
   });
 }
 export async function revokeInvitation(hospitalId,email) {
@@ -96,8 +98,14 @@ export async function updateStaff(hospitalId,member,changes,actorRole) {
   const patch={updatedAt:serverTimestamp()};
   if('role' in changes) patch.role=changes.role;
   if('active' in changes) patch.active=Boolean(changes.active);
+  if('displayName' in changes||'gender' in changes)Object.assign(patch,validStaffProfile(changes.displayName??member.displayName,changes.gender??member.gender));
   await updateDoc(memberRef(hospitalId,member.uid),patch);
 }
 export async function renameHospital(hospitalId,name) {
   await updateDoc(hospitalRef(hospitalId),{name:validHospitalName(name),updatedAt:serverTimestamp()});
+}
+
+/** Sends Firebase's secure password-reset email; administrators cannot view or set staff passwords. */
+export async function sendStaffPasswordReset(email){
+  await sendPasswordResetEmail(auth,normalizeEmail(email));
 }
