@@ -112,3 +112,40 @@
   #ticket-modal[hidden]{display:none!important}
   #ticket-modal{display:block!important}
 }
+/* v2.4 — high contrast form fields across themes, doctor cards and patient loading */
+.staff-greeting{background:var(--paper)!important;color:var(--ink)!important;border-color:var(--line)!important}
+.history-day{background:var(--paper)!important;color:var(--ink)}
+.history-tools input,.history-tools select,.history-date-picker input,.doctor-form input,.doctor-form select,.admin-history-panel input,.admin-history-panel select{background:var(--paper-soft)!important;color:var(--ink)!important;border:1px solid var(--line)!important;color-scheme:inherit}
+:root[data-theme="dark"] .history-record,:root[data-theme="dark"] .history-record button,:root[data-theme="dark"] .doctor-card{color:var(--ink);background:var(--paper);border-color:var(--line)}
+.history-record{background:var(--paper-soft);color:var(--ink)}
+.history-date-picker{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:16px 0}
+.history-date-picker label{font-size:.82rem;color:var(--ink);display:flex;flex-direction:column;gap:6px}
+.history-date-picker input{border-radius:10px;padding:12px;min-height:43px}
+.history-record .history-record-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.history-record .history-record-actions button{white-space:nowrap}
+.doctor-panel{grid-column:1/-1}
+.doctor-form{display:grid;grid-template-columns:1.3fr 1.2fr 1fr auto;gap:12px;align-items:end;margin:18px 0}
+.doctor-form label{display:flex;flex-direction:column;gap:7px;color:var(--ink);font-size:.78rem;font-weight:700}
+.doctor-form input,.doctor-form select{width:100%;border-radius:10px;padding:12px;min-height:45px}
+.doctor-list{display:grid;gap:11px}
+.doctor-card{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;background:var(--paper-soft);padding:17px;border:1px solid var(--line);border-radius:14px}
+.doctor-card strong,.doctor-card small{display:block}.doctor-card small{margin-top:5px;color:var(--muted)}
+.doctor-card-inactive{opacity:.65}
+.track-loading{display:flex;align-items:center;gap:18px;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:21px;padding:32px;min-height:160px;box-shadow:var(--shadow)}
+.track-loading[hidden]{display:none!important}
+.track-loading strong,.track-loading small{display:block}
+.track-loading small{color:var(--muted);margin-top:8px;line-height:1.6}
+.track-loading-spinner{width:44px;height:44px;border:4px solid var(--line);border-top-color:var(--teal);border-radius:50%;animation:ta-login-spin .85s linear infinite;flex:none}
+.track-visit{font-weight:650;font-size:.9rem;color:var(--muted);margin-top:7px;line-height:1.5}
+.receipt-visit{font-size:12px;color:#4c6482;font-weight:700;line-height:1.5;margin:8px 0}
+.board-clock #board-time{font-size:clamp(2.1rem,4.8vw,3.65rem);letter-spacing:.015em}
+.board-clock{min-width:225px}
+@media(max-width:800px){.doctor-form{grid-template-columns:1fr 1fr}.doctor-form button{grid-column:span 2}.board-clock{min-width:160px}}
+@media(max-width:550px){.doctor-form{grid-template-columns:1fr}.doctor-form button{grid-column:auto}}
+@media(prefers-reduced-motion:reduce){.track-loading-spinner{animation-duration:2s}}
+
+
+.history-detail-body{margin:18px 0 24px;display:grid;gap:0;border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.history-detail-row{display:flex;justify-content:space-between;gap:16px;padding:12px 15px;border-bottom:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:.9rem}
+.history-detail-row:nth-child(even){background:var(--paper-soft)}.history-detail-row:last-child{border-bottom:0}
+.history-detail-row span{color:var(--muted)}.history-detail-row strong{text-align:right;overflow-wrap:anywhere}

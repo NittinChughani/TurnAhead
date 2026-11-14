@@ -1,14 +1,12 @@
 import {configured,helpfulError} from './firebase.js';
 import {getHospital} from './org-store.js';
 import {observeQueues} from './store.js';
-import {dayKey,TIME_ZONE} from './queue-engine.js';
+import {dayKey,displayClock} from './queue-engine.js';
 const {esc}=window.turnahead,el=document.getElementById('board-grid');
 const hospitalId=new URLSearchParams(location.search).get('hospital');
 let displayedQueues=[],displayedDate=dayKey();
 function clock(){
-  document.getElementById('board-time').textContent=new Intl.DateTimeFormat('en-GB',{
-    timeZone:TIME_ZONE,hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false
-  }).format(new Date());
+  document.getElementById('board-time').textContent=displayClock(new Date());
 }
 clock();setInterval(()=>{clock();const today=dayKey();if(today!==displayedDate){displayedDate=today;renderBoard(displayedQueues);}},1000);
 function renderBoard(queues){

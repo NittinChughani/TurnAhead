@@ -15,23 +15,30 @@ export function prefixFor(index) {
   let n=index+1,result='';while(n>0){n--;result=String.fromCharCode(65+n%26)+result;n=Math.floor(n/26);}return result;
 }
 export function initialQueue(name='General OPD',prefix=departmentPrefix(name),today=dayKey(),now=Date.now()) {
-  return {name,prefix,dayKey:today,lastNumber:-1,waitingNumbers:[],active:null,served:0,avgMinutes:8,paused:false,createdAt:now,updatedAt:now};
+  return {name,prefix,dayKey:today,lastNumber:0,waitingNumbers:[],active:null,served:0,avgMinutes:8,paused:false,createdAt:now,updatedAt:now};
 }
 export function initialControl(){return {pending:[],activeId:null,activeSince:null};}
 export function normalizedQueue(queue,today=dayKey(),now=Date.now()){
   if(queue.dayKey===today)return {...queue};
-  return {...queue,prefix:departmentPrefix(queue.name),dayKey:today,lastNumber:-1,waitingNumbers:[],active:null,served:0,avgMinutes:8,paused:false,updatedAt:now};
+  return {...queue,prefix:departmentPrefix(queue.name),dayKey:today,lastNumber:0,waitingNumbers:[],active:null,served:0,avgMinutes:8,paused:false,updatedAt:now};
 }
-export function nextTicket(queue,ticketId,today=dayKey(),now=Date.now(),patientName=''){
+export function nextTicket(queue,ticketId,today=dayKey(),now=Date.now(),patientName='',details={}){
   const name=String(patientName||'').trim().replace(/\s+/g,' ');
   if(name.length<2||name.length>80)throw Error('Enter the patient name (2–80 characters).');
   const q=normalizedQueue(queue,today,now);
   if(q.paused)throw Error('This queue is paused. Resume it before issuing tickets.');
-  const number=q.lastNumber+1;
+  const patientGender=details.patientGender;
+  if(!['male','female'].includes(patientGender))throw Error('Choose the patient title (Mr or Ms).');
+  const roomNumber=String(details.roomNumber||'').trim();
+  if(!/^[A-Za-z0-9][A-Za-z0-9 .\-\/]{0,19}$/.test(roomNumber))throw Error('Enter a valid doctor room number (1–20 characters).');
+  const doctorId=String(details.doctorId||'');
+  const doctorName=String(details.doctorName||'').trim();
+  if(!/^[A-Za-z0-9]{20}$/.test(doctorId)||doctorName.length<2||doctorName.length>80)throw Error('Select a registered doctor.');
+  const number=Math.max(1,q.lastNumber+1);
   if(number>999999)throw Error('Daily ticket limit reached.');
   const code=`${q.prefix}-${String(number).padStart(3,'0')}`;
   return {queue:{...q,lastNumber:number,waitingNumbers:[...q.waitingNumbers,number],updatedAt:now},
-    ticket:{queueId:'',queueName:q.name,code,number,dayKey:today,patientName:name,status:'waiting',attendance:'pending',createdAt:now,calledAt:null,finishedAt:null}};
+    ticket:{queueId:'',queueName:q.name,code,number,dayKey:today,patientName:name,patientGender,doctorId,doctorName,roomNumber,status:'waiting',attendance:'pending',createdAt:now,calledAt:null,finishedAt:null}};
 }
 export function nextInLine(queue,control){
   if(queue.paused)throw Error('Resume this queue before calling the next visitor.');
@@ -64,3 +71,13 @@ export function approximateTurnTime(estimate,now=Date.now(),timezone=TIME_ZONE){
   return {minutes,clock};
 }
 export function publicQueue(id,queue){return {id,...queue,waiting:queue.waitingNumbers?.length||0};}
+/** Display a title without inferring anyone's gender from their name. */
+export function patientDisplayName(patient){
+  const name=String(patient?.patientName||'').trim();
+  if(!name)return 'Patient';
+  const title=patient?.patientGender==='male'?'Mr':patient?.patientGender==='female'?'Ms':'';
+  return title?`${title} ${name}`:name;
+}
+export function displayClock(date=new Date(),timezone=TIME_ZONE){
+  return new Intl.DateTimeFormat('en-US',{timeZone:timezone,hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true}).format(date);
+}
