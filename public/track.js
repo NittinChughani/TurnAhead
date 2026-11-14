@@ -1,14 +1,16 @@
 import {configured,helpfulError} from './firebase.js';
 import {getHospital} from './org-store.js';
 import {observeTicket,observeQueue} from './store.js';
-import {dayKey,waitingEstimate,effectiveTicketStatus,approximateTurnTime} from './queue-engine.js';
+import {dayKey,waitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName} from './queue-engine.js';
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
 const ticketId=params.get('ticket'),hospitalId=params.get('hospital');
 const legacy=!hospitalId;
-let facility='Your hospital',currentTicket=null,currentQueue=null,stopQueue=null,alerts=false,hadLoaded=false,lastStatus='',lastAhead=null;
+let facility='Your hospital',currentTicket=null,currentQueue=null,stopQueue=null,alerts=false,vibrationEnabled=false,hadLoaded=false,lastStatus='',lastAhead=null;
+const loader=$('track-loading');
+setTimeout(()=>{if(!loader.hidden)$('track-loading-note').textContent='Still connecting. Your queue will appear as soon as the live service responds.';},3200);
 const messages={waiting:'Your place updates as reception calls each patient.',called:"It's your turn. Please go to your service counter.",completed:'Your visit was marked completed. Thank you for coming.',skipped:'Reception marked this turn as missed. Please ask them for help.',syncing:'Checking the latest status with reception…',expired:'This ticket belongs to an earlier day. Please ask reception for a new one.'};
-function fail(message){$('track-error').textContent=message;$('track-error').hidden=false;$('track-content').hidden=true;}
+function fail(message){loader.hidden=true;$('track-error').textContent=message;$('track-error').hidden=false;$('track-content').hidden=true;}
 function update(){
   const t=currentTicket,q=currentQueue;
   if(!t)return;
@@ -18,10 +20,11 @@ function update(){
   const validWait=Boolean(waiting&&estimate);
   const shownStatus=waiting&&!validWait?'syncing':status;
   const ahead=validWait?estimate.peopleAhead:null;
-  $('track-error').hidden=true;$('track-content').hidden=false;
+  loader.hidden=true;$('track-error').hidden=true;$('track-content').hidden=false;
   $('track-code').textContent=t.code;
   $('track-queue').textContent=`${facility} · ${q?.name||t.queueName}`;
-  $('track-patient').textContent=t.patientName?`Ticket for ${t.patientName}`:'Patient name not recorded on this older ticket';
+  $('track-patient').textContent=t.patientName?`Ticket for ${patientDisplayName(t)}`:'Patient name not recorded on this older ticket';
+  $('track-visit').textContent=t.doctorName?`Visiting Dr. ${t.doctorName}${t.roomNumber?' · Room '+t.roomNumber:''}`:'Doctor / room details not recorded on this older ticket';
   $('track-state').textContent=shownStatus==='called'?'YOUR TURN':shownStatus==='syncing'?'UPDATING…':shownStatus.toUpperCase();
   $('track-state').style.color=shownStatus==='called'?'#095c46':'';
   $('ahead-label').textContent=validWait?'PEOPLE AHEAD OF YOU':'QUEUE STATUS';
@@ -34,7 +37,10 @@ function update(){
   const pct=validWait?Math.max(10,Math.min(92,Math.round(100/(ahead+1)))):shownStatus==='syncing'?65:100;
   $('track-progress-bar').style.width=`${pct}%`;
   $('progress-description').textContent=validWait?`${ahead===0?'You are next in line.':`${ahead} ${ahead===1?'person':'people'} ahead of you.`} Times can change; stay near reception.`:messages[shownStatus]||'';
-  if(hadLoaded&&alerts&&Notification.permission==='granted'){
+  if(hadLoaded&&lastStatus!=='called'&&shownStatus==='called'&&vibrationEnabled&&typeof navigator.vibrate==='function'&&document.visibilityState==='visible'){
+    navigator.vibrate([280,120,280,120,380]);
+  }
+  if(hadLoaded&&alerts&&'Notification' in window&&Notification.permission==='granted'){
     if(lastStatus!=='called'&&shownStatus==='called')notify('Your turn is ready',`${t.code} — please return to ${t.queueName}.`);
     else if(validWait&&ahead>0&&ahead<=2&&(lastAhead===null||lastAhead>2)&&!sessionStorage.getItem('ta-near-'+ticketId)){
       notify('Almost your turn',`${ahead} ahead of ${t.code}. Stay nearby.`);sessionStorage.setItem('ta-near-'+ticketId,'yes');
@@ -44,11 +50,12 @@ function update(){
 }
 function notify(title,body){new Notification('TurnAhead: '+title,{body,icon:'./assets/favicon.png'});}
 $('enable-alerts').addEventListener('click',async()=>{
-  if(!('Notification' in window)){$('alert-state').textContent='Browser notifications are not supported here.';return;}
-  if(!window.isSecureContext){$('alert-state').textContent='Notifications require HTTPS.';return;}
-  alerts=(await Notification.requestPermission())==='granted';
-  $('alert-state').textContent=alerts?'Alerts are enabled while this page stays open.':'Browser alerts were not enabled.';
-  $('enable-alerts').textContent=alerts?'Alerts enabled ✓':'Enable browser alerts ↗';
+  vibrationEnabled=typeof navigator.vibrate==='function';
+  // User tap enables vibration where supported; many browsers (especially iOS) ignore it.
+  if(vibrationEnabled)navigator.vibrate(40);
+  if('Notification' in window&&window.isSecureContext)alerts=(await Notification.requestPermission())==='granted';
+  $('alert-state').textContent=[alerts?'Browser alerts on':'Browser alerts unavailable',vibrationEnabled?'Vibration enabled on this device':'Vibration not supported on this device'].join(' · ')+'. Keep the page open for alerts.';
+  $('enable-alerts').textContent='Turn alerts configured ✓';
 });
 if(!configured)fail('This website is not connected to Firebase yet. Please contact reception.');
 else if(!ticketId||!/^[A-Za-z0-9]{20}$/.test(ticketId)||(hospitalId&&!/^[A-Za-z0-9]{20}$/.test(hospitalId)))

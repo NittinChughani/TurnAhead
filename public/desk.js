@@ -4,13 +4,16 @@ import {observeAuth, login, logout, requestVerification, refreshVerification,
 import {canManageStaff, canManageDepartments, boardLink, isStaffRole, staffGreeting} from './org-model.js';
 import {bootstrap, rollOverAll, observeQueues, observeTickets,
   issueTicket, createQueue, performAction} from './store.js';
-import {dayKey} from './queue-engine.js';
+import {dayKey,patientDisplayName} from './queue-engine.js';
+import {watchDoctors} from './doctors.js';
+import {doctorAvailable} from './doctor-model.js';
 
 const {esc,fmt}=window.turnahead, $=id=>document.getElementById(id);
 const views=['login-view','verify-view','no-access-view','dashboard'];
 // Old v2.1 invitation URLs continue through the dedicated activation screen.
 if(new URLSearchParams(location.search).has('invite')) location.replace('./activate.html'+location.search);
 let currentHospital=null,currentMember=null,memberships=[],queues=[],tickets=[],selectedQueue=null,currentTicket=null;
+let doctors=[],stopDoctors=null;
 let stopQueues=null,stopTickets=null,stopMember=null,authEpoch=0,toastTimer,noticeTimer;
 let pendingSignIn=false,pendingSignOut=false;
 const loginButton=$('login-form').querySelector('[type=submit]');
@@ -20,7 +23,8 @@ const show=(id,visible)=>$(id).hidden=!visible;
 function view(name){if(name!=='login-view')loadingLogin(false);views.forEach(v=>show(v,v===name));show('logout',Boolean(auth?.currentUser));show('workspace-switch',name==='dashboard'&&memberships.filter(m=>isStaffRole(m.role)).length>1);show('public-board-link',name==='dashboard');show('staff-greeting',name==='dashboard'&&Boolean(currentMember));show('admin-link',name==='dashboard'&&canManageStaff(currentMember?.role));window.scrollTo(0,0);}
 function toast(message,error=false){const el=$('toast');el.textContent=message;el.classList.toggle('error',error);show('toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('toast',false),4600);}
 function notice(message,error=false){const el=$('notice');el.textContent=message;el.classList.toggle('error',error);show('notice',true);clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>show('notice',false),6000);}
-function stopSubscriptions(){stopQueues?.();stopTickets?.();stopMember?.();stopQueues=stopTickets=stopMember=null;}
+function stopSubscriptions(){stopQueues?.();stopTickets?.();stopMember?.();stopDoctors?.();stopQueues=stopTickets=stopMember=stopDoctors=null;doctors=[];
+  if(!currentHospital){tickets=[];$('recent-tickets').replaceChildren();}}
 function refreshRole(){show('new-queue',canManageDepartments(currentMember?.role));show('admin-link',canManageStaff(currentMember?.role));$('role-chip').textContent=(currentMember?.role||'receptionist').toUpperCase();$('staff-greeting').textContent=currentMember?staffGreeting(currentMember):'';}
 function render(){
   if(!currentHospital)return;
@@ -58,6 +62,7 @@ async function openHospital(member){
   // Subscribe first: patients and reception see updates without waiting on daily maintenance.
   stopQueues=observeQueues(member.hospitalId,data=>{queues=data;render();},e=>notice(helpfulError(e),true));
   stopTickets=observeTickets(member.hospitalId,data=>{tickets=data;render();},e=>notice(helpfulError(e),true));
+  stopDoctors=watchDoctors(member.hospitalId,data=>{doctors=data;refreshDoctorChoices();},e=>notice(helpfulError(e),true));
   // Maintenance happens asynchronously and is idempotent.
   (async()=>{if(canManageDepartments(member.role))await bootstrap(member.hospitalId);await rollOverAll(member.hospitalId);})().catch(e=>notice(helpfulError(e),true));
 }
@@ -102,17 +107,26 @@ $('workspace-switch').addEventListener('change',e=>{
 $('logout').addEventListener('click',async()=>{
   pendingSignOut=true;try{stopSubscriptions();await logout();}catch(e){pendingSignOut=false;toast(helpfulError(e),true);}
 });
+function refreshDoctorChoices(){
+  const selector=$('patient-doctor'),current=selector.value;
+  const choices=doctors.filter(d=>doctorAvailable(d,selectedQueue));
+  selector.innerHTML='<option value="">Select the doctor</option>'+choices.map(d=>`<option value="${esc(d.id)}">${esc(d.name)}${d.roomNumber?' · Room '+esc(d.roomNumber):''}</option>`).join('');
+  if(choices.some(d=>d.id===current))selector.value=current;
+  $('doctor-help').textContent=choices.length?'Select the doctor the patient is visiting.':'No registered doctor in this department. Ask the hospital administrator to add one.';
+}
+$('patient-doctor').addEventListener('change',()=>{const d=doctors.find(x=>x.id===$('patient-doctor').value);if(d?.roomNumber)$('patient-room').value=d.roomNumber;});
 $('issue-ticket').addEventListener('click',()=>{
   if(!queues.some(x=>x.id===selectedQueue)||!currentHospital)return;
-  $('patient-name').value='';show('issue-modal',true);$('patient-name').focus();
+  $('patient-name').value='';$('patient-room').value='';$('patient-gender').value='';refreshDoctorChoices();show('issue-modal',true);$('patient-name').focus();
 });
 $('issue-form').addEventListener('submit',async e=>{
   e.preventDefault();const q=queues.find(x=>x.id===selectedQueue);if(!q||!currentHospital)return;
   const b=e.target.querySelector('[type=submit]');b.disabled=true;b.classList.add('is-loading');
   try{
-    currentTicket=await issueTicket(currentHospital.id,q.id,$('patient-name').value);
+    currentTicket=await issueTicket(currentHospital.id,q.id,$('patient-name').value,{patientGender:$('patient-gender').value,doctorId:$('patient-doctor').value,roomNumber:$('patient-room').value});
     $('receipt-facility').textContent=currentHospital.name;$('receipt-code').textContent=currentTicket.code;
-    $('receipt-patient').textContent=currentTicket.patientName;
+    $('receipt-patient').textContent=patientDisplayName(currentTicket);
+    $('receipt-visit').textContent=`Dr. ${currentTicket.doctorName} · Room ${currentTicket.roomNumber}`;
     $('receipt-queue').textContent=currentTicket.queue;
     $('receipt-qr').src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(window.turnaheadQR.svg(currentTicket.trackingUrl));
     $('receipt-link').textContent=currentTicket.trackingUrl;

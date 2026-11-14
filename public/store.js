@@ -6,6 +6,7 @@ import {db} from './firebase.js';
 import {dayKey,departmentPrefix,initialQueue,initialControl,normalizedQueue,
   nextTicket,nextInLine,publicQueue} from './queue-engine.js';
 import {ticketLink} from './org-model.js';
+import {cleanRoomNumber,doctorAvailable} from './doctor-model.js';
 
 const ref=(hid,group,id)=>doc(db,'hospitals',hid,group,id);
 const qDoc=(hid,id)=>ref(hid,'queues',id);
@@ -14,10 +15,12 @@ const ticketDoc=(hid,id)=>ref(hid,'tickets',id);
 const metaDoc=hid=>ref(hid,'meta','sequence');
 const prefixDoc=(hid,prefix)=>ref(hid,'prefixes',prefix);
 const dayDoc=(hid,day)=>ref(hid,'history',day);
+const doctorDoc=(hid,id)=>ref(hid,'doctors',id);
 const historyCollection=(hid,day,qid)=>collection(db,'hospitals',hid,'history',day,'departments',qid,'records');
 const historyDoc=(hid,day,qid,ticketId)=>doc(historyCollection(hid,day,qid),ticketId);
 const archiveTicket=(ticketId,t,now)=>({ticketId,queueId:t.queueId,queueName:t.queueName,
   code:t.code,number:t.number,dayKey:t.dayKey,patientName:t.patientName,
+  patientGender:t.patientGender,doctorId:t.doctorId,doctorName:t.doctorName,roomNumber:t.roomNumber,
   status:t.status,attendance:t.attendance,issuedAt:t.createdAt,calledAt:t.calledAt,
   finishedAt:t.finishedAt,updatedAt:now});
 
@@ -42,7 +45,7 @@ export async function rollOverQueue(hid,id){
       // An untouched legacy v2.2 queue can adopt its 3-letter code immediately.
       if(q.lastNumber===0&&!q.waitingNumbers?.length&&!q.active&&!q.served &&
         q.prefix!==departmentPrefix(q.name))
-        tx.update(qr,{prefix:departmentPrefix(q.name),lastNumber:-1,updatedAt:Date.now()});
+        tx.update(qr,{prefix:departmentPrefix(q.name),lastNumber:0,updatedAt:Date.now()});
       return;
     }
     tx.set(qr,normalizedQueue(q,today,Date.now()));
@@ -85,15 +88,19 @@ export async function createQueue(hid,name){
   });
   return {id,name,prefix};
 }
-export async function issueTicket(hid,id,patientName){
+export async function issueTicket(hid,id,patientName,details={}){
   const tr=doc(collection(db,'hospitals',hid,'tickets'));
   const now=Date.now(),today=dayKey();
   const ticket=await runTransaction(db,async tx=>{
     const qr=qDoc(hid,id),cr=controlDoc(hid,id),dr=dayDoc(hid,today);
-    const [qs,cs,ds]=await Promise.all([tx.get(qr),tx.get(cr),tx.get(dr)]);
+    if(!/^[A-Za-z0-9]{20}$/.test(details.doctorId||''))throw Error('Select a registered doctor.');
+    const [qs,cs,ds,doctorSnap]=await Promise.all([tx.get(qr),tx.get(cr),tx.get(dr),tx.get(doctorDoc(hid,details.doctorId))]);
+    if(!doctorSnap.exists()||!doctorAvailable(doctorSnap.data(),id))throw Error('Doctor is not available in the selected department. Refresh the doctor list.');
+    const doctor=doctorSnap.data();
+    const finalDetails={patientGender:details.patientGender,roomNumber:cleanRoomNumber(details.roomNumber,{required:true}),doctorId:details.doctorId,doctorName:doctor.name};
     if(!qs.exists()||!cs.exists())throw Error('Unknown department. Refresh reception.');
     const changed=qs.data().dayKey!==today;
-    const {queue,ticket}=nextTicket(qs.data(),tr.id,today,now,patientName);
+    const {queue,ticket}=nextTicket(qs.data(),tr.id,today,now,patientName,finalDetails);
     ticket.queueId=id;
     const c=changed?initialControl():cs.data();
     tx.set(qr,queue);tx.set(cr,{...c,pending:[...c.pending,{id:tr.id,number:ticket.number}]});
