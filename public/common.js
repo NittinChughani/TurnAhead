@@ -17,3 +17,22 @@ window.turnahead = {
   esc(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));},
   fmt(date){if(!date)return '—';return new Date(date).toLocaleTimeString('en-PK',{timeZone:'Asia/Karachi',hour:'2-digit',minute:'2-digit'});}
 };
+
+
+// Floating navigation is visible at the top, slides away once the visitor scrolls.
+// A focused keyboard control remains accessible even if the page is scrolled.
+(function enableFloatingNavigation(){
+  const header=document.querySelector('.site-header');
+  if(!header)return;
+  let pending=false;
+  const update=()=>{
+    pending=false;
+    header.classList.toggle('nav-scrolled-away',window.scrollY>Math.max(70,header.offsetHeight));
+  };
+  window.addEventListener('scroll',()=>{
+    if(!pending){pending=true;requestAnimationFrame(update);}
+  },{passive:true});
+  window.addEventListener('pageshow',update);
+  window.addEventListener('resize',update,{passive:true});
+  update();
+})();

@@ -1,6 +1,22 @@
-# TurnAhead v2.5 · Firebase rollout and regression checklist
+# TurnAhead v2.5.1 · Firebase record-audit update and rollout checklist
 
-**Production code is not live yet.** The v2.5 feature branch contains per-doctor queues, twelve shared reception counter identities, safer transaction handling, connection-recovery improvements, doctor breaks and a translucent navigation bar. The accompanying Firestore rules **must be tested and published before the PR is merged**.
+**v2.5 is already merged into the repository.** This v2.5.1 change set is a separate refinement: a floating rounded glass navigation, dark-mode Chromium README screenshots and **private issuing-receptionist + issuing-counter audit fields**. Do not merge the v2.5.1 PR until its matching `firestore.rules` has been tested and published.
+
+## v2.5.1 deployment steps
+
+1. Check that the current v2.5 hospital admin, staff, doctor lanes and ticket issuance are working, and make a recoverable Firestore backup.
+2. Test the new `firestore.rules` in the Firebase Rules Emulator or a nonproduction Firebase project. An authorized staff member must be able to issue a ticket and write a matching **private** record containing their own `issuedBy` UID and a valid `issuedCounter` (`Counter 1`–`Counter 12`). Attempting to claim another staff UID, alter an issuer after creation, or read another hospital's archive must fail. Test that staff members cannot list/read any archive.
+3. Publish the matching rules from this branch in the Firebase Console **before** merging the code. Both older and new archive formats are allowed during the short transition; issuer identity is enforced whenever the new fields are present.
+4. Merge the v2.5.1 PR and verify the GitHub Pages deployment. Issue a **fictional** ticket from Counter 2 and confirm Admin → Patient attendance archive → Details shows the issuing staff name and **Issuing counter: Counter 2**. Call it from Counter 3 and confirm the separate call counter is shown; older records should say **Not recorded**.
+5. Verify the floating navbar at the top, disappearance after scrolling, and return when scrolling back to the top on desktop and mobile. Check dark-mode screenshots in the README. Do not use real patient information until the security/privacy and operational tests have been completed.
+
+---
+
+## Historical v2.5 migration guidance
+
+The following migration section describes the previously merged v2.5 change from v2.4 and should not be repeated for this **v2.5.1** UI/record refinement.
+
+**The following older v2.5 notes were written before its merge.** That feature branch contained per-doctor queues, twelve shared reception counter identities, safer transaction handling, connection-recovery improvements, doctor breaks and a translucent navigation bar. The accompanying Firestore rules **must be tested and published before the PR is merged**.
 
 ## Critical migration requirement
 

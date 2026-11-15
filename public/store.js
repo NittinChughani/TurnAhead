@@ -21,7 +21,8 @@ const historyDoc=(hid,day,qid,ticketId)=>doc(historyCollection(hid,day,qid),tick
 const archiveTicket=(ticketId,t,now)=>({ticketId,queueId:t.queueId,queueName:t.queueName,
   code:t.code,number:t.number,dayKey:t.dayKey,patientName:t.patientName,
   patientGender:t.patientGender,doctorId:t.doctorId,doctorName:t.doctorName,roomNumber:t.roomNumber,
-  status:t.status,attendance:t.attendance,calledCounter:t.calledCounter||'',calledBy:'',finishedBy:'',issuedAt:t.createdAt,calledAt:t.calledAt,
+  status:t.status,attendance:t.attendance,issuedBy:t.issuedBy||'',issuedCounter:t.issuedCounter||'',
+  calledCounter:t.calledCounter||'',calledBy:'',finishedBy:'',issuedAt:t.createdAt,calledAt:t.calledAt,
   finishedAt:t.finishedAt,updatedAt:now});
 
 export async function bootstrap(hid){
@@ -97,6 +98,10 @@ export async function createQueue(hid,name){
   return {id,name,prefix};
 }
 export async function issueTicket(hid,id,patientName,details={}){
+  // The issuer's Firebase UID is stored only in the owner-readable archive, never in the public QR ticket.
+  const issuedBy=auth.currentUser?.uid;
+  if(!issuedBy)throw Error('Sign in as authorized reception staff to issue a ticket.');
+  const issuedCounter=counterLabel(details.counterNumber);
   const tr=doc(collection(db,'hospitals',hid,'tickets'));
   const now=Date.now(),today=dayKey();
   const ticket=await runTransaction(db,async tx=>{
@@ -116,7 +121,8 @@ export async function issueTicket(hid,id,patientName,details={}){
     tx.set(qr,queue);tx.set(cr,{...c,lanes});
     tx.set(tr,ticket);
     if(!ds.exists())tx.set(dr,{dayKey:today,createdAt:now});
-    tx.set(historyDoc(hid,today,id,tr.id),archiveTicket(tr.id,ticket,now));
+    // Retain who issued the ticket and the issuing counter in private history only.
+    tx.set(historyDoc(hid,today,id,tr.id),{...archiveTicket(tr.id,ticket,now),issuedBy,issuedCounter});
     return ticket;
   });
   return {...ticket,id:tr.id,queue:ticket.queueName,trackingUrl:ticketLink(hid,tr.id,window.location.href)};

@@ -103,7 +103,9 @@ service cloud.firestore {
       );
     }
     function validHistoryRecord(data,hid,day,qid,ticketId) {
-      return data.keys().hasOnly(['ticketId','queueId','queueName','code','number','dayKey','patientName','status','attendance','issuedAt','calledAt','finishedAt','updatedAt','patientGender','doctorId','doctorName','roomNumber','calledCounter','calledBy','finishedBy']) &&
+      return data.keys().hasOnly(['ticketId','queueId','queueName','code','number','dayKey','patientName','status','attendance','issuedAt','calledAt','finishedAt','updatedAt','patientGender','doctorId','doctorName','roomNumber','calledCounter','calledBy','finishedBy','issuedBy','issuedCounter']) &&
+        data.get('issuedBy','') is string &&
+        (!('issuedCounter' in data) || (data.issuedCounter is string && data.issuedCounter.matches('^Counter (?:[1-9]|1[0-2])$'))) &&
         data.get('calledBy','') is string && data.get('finishedBy','') is string &&
         (!('calledCounter' in data) || (data.calledCounter is string && (data.calledCounter == '' || data.calledCounter.matches('^Counter (?:[1-9]|1[0-2])$')))) &&
         data.ticketId == ticketId && data.queueId == qid && data.dayKey == day &&
@@ -209,6 +211,10 @@ service cloud.firestore {
         match /departments/{qid}/records/{ticketId} {
           allow get, list: if owner(hid);
           allow create: if isMember(hid) && validHistoryRecord(request.resource.data,hid,date,qid,ticketId) &&
+            // The issuer UID is verified by rules. Both fields are optional only for pre-upgrade clients.
+            (('issuedBy' in request.resource.data && 'issuedCounter' in request.resource.data &&
+                request.resource.data.issuedBy == request.auth.uid) ||
+             (!('issuedBy' in request.resource.data) && !('issuedCounter' in request.resource.data))) &&
             getAfter(ticketPath(hid,ticketId)).data.patientName == request.resource.data.patientName &&
             getAfter(ticketPath(hid,ticketId)).data.code == request.resource.data.code;
           allow update: if isMember(hid) &&

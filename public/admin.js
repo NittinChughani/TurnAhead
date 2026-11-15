@@ -28,10 +28,16 @@ function displayMetrics(){
   $('department-count').textContent=departments.length;
   $('invite-count').textContent=invites.filter(x=>x.status==='pending'&&x.expiresAt?.toMillis()>Date.now()).length;
 }
+function issuingReceptionist(t){
+  if(!t.issuedBy)return 'Not recorded on older tickets';
+  const member=members.find(m=>m.uid===t.issuedBy);
+  return member?staffGreeting(member):`Former staff account (${t.issuedBy})`;
+}
+function issuingCounter(t){return t.issuedCounter||'Not recorded on older tickets';}
 function renderTickets(){
   const current=tickets.filter(t=>t.dayKey===dayKey());
   $('patient-ticket-count').textContent=`Latest ${current.length} today · live`;
-  $('patient-ticket-list').innerHTML=current.length?current.map(t=>`<div class="admin-person"><span class="activity-token">${esc(t.code)}</span><div class="person-info"><strong>${esc(patientDisplayName(t))} · ${esc(t.queueName||'Department')}</strong><small>${esc(t.doctorName?'Dr. '+t.doctorName:'Doctor not recorded')} · ${esc(t.roomNumber?'Room '+t.roomNumber:'Room not recorded')} · Issued ${esc(fmt(t.createdAt))} · Called ${esc(fmt(t.calledAt))} · ${t.attendance==='present'?'Attended':t.attendance==='missed'?'Missed':'Pending'}</small></div><span class="activity-state">${esc(t.status)}</span></div>`).join(''):'<div class="empty-state">No anonymous queue tickets in the recent sample today.</div>';
+  $('patient-ticket-list').innerHTML=current.length?current.map(t=>`<div class="admin-person"><span class="activity-token">${esc(t.code)}</span><div class="person-info"><strong>${esc(patientDisplayName(t))} · ${esc(t.queueName||'Department')}</strong><small>${esc(t.doctorName?'Dr. '+t.doctorName:'Doctor not recorded')} · ${esc(t.roomNumber?'Room '+t.roomNumber:'Room not recorded')} · Issued ${esc(fmt(t.createdAt))} by ${esc(issuingReceptionist(t))} · ${esc(issuingCounter(t))} · Called ${esc(fmt(t.calledAt))} · ${t.attendance==='present'?'Attended':t.attendance==='missed'?'Missed':'Pending'}</small></div><span class="activity-state">${esc(t.status)}</span></div>`).join(''):'<div class="empty-state">No anonymous queue tickets in the recent sample today.</div>';
 }
 function renderMembers(){
   $('staff-list').innerHTML=members.length?members.map(m=>{
@@ -126,7 +132,7 @@ $('history-days').addEventListener('click',e=>{
  const b=e.target.closest('[data-record-key]');if(!b)return;
  const t=historyRecords.get(b.dataset.recordKey);if(!t)return;
  $('history-detail-title').textContent=`Details of ${patientDisplayName(t)}`;
- const rows=[['Ticket number',t.code],['Patient',patientDisplayName(t)],['Doctor',t.doctorName?'Dr. '+t.doctorName:'Not recorded'],['Room',t.roomNumber||'Not recorded'],['Department',t.queueName||'—'],['Date',t.dayKey],['Issued',fmt(t.issuedAt)],['Called',fmt(t.calledAt)],['Finished',fmt(t.finishedAt)],['Attendance',t.attendance==='present'?'Attended':t.attendance==='missed'?'Missed':'Not confirmed'],['Status',t.status]];
+ const rows=[['Ticket number',t.code],['Patient',patientDisplayName(t)],['Doctor',t.doctorName?'Dr. '+t.doctorName:'Not recorded'],['Room',t.roomNumber||'Not recorded'],['Department',t.queueName||'—'],['Date',t.dayKey],['Issued',fmt(t.issuedAt)],['Issued by receptionist',issuingReceptionist(t)],['Issuing counter',issuingCounter(t)],['Called',fmt(t.calledAt)],['Called from counter',t.calledCounter||'Not recorded'],['Called by staff',t.calledBy?issuingReceptionist({issuedBy:t.calledBy}):'Not recorded'],['Finished',fmt(t.finishedAt)],['Finished by staff',t.finishedBy?issuingReceptionist({issuedBy:t.finishedBy}):'Not recorded'],['Attendance',t.attendance==='present'?'Attended':t.attendance==='missed'?'Missed':'Not confirmed'],['Status',t.status]];
  $('history-detail-body').innerHTML=rows.map(([k,v])=>`<div class="history-detail-row"><span>${esc(k)}</span><strong>${esc(v||'—')}</strong></div>`).join('');
  show('history-detail-modal',true);
 });
@@ -208,7 +214,7 @@ async function initialize(){
     $('open-reception').href=boardLink(hospital.id,location.href);
     if(pendingLogin){toast('Administrator logged in successfully.');pendingLogin=false;}
     // Start all four streams at once for a responsive admin dashboard.
-    unsubs.push(watchHospitalMembers(hospital.id,data=>{members=data;renderMembers();displayMetrics();},e=>toast(helpfulError(e),true)));
+    unsubs.push(watchHospitalMembers(hospital.id,data=>{members=data;renderMembers();renderTickets();displayMetrics();},e=>toast(helpfulError(e),true)));
     unsubs.push(watchInvitations(hospital.id,data=>{invites=data;renderInvites();displayMetrics();},e=>toast(helpfulError(e),true)));
     unsubs.push(watchDoctors(hospital.id,data=>{doctors=data;renderDoctors();},e=>toast(helpfulError(e),true)));
     unsubs.push(observeQueues(hospital.id,data=>{departments=data;renderDepartments();renderDoctors();displayMetrics();if(historyDays.length&&!$('history-days').querySelector('[data-history-dept]'))renderHistory();},e=>toast(helpfulError(e),true)));

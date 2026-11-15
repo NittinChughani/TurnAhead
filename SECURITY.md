@@ -1,4 +1,4 @@
-# TurnAhead v2.5 · Security and patient-data privacy
+# TurnAhead v2.5.1 · Security and patient-data privacy
 
 TurnAhead is a **queue-management pilot**, not an electronic health record, medical identity-verification tool, or certified hospital platform. Public use with real patient names requires a privacy/security review and a lawful organizational basis for data collection.
 
@@ -6,6 +6,8 @@ TurnAhead is a **queue-management pilot**, not an electronic health record, medi
 
 - **Doctor-specific queues:** the department `queues` document contains public anonymous per-doctor waiting-number and currently-serving maps; the paired `controls` document contains private per-doctor ticket IDs and counters. Neither document should contain patient names, telephone numbers, medical data or reception staff UIDs.
 - **Concurrent reception:** every call, completion and skip is made through a Firestore transaction that updates queue/control/ticket/dated record together; a counter can operate only one active ticket within a department. Counter labels can be selected by any authorized receptionist, so they are not identity credentials; record the staff UID separately in the owner-only archive.
+- **Ticket issuance audit (v2.5.1):** the private dated archive now saves `issuedBy` (the issuing authenticated staff UID) and `issuedCounter` (the counter the receptionist selected when issuing). Only the owner can browse the archive. A QR ticket intentionally does **not** expose staff identities. Security rules verify any supplied `issuedBy` matches the authenticated creator, enforce the counter-label format and prohibit later edits. Historical pre-upgrade records may lack the new fields.
+- **Counter limitation:** `Counter N` is a staff-selected operational label, **not independently verified evidence** of the physical desk. A receptionist may select another counter; staff audit uses Firebase identity.
 - **Persistent call history:** public bearer-ticket responses include called time and counter. Staff identity remains restricted to private archives, but **anyone holding the QR link sees the patient's name, doctor, room, visit status and call time**.
 - **Browser resume:** explicit server refreshes reduce stale status on Safari, but iPhone vibration and background-delivery are not guaranteed. The UI must show the final ticket state and original call time after reconnection.
 - **Migration:** do not merge before rules are tested and current v2.4 queues have been cleared. No automatic transfer of in-progress v2.4 waiting tickets into per-doctor queues exists.
