@@ -75,7 +75,7 @@ test('final ticket status beats stale queue snapshots; mismatches never claim YO
  const calledQueue={...q,waitingNumbers:[],active:{code:t.code,number:1}};
  assert.equal(effectiveTicketStatus(t,calledQueue,'2026-11-13'),'syncing');
  assert.equal(effectiveTicketStatus({...t,status:'called'},calledQueue,'2026-11-13'),'called');
- assert.equal(effectiveTicketStatus({...t,status:'called'},{...calledQueue,active:null},'2026-11-13'),'syncing');
+ assert.equal(effectiveTicketStatus({...t,status:'called'},{...calledQueue,active:null},'2026-11-13'),'called');
  assert.equal(effectiveTicketStatus({...t,status:'completed'},calledQueue,'2026-11-13'),'completed');
  assert.equal(effectiveTicketStatus({...t,status:'skipped'},calledQueue,'2026-11-13'),'skipped');
  assert.equal(effectiveTicketStatus({...t,status:'completed'},calledQueue,'2026-11-14'),'completed');

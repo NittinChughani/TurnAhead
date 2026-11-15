@@ -1,27 +1,22 @@
 <div align="center">
 
-<img src="docs/assets/readme-hero.webp" alt="TurnAhead — a calmer, smarter way to wait" width="100%" />
+<img src="docs/assets/readme-hero.webp" alt="TurnAhead — live walk-in queue management" width="100%" />
 
-<br />
+# TurnAhead
 
-### Know when it's your turn. Make every turn count.
+### Your turn. Without the wait.
 
-**The modern queue experience for hospitals and clinics.**  
-*Real-time patient tracking. Reception that stays in sync. One clear administrator command center.*
+**A smarter walk-in queue for hospitals and clinics.** A printed QR ticket, a clear place in line, and live updates from reception. No patient account or app installation.
 
-<br />
+[![Version](https://img.shields.io/badge/Preview-v2.5-0D8478?style=for-the-badge)](docs/SETUP-GITHUB-PAGES-FIREBASE.md)
+[![Tests](https://img.shields.io/badge/Tests-57%20passing-182D4C?style=for-the-badge)](test/)
+[![Firebase](https://img.shields.io/badge/Realtime-Firestore-182D4C?style=for-the-badge&logo=firebase&logoColor=FFCA28)](https://firebase.google.com/)
+[![GitHub Pages](https://img.shields.io/badge/Hosting-GitHub%20Pages-182D4C?style=for-the-badge&logo=githubpages&logoColor=54E0BB)](https://pages.github.com/)
+[![MIT](https://img.shields.io/badge/License-MIT-182D4C?style=for-the-badge)](LICENSE)
 
-[![Release](https://img.shields.io/badge/Release-v2.4-0D8478?style=for-the-badge)](docs/SETUP-GITHUB-PAGES-FIREBASE.md)
-[![Realtime](https://img.shields.io/badge/Realtime-Firebase-182D4C?style=for-the-badge&logo=firebase&logoColor=FFCA28)](https://firebase.google.com/)
-[![Hosting](https://img.shields.io/badge/Hosting-GitHub_Pages-182D4C?style=for-the-badge&logo=githubpages&logoColor=54E0BB)](https://pages.github.com/)
-[![Frontend](https://img.shields.io/badge/Frontend-Vanilla_JS-182D4C?style=for-the-badge&logo=javascript&logoColor=F7DF1E)](public/)
-[![License](https://img.shields.io/badge/License-MIT-182D4C?style=for-the-badge)](LICENSE)
+[**View website ↗**](https://nittinchughani.github.io/TurnAhead/) · [**How it works**](#01--the-walk-in-experience) · [**What's new in v2.5**](#02--reception-built-for-real-teams) · [**Deploy safely**](docs/SETUP-GITHUB-PAGES-FIREBASE.md) · [**Security**](SECURITY.md)
 
-<br />
-
-[**Visit TurnAhead ↗**](https://nittinchughani.github.io/TurnAhead/) · [**What's new**](#introducing-turnahead-v24) · [**How it works**](#three-perspectives-one-live-queue) · [**Deployment**](docs/SETUP-GITHUB-PAGES-FIREBASE.md) · [**Security**](SECURITY.md)
-
-<sub>v2.4 is prepared for a coordinated Firestore-rules upgrade. The live v2.3 website stays untouched until this release is reviewed, its rules are tested, and the pull request is merged.</sub>
+<sub>**Release note:** v2.5 code is prepared on a review branch. The public website remains at v2.4 until the matching Firebase rules are tested/published and this release is merged.</sub>
 
 </div>
 
@@ -29,233 +24,141 @@
 
 ## An easier wait for everyone
 
-A paper ticket should not leave a patient guessing. TurnAhead creates a department-specific QR ticket at reception. The patient scans it to see **their name, doctor and room, current ticket status, number of people ahead, and an approximate clock time** for their turn—without installing an app or creating an account.
-
-Reception uses a live dashboard to call, complete, or skip a patient. An administrator oversees staff, departments, and **private, dated attendance records**. The public waiting-room board shows current queue numbers and a larger, easy-to-read 12-hour clock; it **never publishes patient names**.
+Patients should be able to spend their waiting time somewhere comfortable without constantly looking at the display. Reception issues a **department-coded QR ticket**; patients scan to follow their turn. An administrator manages the authorized team, departments, doctors and private dated records. **TurnAhead is for walk-in queues, not online appointment booking.**
 
 <div align="center">
-<img src="docs/assets/flow.svg" alt="Reception creates a QR ticket, the patient scans it and queue status updates across devices" width="95%" />
+<img src="docs/assets/flow.svg" width="95%" alt="Walk-in reception issues QR, patient tracks the queue, reception calls a ticket" />
 </div>
 
-## Introducing TurnAhead v2.4 · Doctors, visits & clarity
+### See the experience, not just the feature list
 
-<table>
-<tr><td width="50%" valign="top">
+> **About the images:** The previews below are rendered from TurnAhead's actual HTML and CSS using **fictional demonstration tickets and hospital names**. They are interface illustrations, **not live patient data or proof of a successful Firebase deployment**. Browser rendering may differ slightly.
 
-### 01 · Accurate real-time status
+## 01 · The walk-in experience
 
-- Patient status comes from the **individual ticket record**.
-- **Called** means the ticket is being served; **Completed** means the visit was marked attended; **Skipped** means missed.
-- When separate Firestore snapshots arrive briefly out of order, the screen shows **Updating…** instead of falsely showing **YOUR TURN**.
-- A completed or skipped ticket remains final even if the department starts another ticket.
+<div align="center"><img src="docs/assets/preview-patient.webp" width="96%" alt="TurnAhead patient QR tracking interface preview with patient name, doctor, waiting estimate, sync status and now-serving ticket" /></div>
 
-</td><td width="50%" valign="top">
+1. **Receive a QR ticket.** Reception enters the patient's name/title, department, selected doctor and room. Ticket numbers look like `PHY-001`, `PHY-002` and reset at midnight Pakistan time.
+2. **Scan and follow.** The private page displays patient/doctor/room details, doctor-specific queue position, approximate turn time and a connection-status indicator.
+3. **Get called.** An individual ticket's `calledAt` and counter are preserved. The patient sees **YOUR TURN** when the live event arrives—or, after Safari wakes from suspension, the recorded call time and final outcome. **No background-delivery guarantee.**
 
-### 02 · Named QR tickets
+**New in v2.5:** the ticket record is the source of truth; the QR page listens for Firestore cache/server metadata, refreshes from the server when reopened and periodically while visible, and reports offline/reconnecting status. This reduces stale statuses without claiming that iOS can always display every intermediate event instantly.
 
-- Reception selects a **patient’s name, Mr/Ms title, registered doctor and room number** before generating a QR ticket.
-- The printed receipt and patient’s private QR page both show **patient title/name, doctor name and room number**.
-- The QR page includes **approximate arrival time** (for example, *around 5:30 PM*), along with the estimated wait range.
-- Ticket links should be treated as confidential: **anyone holding the QR URL can see that ticket's name and status**.
+## 02 · Reception built for real teams
 
-</td></tr><tr><td valign="top">
+<div align="center"><img src="docs/assets/preview-reception.webp" width="96%" alt="TurnAhead reception dashboard preview featuring multiple reception counters and independent doctor-specific queues" /></div>
 
-### 03 · Department numbering
+1. **Choose the physical counter** (`Counter 1`–`Counter 12`) and the service department.
+2. **Select a doctor.** Each doctor has their **own first-in, first-out line**, while the department retains one daily ticket numbering sequence.
+3. **Call, complete, skip or pause.** Actions use a single Firestore transaction to update the doctor lane, private control record, individual ticket and dated attendance archive. Two counters cannot both claim the same waiting ticket. A counter cannot call another patient within the same department until its current ticket finishes.
 
-- The first three letters of the department form the visible ticket prefix.
-- **Cardiology → CAR-001, CAR-002, … CAR-999, CAR-1000**, with no rollover at 999.
-- Each department has its own daily sequence.
-- At **12:00 AM Pakistan Standard Time**, the next issued ticket starts again at **001**. Existing active queues are reset on first activity after midnight.
-- Department names that would collide on the same prefix are rejected.
+Doctor breaks pause **new issuance and calls for that doctor**, not other doctors. Staff may still complete an active ticket during the break. A department-wide pause/resume control remains available. Finishing a ticket requires selecting the **counter that called it**, which also permits staff handover at that counter.
 
-</td><td valign="top">
+**Deployment note:** v2.5 introduces doctor lanes inside department queue/control documents. **Finish all v2.4 queues before migration**, ideally outside reception hours. Existing tickets and records are not deleted or renumbered.
 
-### 04 · Private date-wise history
+## 03 · The public waiting-room board
 
-- Patient records are stored **as soon as tickets are issued** and updated transactionally when reception calls, completes, or skips them—**not dependent on a midnight browser timer**.
-- The administrator gets an **explicit calendar-date picker**, day-by-day/department-specific archive and ticket-code search.
-- Search results show a **Details** action that opens a private popup with the patient’s title/name, ticket number, **doctor, room**, department, issued/called/finished times and attendance (**Attended / Missed / Pending**).
-- Archives are administrator-only and are paginated for larger dates.
+<div align="center"><img src="docs/assets/preview-public-board.webp" width="96%" alt="TurnAhead anonymous public board preview showing multiple simultaneous now-serving tickets and their reception counters" /></div>
 
-</td></tr><tr><td valign="top">
+1. Display the board on a waiting-room screen using the hospital-specific URL.
+2. Visitors see anonymous **now-serving ticket codes**, assigned counters, waiting totals and the large **12-hour clock** with AM/PM and seconds.
+3. Doctor lanes can serve in parallel; the board never exposes patient names or medical details.
 
-### 05 · More personal staff access
+The board complements human announcements. It should not be treated as the sole way to notify someone of their turn.
 
-- Hospital owners invite staff with **name, approved email, gender/title, and role**.
-- The reception dashboard greets staff as **Mr Name** or **Ms Name**, according to the selected value.
-- **Update details** lets the administrator correct staff names, titles, and roles, or send a secure Firebase password-reset email.
-- Existing invitation-only registration, verified email, and revocation controls remain.
+## 04 · Doctor directory & department setup
 
-</td><td valign="top">
+<div align="center"><img src="docs/assets/preview-doctors.webp" width="96%" alt="Example administrator doctor directory showing doctor name, department and assigned room" /></div>
 
-### 06 · Clearer loading & accessible live views
+1. The designated hospital owner registers doctors in their departments, with optional default rooms.
+2. Reception can select **active doctors from the chosen department** when issuing a ticket.
+3. An owner may update doctor names/rooms or deactivate/reactivate entries. **Department assignments stay fixed** once a doctor is registered, protecting active queues and historical records; moving a doctor requires a new entry in the new department.
 
-- A visible **theme-matched queue loading indicator** appears immediately under “You’re in the loop” until the first real ticket and queue snapshots arrive.
-- Login remains responsive, with a progress spinner and no artificial delay. **Waiting → Called** can trigger optional device vibration and browser notification after tapping **Enable turn alerts**, where supported.
-- Firebase performance varies by network: the spinner remains until live data actually arrives; **2–3 seconds cannot be guaranteed**. Mobile browsers (notably iOS) may not support vibration.
-- The public board shows a **large 12-hour clock with seconds and AM/PM** in Pakistan Standard Time.
+## 05 · Private records and accountability
 
-</td></tr>
-</table>
+<div align="center"><img src="docs/assets/preview-records.webp" width="96%" alt="Example owner-only date and department archive with ticket search and per-patient Details buttons" /></div>
 
-## Three perspectives. One live queue.
+1. The designated administrator chooses a **date** and **department**, then optionally searches by a ticket code.
+2. Click **Details** to see the ticket's name/title, doctor, room, timestamps and attendance outcome.
+3. Reception call/completion actions update the archive atomically; new private fields record which **authorized staff UID** called or finished the ticket, without exposing those staff UIDs on the public QR link.
 
-| Experience | Page | What it does |
+Staff can create/update archived records as part of ticket transactions but **cannot browse the private archive**. Statuses are reception-entered operational events, not proof of actual medical attendance.
+
+## 06 · A quieter, more polished interface
+
+- **Glassmorphism navigation:** translucent, blurred and lightly reflective header with dark-theme contrast, a solid-color fallback, and reduced-transparency support.
+- **Immediate loading feedback:** no artificial authentication delay, and a visible animated queue loader while connecting.
+- **One staff login:** the homepage navigation avoids duplicate Staff Login entries.
+- **English UI, light/dark themes, mobile layouts:** patient tracking works without login or app installation.
+- **Vibration where supported:** optional in-page vibration on compatible devices. **WebKit/iPhone Safari does not provide reliable Web Vibration API support**; iOS background push alerts are not included.
+
+## Product perspectives
+
+| Person | Page | Allowed to do |
 |:--|:--|:--|
-| **Hospital administrator** | [`admin.html`](public/admin.html) | One owner, staff access, **doctor directory CRUD/soft removal**, departments, live metrics, dated patient search and details |
-| **Reception staff** | [`desk.html`](public/desk.html) | Approved staff issue **named + titled tickets with doctor and room**, call next, complete, skip, pause and resume |
-| **Staff activation** | [`activate.html`](public/activate.html) | Verified-email, invitation-only onboarding; staff set their own passwords |
-| **Patient QR status** | [`track.html`](public/track.html) | Patient name/title, **doctor, room**, status, themed loading indicator, optional vibration and estimated clock time |
-| **Public waiting-room board** | [`board.html`](public/board.html) | Anonymous now-serving codes, waiting counts and **large 12-hour AM/PM clock** |
+| **Hospital owner** | [`admin.html`](public/admin.html) | Authorize staff; manage doctors and departments; view private date-wise patient history |
+| **Approved staff** | [`desk.html`](public/desk.html) | Issue named tickets, select counters, serve doctor lanes, pause/resume and complete/skip |
+| **Patient** | [`track.html`](public/track.html) | Open their **private bearer QR link** to view name, doctor, room, live status and call time |
+| **Waiting-room visitors** | [`board.html`](public/board.html) | View anonymous tokens, counters, waiting numbers and clock |
 
-### Example: one department, one day
-
-```text
-Cardiology                    14 November 2026 · PKT
-────────────────────────────────────────────────────────────────
-CAR-001   Ms Lucky    Dr. Ayesha Shah   B-204   09:10   Attended
-CAR-002   Mr Hamza    Dr. Ayesha Shah   B-205   09:14   Missed
-CAR-003   Ms Sara     Dr. Sara Ali      B-208   09:20   Waiting
-...
-CAR-999   ...
-CAR-1000  ...
-────────────────────────────────────────────────────────────────
-Next day: CAR-001 again (different dated archive)
-```
-
-<sub>All examples are fictional. Never publish real patient names, room assignments or QR links in a repository.</sub>
-
-### Doctors and patient visit snapshots
-
-Hospital administrators manage a department-specific **doctor directory**: add, edit, deactivate/reactivate and provide an optional default room. Deactivation is a **soft removal** so previously issued tickets and archives keep their historical doctor names. Reception must select an active doctor from the selected department and confirm the room; the resulting patient ticket stores a **snapshot** of the doctor name and room at issuance. Renaming a doctor later does **not** silently rewrite old patient records.
-
-The tracking page starts with a clear loading animation while Firebase connects. Where supported, patients may enable vibration and browser alerts on the QR page. **A phone vibration is not guaranteed**—browsers may require a tap, an active page, a secure connection and compatible hardware, and iOS web browsers commonly lack Web Vibration API support.
-
-### Administrator-controlled staff accounts
-
-An administrator invites an **exact email address**, enters the employee's name and selects **Male / Female** for the displayed honorific. The employee receives a **manually shared activation link**, signs up (or signs in) through that dedicated page, verifies their email and joins the hospital. The staff login itself never offers public registration.
-
-For existing members, **Update details** changes the display name, title or role. A forgotten password is handled by a Firebase password-reset email, **not by revealing or setting passwords in the admin interface**. Changing a staff email means revoking the old membership and inviting the corrected address; Firebase Auth email is not silently modified.
-
-### Permissions
-
-| Capability | Designated owner | Supervisor | Receptionist | Public/QR holder |
-|:--|:--:|:--:|:--:|:--:|
-| Manage invitations and staff profiles | ✓ | — | — | — |
-| Add/update/deactivate doctors | ✓ | — | — | — |
-| View doctor directory and issue a doctor-linked ticket | ✓ | ✓ | ✓ | — |
-| View private attendance history | ✓ | — | — | — |
-| Create departments | ✓ | ✓ | — | — |
-| Run reception queues and issue tickets | — | ✓ | ✓ | — |
-| View anonymous board | ✓ | ✓ | ✓ | ✓ |
-| View a named ticket by **its QR link** | ✓ | ✓ | ✓ | ✓ |
-
-## Architecture
+## Architecture & access boundaries
 
 ```mermaid
 flowchart LR
-  A[One hospital administrator] --> AP[Admin portal]
-  S[Invited and verified staff] --> D[Reception dashboard]
-  AP --> F[(Firebase Auth and Firestore)]
-  AP --> DOC[Department doctor directory]
-  DOC --> F
-  D <--> F
-  D --> QR[Unique patient QR]
-  QR --> P[Patient browser]
-  F --> P
-  F --> B[Anonymous public board]
-  F --> H[Hospital-private day and department archives]
-  AP --> H
+  OWNER[One hospital owner] --> ADMIN[Private admin]
+  STAFF[Approved verified staff] --> DESK[Reception counters]
+  ADMIN --> FB[(Firebase Auth & Firestore)]
+  DESK --> TX[Atomic doctor-lane transactions]
+  TX --> FB
+  DESK --> QR[Patient QR ticket]
+  QR --> TRACK[Patient status page]
+  FB --> TRACK
+  FB --> BOARD[Anonymous public board]
+  FB --> ARCHIVE[Owner-only dated history]
+  ADMIN --> ARCHIVE
 ```
 
-- **Static frontend:** HTML, custom CSS and vanilla JavaScript on GitHub Pages.
-- **Identity:** Firebase Email/Password Auth and verified, hospital-scoped memberships.
-- **Queue consistency:** Firestore transactions update queue, ticket and dated archive together.
-- **Live delivery:** Snapshot listeners (not manual refreshes) on individual ticket and queue documents.
-- **Isolation:** Firestore Security Rules enforce hospital ownership, authorization, and owner-only history access.
-- **QR generation:** Runs locally in the browser, with no external QR processing service.
-- **Design:** Original TurnAhead branding, light/dark themes, responsive layouts, polished admin and reception experiences.
+**Technology:** static HTML/CSS/vanilla JavaScript hosted on GitHub Pages, Firebase Authentication, Cloud Firestore and local SVG QR generation. Patient pages read their ticket via an unpredictable ID in the private URL; **sharing the link shares the patient name, doctor, room and status**. Do not enter diagnoses, prescriptions, ID numbers or other clinical data.
 
-### Privacy matters more now
+**Performance and security limitations:** browser suspensions, networking and Firebase outages can delay alerts. Visible-page rechecks consume Firestore reads; high-volume concurrency needs load testing. Firestore rules are not yet emulator-validated, backup/retention tooling is not implemented, and a legal/privacy assessment is essential before processing real patient information.
 
-Version 2.4 extends already-named tickets with **patient title/gender, doctor name and room number**, all present in the private archive and visible to QR holders. **QR URLs are bearer links:** people who receive or photograph the link can see the name, doctor, room and status tied to that ticket. The public board shows **codes only**, not names. No clinical diagnoses, national IDs, prescription details, or medical records belong in TurnAhead.
+## Deploy v2.5 carefully
 
-Archives are retained in Firestore until an authorized retention/deletion process is implemented; **automatic data purging is not included**. Hospitals must establish lawful notice/consent, retention periods, authorized access, backups, and compliance before using real patient information. Read [SECURITY.md](SECURITY.md).
+**The code upgrade and its [`firestore.rules`](firestore.rules) must be coordinated.** The GitHub Pages site should remain on v2.4 until after the rules are verified.
 
-## Deploy v2.4 without disrupting the live site
+1. **Before migration:** finish current v2.4 patients, verify the designated owner, and back up Firestore. Existing active v2.4 lanes **do not migrate automatically** to the new doctor-specific flow.
+2. **Test** in the Firebase Emulator or a separate Firebase project: active/disabled staff, doctor membership, doctor immutability, atomic ticket/queue/archive updates, cross-hospital access and denied history reads.
+3. **Publish** the exact branch `firestore.rules` to the [TurnAhead Firebase project](https://console.firebase.google.com/project/turnahead-b34f9/firestore/rules) after verification. Test the existing v2.4 site still works.
+4. **Merge** the review PR to `main` only after the rules are active. Wait for GitHub Pages to deploy, then test two counters, two doctors and two different devices using **fictional** patient records.
+5. **Acceptance:** on Android and iPhone, test waiting → called → completed, waiting → called → skipped, device locking/unlocking, offline/reconnect, doctor break, midnight reset and concurrent Call next.
 
-**Publish and test the matching [`firestore.rules`](firestore.rules) *before* merging the v2.4 code.** The current live v2.3 site remains accessible until the upgrade is deliberately merged. Rules accept prior ticket shapes during the coordinated transition.
+More detail: [Firebase setup and v2.5 migration](docs/SETUP-GITHUB-PAGES-FIREBASE.md) · [Security/privacy notes](SECURITY.md).
 
-1. Finish active queues and confirm the current designated owner can sign in. Add doctors to departments after new rules are installed.
-2. Publish the **v2.4 branch** Firestore rules in the existing [TurnAhead Firebase project](https://console.firebase.google.com/project/turnahead-b34f9/firestore/rules) **after testing in a Firebase emulator or separate test project**.
-3. Verify a new named ticket can be created, an unregistered user is denied, a supervisor cannot read patient history, and a hospital owner can search a dated archive.
-4. Merge the v2.4 pull request to `main` to deploy GitHub Pages. Test with a reception computer and a real QR-scanning phone.
+## Run the project
 
-**Important migration note:** Existing v2.3 tickets remain in Firestore but are **not retroactively added** to the new private dated archive. Existing v2.3 department prefixes remain unchanged. New numbering begins at 001 at the next daily reset; existing active ticket sequences continue without renumbering. Do not mix ticket generations during active clinical operations.
-
-See the [complete upgrade guide](docs/SETUP-GITHUB-PAGES-FIREBASE.md).
-
-## Repository structure
-
-```text
-TurnAhead/
-├── public/
-│   ├── index.html             # Welcome and entry points
-│   ├── admin.html / admin.js  # Owner dashboard, staff editing and date-wise history
-│   ├── desk.html / desk.js    # Staff reception, named QR issuing and queue operations
-│   ├── activate.html          # Invitation-specific staff activation
-│   ├── track.html / track.js  # Live named ticket status with approximate turn clock
-│   ├── board.html / board.js  # Anonymous public board + 12-hour clock
-│   ├── store.js               # Atomic Firestore queue, ticket and archive updates
-│   ├── queue-engine.js        # Numbering, dates, synchronization and ETA calculations
-│   ├── org-store.js           # Staff profiles, invites, membership and password resets
-│   └── assets/                # Original TurnAhead marks, graphics and favicon
-├── firestore.rules            # Backend roles and archive read restrictions
-├── docs/                      # Setup and migration guide
-├── test/                      # Automated functional and structural regressions
-└── .github/workflows/         # CI and GitHub Pages deploy
+```bash
+npm run check
+npm test
 ```
 
-Developers can run `npm run check` and `npm test` using Node.js 22. **Hospital staff and patients require only a browser.** Automated logic checks are not a replacement for Firebase emulator security tests or a real two-device end-to-end test.
+Node.js 22 is used only by developers running tests. Hospitals and patients use the hosted website. **57 unit/structural checks passing is not the same as real Firestore Rules Emulator testing or Safari end-to-end validation.**
 
 ## Roadmap
 
-**Delivered in v2.4**
+- [x] **v2.4:** doctor directory, named QR tickets, dated patient history, admin/staff roles.
+- [x] **v2.5 implementation candidate:** doctor-specific queues, 12 reception counters, doctor pauses, real-time resync recovery, transaction regression tests and glass navigation.
+- [ ] **v2.5 deployment gate:** real Firebase Rules Emulator, iOS/Android two-device verification, load and recovery tests.
+- [ ] **v2.6:** near-turn alerts, missed-turn grace, "I'm here" confirmation, English/Urdu, voice announcements and optional patient feedback.
+- [ ] **v3.0:** advanced analytics, exportable reports, hospital branding and validated market launch.
 
-- [x] One Staff Login link in navigation; clear dark-mode staff badge and history forms
-- [x] Owner-controlled doctor directory, doctor-linked reception tickets and visit snapshot on QR
-- [x] Private patient details popup, date picker, doctor and room archive fields
-- [x] Large 12-hour public board clock, animated QR loading, opt-in supported-device vibration
-
-- [x] Patient status synchronization with authoritative completed/missed state
-- [x] Named patient QR receipts and named tracking pages
-- [x] Three-letter department codes, `001` start, `999` → `1000` and midnight reset
-- [x] Department-specific, date-wise private archives and exact ticket search
-- [x] Invited staff names, Male/Female honorifics and admin profile editing
-- [x] Secure staff password-reset email workflow
-- [x] Authentication progress animation and public board live clock
-- [x] Approximate turn time displayed on patient tracking
-
-**Before a hospital production rollout**
-
-- [ ] Firebase Security Rules emulator testing and independent penetration testing
-- [ ] Real-device latency benchmarks; no fixed maximum sign-in/update latency can be promised
-- [ ] Consent, retention and deletion workflows for personally identifiable patient data
-- [ ] Hospital provisioning, backup/recovery, incident response and operational monitoring
-- [ ] High-volume queue load tests and attendance auditing
-
-**TurnAhead is a polished pilot, not a certified medical records or appointment system.** Completion/missed status reflects reception actions, not independent proof of attendance.
+**TurnAhead is a queue-management pilot, not a medical record system or appointment-booking product.** Production use requires access/privacy audits, monitoring, backups, retention procedures, a real pilot, and independent security review.
 
 ---
 
 <div align="center">
 
-**TURNAHEAD**
+**TURNAHEAD** · *Your turn. Without the wait.*
 
-*Know when it's your turn.*
-
-Built with care by [Nittin Chughani](https://github.com/NittinChughani) · Licensed under [MIT](LICENSE)
-
-[Back to top ↑](#know-when-its-your-turn-make-every-turn-count)
+Built by [Nittin Chughani](https://github.com/NittinChughani) · [MIT License](LICENSE)
 
 </div>

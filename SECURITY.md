@@ -1,6 +1,15 @@
-# TurnAhead v2.4 · Security and patient-data privacy
+# TurnAhead v2.5 · Security and patient-data privacy
 
 TurnAhead is a **queue-management pilot**, not an electronic health record, medical identity-verification tool, or certified hospital platform. Public use with real patient names requires a privacy/security review and a lawful organizational basis for data collection.
+
+## Changes requiring v2.5 security validation
+
+- **Doctor-specific queues:** the department `queues` document contains public anonymous per-doctor waiting-number and currently-serving maps; the paired `controls` document contains private per-doctor ticket IDs and counters. Neither document should contain patient names, telephone numbers, medical data or reception staff UIDs.
+- **Concurrent reception:** every call, completion and skip is made through a Firestore transaction that updates queue/control/ticket/dated record together; a counter can operate only one active ticket within a department. Counter labels can be selected by any authorized receptionist, so they are not identity credentials; record the staff UID separately in the owner-only archive.
+- **Persistent call history:** public bearer-ticket responses include called time and counter. Staff identity remains restricted to private archives, but **anyone holding the QR link sees the patient's name, doctor, room, visit status and call time**.
+- **Browser resume:** explicit server refreshes reduce stale status on Safari, but iPhone vibration and background-delivery are not guaranteed. The UI must show the final ticket state and original call time after reconnection.
+- **Migration:** do not merge before rules are tested and current v2.4 queues have been cleared. No automatic transfer of in-progress v2.4 waiting tickets into per-doctor queues exists.
+- **Before using patient data:** run Firestore Rules Emulator negative-access tests, manual two-device and simultaneous-counter tests, an independent privacy review, tested backups, incident handling and a retention/deletion procedure.
 
 ## Access model
 
@@ -10,7 +19,7 @@ TurnAhead is a **queue-management pilot**, not an electronic health record, medi
 - The administrator can correct staff names, gender/title, role and status; password resets are delivered by Firebase to staff email. Administrators cannot read, choose or recover staff passwords.
 - Firestore rules restrict private dated history (`hospitals/{hospitalId}/history/{day}/departments/{departmentId}/records/{ticketId}`) to the **designated hospital owner**. Reception staff can create/update those records as part of queue transactions, but cannot list or read patient history.
 
-## Patient data: new in v2.4
+## Patient data: introduced in v2.4
 
 - Patient name, chosen Mr/Ms title, registered doctor name and room are collected by reception and saved to the individual ticket and private date/department archive. Ticket code, department, timestamps, status and attendance are also stored.
 - **The patient QR link is a bearer secret, not a login.** Any person with that unpredictable URL can read that ticket's **name, title, doctor, room and queue status**. Do not share, publish, photograph publicly or index QR links. Public boards show codes, waiting counts and time—never names.
