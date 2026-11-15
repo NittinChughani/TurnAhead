@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/readme-hero.webp" alt="TurnAhead — live walk-in queue management" width="100%" />
+<img src="docs/assets/preview-home.webp" alt="TurnAhead — live walk-in queue management" width="100%" />
 
 # TurnAhead
 
@@ -8,15 +8,15 @@
 
 **A smarter walk-in queue for hospitals and clinics.** A printed QR ticket, a clear place in line, and live updates from reception. No patient account or app installation.
 
-[![Version](https://img.shields.io/badge/Preview-v2.5-0D8478?style=for-the-badge)](docs/SETUP-GITHUB-PAGES-FIREBASE.md)
-[![Tests](https://img.shields.io/badge/Tests-57%20passing-182D4C?style=for-the-badge)](test/)
+[![Version](https://img.shields.io/badge/Preview-v2.5.1-0D8478?style=for-the-badge)](docs/SETUP-GITHUB-PAGES-FIREBASE.md)
+[![Tests](https://img.shields.io/badge/Tests-63%20passing-182D4C?style=for-the-badge)](test/)
 [![Firebase](https://img.shields.io/badge/Realtime-Firestore-182D4C?style=for-the-badge&logo=firebase&logoColor=FFCA28)](https://firebase.google.com/)
 [![GitHub Pages](https://img.shields.io/badge/Hosting-GitHub%20Pages-182D4C?style=for-the-badge&logo=githubpages&logoColor=54E0BB)](https://pages.github.com/)
 [![MIT](https://img.shields.io/badge/License-MIT-182D4C?style=for-the-badge)](LICENSE)
 
 [**View website ↗**](https://nittinchughani.github.io/TurnAhead/) · [**How it works**](#01--the-walk-in-experience) · [**What's new in v2.5**](#02--reception-built-for-real-teams) · [**Deploy safely**](docs/SETUP-GITHUB-PAGES-FIREBASE.md) · [**Security**](SECURITY.md)
 
-<sub>**Release note:** v2.5 code is prepared on a review branch. The public website remains at v2.4 until the matching Firebase rules are tested/published and this release is merged.</sub>
+<sub>**Release note:** v2.5 is on `main`. The v2.5.1 navbar, improved screenshots and private receptionist-issuance audit fields are on a separate review branch until their updated Firestore rules are verified and deployed.</sub>
 
 </div>
 
@@ -32,7 +32,7 @@ Patients should be able to spend their waiting time somewhere comfortable withou
 
 ### See the experience, not just the feature list
 
-> **About the images:** The previews below are rendered from TurnAhead's actual HTML and CSS using **fictional demonstration tickets and hospital names**. They are interface illustrations, **not live patient data or proof of a successful Firebase deployment**. Browser rendering may differ slightly.
+> **About the images:** The previews below are captured in **dark mode from actual TurnAhead HTML and CSS using Chromium**, with fictional demonstration patients, staff and hospital data. They show complete interface sections, with no half-cut cards. External Google Fonts are replaced with a compatible screenshot-only fallback. They are **not live patient data or proof of a Firebase deployment**.
 
 ## 01 · The walk-in experience
 
@@ -80,13 +80,17 @@ The board complements human announcements. It should not be treated as the sole 
 
 1. The designated administrator chooses a **date** and **department**, then optionally searches by a ticket code.
 2. Click **Details** to see the ticket's name/title, doctor, room, timestamps and attendance outcome.
-3. Reception call/completion actions update the archive atomically; new private fields record which **authorized staff UID** called or finished the ticket, without exposing those staff UIDs on the public QR link.
+3. The **Details** dialog includes **which receptionist issued the ticket and from which counter**, plus the counter/staff that subsequently called it. These are distinct events.
+4. Reception issuance/call/completion actions update the archive atomically; staff identities are recorded as authorized Firebase UIDs in the **owner-only archive**, never copied to the public QR link. Older tickets lacking issuer/counter fields display “Not recorded.”
+
+<div align="center"><img src="docs/assets/preview-record-detail.webp" width="58%" alt="Dark-mode sample patient Details dialog, with receptionist name, issuing counter and calling counter shown separately" /></div>
 
 Staff can create/update archived records as part of ticket transactions but **cannot browse the private archive**. Statuses are reception-entered operational events, not proof of actual medical attendance.
 
 ## 06 · A quieter, more polished interface
 
-- **Glassmorphism navigation:** translucent, blurred and lightly reflective header with dark-theme contrast, a solid-color fallback, and reduced-transparency support.
+- **Floating glassmorphism navigation:** a **rounded-rectangle** navbar with translucent blur and light/dark contrast. It **slides away when the page is scrolled** and reappears when the reader returns to the top, with keyboard-focus and reduced-motion fallbacks.
+- **Original TurnAhead logo preserved:** the navbar uses pixel-preserving transparent-background copies of the original light/dark assets so the rectangular image background no longer looks pasted onto the glass. Original files remain untouched.
 - **Immediate loading feedback:** no artificial authentication delay, and a visible animated queue loader while connecting.
 - **One staff login:** the homepage navigation avoids duplicate Staff Login entries.
 - **English UI, light/dark themes, mobile layouts:** patient tracking works without login or app installation.
@@ -141,12 +145,13 @@ npm run check
 npm test
 ```
 
-Node.js 22 is used only by developers running tests. Hospitals and patients use the hosted website. **57 unit/structural checks passing is not the same as real Firestore Rules Emulator testing or Safari end-to-end validation.**
+Node.js 22 is used only by developers running tests. Hospitals and patients use the hosted website. **63 unit/structural checks passing is not the same as real Firestore Rules Emulator testing or Safari end-to-end validation.**
 
 ## Roadmap
 
 - [x] **v2.4:** doctor directory, named QR tickets, dated patient history, admin/staff roles.
 - [x] **v2.5 implementation candidate:** doctor-specific queues, 12 reception counters, doctor pauses, real-time resync recovery, transaction regression tests and glass navigation.
+- [x] **v2.5.1 refinements in review:** rounded hiding-on-scroll navbar, original-logo blending, Chromium-rendered dark README screenshots and private issuance receptionist/counter history.
 - [ ] **v2.5 deployment gate:** real Firebase Rules Emulator, iOS/Android two-device verification, load and recovery tests.
 - [ ] **v2.6:** near-turn alerts, missed-turn grace, "I'm here" confirmation, English/Urdu, voice announcements and optional patient feedback.
 - [ ] **v3.0:** advanced analytics, exportable reports, hospital branding and validated market launch.

@@ -149,7 +149,7 @@ $('issue-form').addEventListener('submit',async e=>{
   e.preventDefault();const q=queues.find(x=>x.id===selectedQueue);if(!q||!currentHospital)return;
   const b=e.target.querySelector('[type=submit]');b.disabled=true;b.classList.add('is-loading');
   try{
-    currentTicket=await issueTicket(currentHospital.id,q.id,$('patient-name').value,{patientGender:$('patient-gender').value,doctorId:$('patient-doctor').value,roomNumber:$('patient-room').value});
+    currentTicket=await issueTicket(currentHospital.id,q.id,$('patient-name').value,{patientGender:$('patient-gender').value,doctorId:$('patient-doctor').value,roomNumber:$('patient-room').value,counterNumber:selectedCounter});
     $('receipt-facility').textContent=currentHospital.name;$('receipt-code').textContent=currentTicket.code;
     $('receipt-patient').textContent=patientDisplayName(currentTicket);
     $('receipt-visit').textContent=`Dr. ${currentTicket.doctorName} · Room ${currentTicket.roomNumber}`;
