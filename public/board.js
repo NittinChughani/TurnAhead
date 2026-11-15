@@ -1,7 +1,7 @@
 import {configured,helpfulError} from './firebase.js';
 import {getHospital} from './org-store.js';
 import {observeQueues} from './store.js';
-import {dayKey,displayClock} from './queue-engine.js';
+import {dayKey,displayClock,doctorActiveCodes} from './queue-engine.js';
 const {esc}=window.turnahead,el=document.getElementById('board-grid');
 const hospitalId=new URLSearchParams(location.search).get('hospital');
 let displayedQueues=[],displayedDate=dayKey();
@@ -12,7 +12,9 @@ clock();setInterval(()=>{clock();const today=dayKey();if(today!==displayedDate){
 function renderBoard(queues){
  el.innerHTML=queues.map(q=>{
    if(q.dayKey!==dayKey())return `<article class="board-card"><div class="board-card-top">${esc(q.name)} <span>NEW DAY</span></div><div class="board-card-middle"><small>QUEUE NOT STARTED</small><strong>—</strong></div><div class="board-card-bottom"><span>People waiting</span><b>0</b></div></article>`;
-   return `<article class="board-card"><div class="board-card-top">${esc(q.name)} <span>${q.paused?'PAUSED':'LIVE'}</span></div><div class="board-card-middle"><small>NOW SERVING</small><strong>${esc(q.active?.code||'—')}</strong></div><div class="board-card-bottom"><span>People waiting</span><b>${q.waiting}</b></div></article>`;
+   const serving=doctorActiveCodes(q);
+   const codes=serving.length?serving.slice(0,5).map(x=>`<span class="board-code-chip"><b>${esc(x.code)}</b><small>${esc(x.counter||'Reception')}</small></span>`).join(''):q.active?.code?`<span class="board-code-chip">${esc(q.active.code)}</span>`:'<strong>—</strong>';
+   return `<article class="board-card"><div class="board-card-top">${esc(q.name)} <span>${q.paused?'PAUSED':'LIVE'}</span></div><div class="board-card-middle"><small>NOW SERVING · ${serving.length} DOCTOR${serving.length===1?'':'S'}</small><div class="board-active-codes">${codes}</div></div><div class="board-card-bottom"><span>People waiting</span><b>${q.waiting}</b></div></article>`;
  }).join('')||'<div class="empty-state">No departments configured yet.</div>';
 }
 function startBoard(){

@@ -149,3 +149,34 @@
 .history-detail-row{display:flex;justify-content:space-between;gap:16px;padding:12px 15px;border-bottom:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:.9rem}
 .history-detail-row:nth-child(even){background:var(--paper-soft)}.history-detail-row:last-child{border-bottom:0}
 .history-detail-row span{color:var(--muted)}.history-detail-row strong{text-align:right;overflow-wrap:anywhere}
+
+/* TurnAhead v2.5 — subtle translucent glass navigation, both color schemes. */
+.site-header{
+  position:sticky;top:0;z-index:30;
+  background:color-mix(in srgb,var(--paper) 79%,transparent);
+  border-bottom:1px solid color-mix(in srgb,var(--line) 65%,transparent);
+  box-shadow:0 9px 32px rgba(22,42,72,.055);
+  -webkit-backdrop-filter:blur(22px) saturate(155%);
+  backdrop-filter:blur(22px) saturate(155%);
+  isolation:isolate;
+}
+.site-header:before{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(105deg,rgba(255,255,255,.11),transparent 42%,rgba(96,192,223,.045));}
+:root[data-theme='dark'] .site-header{background:color-mix(in srgb,var(--paper) 83%,transparent);border-bottom-color:rgba(140,171,205,.13);box-shadow:0 12px 36px rgba(0,0,0,.18)}
+:root[data-theme='dark'] .site-header:before{background:linear-gradient(100deg,rgba(140,193,237,.045),transparent 55%)}
+@supports not (backdrop-filter:blur(1px)){.site-header{background:var(--paper)}}
+@media(prefers-reduced-transparency:reduce){.site-header{background:var(--paper);backdrop-filter:none;-webkit-backdrop-filter:none}}
+@media print{.site-header{display:none!important}}
+/* Atomic doctor lanes and counter handoff are visible to reception. */
+.counter-bar{margin:20px 0 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:18px;padding:19px 24px;background:var(--paper);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
+.counter-bar strong,.counter-bar small{display:block}.counter-bar strong{font-size:19px;margin:5px 0;color:var(--ink)}.counter-bar small{color:var(--muted);font-size:12px;max-width:525px;line-height:1.55}
+.counter-bar label{font-size:12px;font-weight:800;color:var(--muted);display:flex;align-items:center;gap:12px}
+.counter-bar select{border:1px solid var(--line);border-radius:10px;min-height:46px;padding:9px 14px;color:var(--ink);background:var(--paper-soft);font-weight:700}
+.doctor-tabs{display:flex;gap:9px;flex-wrap:wrap;margin:17px 0}.doctor-tab{padding:13px 15px;min-width:138px;text-align:left;border-radius:12px;background:var(--paper-soft);border:1px solid var(--line);color:var(--ink);cursor:pointer;transition:border-color .15s,background .15s}
+.doctor-tab:hover{border-color:var(--blue)}.doctor-tab.selected{background:color-mix(in srgb,var(--blue) 10%,var(--paper));border-color:var(--blue)}
+.doctor-tab span,.doctor-tab small{display:block}.doctor-tab span{font-weight:800;font-size:12px}.doctor-tab small{font-size:10px;margin-top:6px;color:var(--muted)}
+.doctor-queue-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:17px 0}.doctor-queue-heading h3{font-size:22px;margin:6px 0 3px}.doctor-queue-heading small{font-size:11px;color:var(--muted)}
+.board-active-codes{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:12px;min-height:66px}.board-code-chip{font:800 clamp(25px,2.6vw,40px)/1.15 var(--display);border-radius:12px;padding:9px 12px;background:var(--paper-soft);color:var(--ink);border:1px solid var(--line);letter-spacing:-1px}
+.track-call-history{font-size:.82rem;font-weight:700;line-height:1.5;color:var(--blue);margin:8px 0 0;min-height:0}
+@media(max-width:590px){.counter-bar{padding:17px}.counter-bar label{width:100%;justify-content:space-between}.doctor-tab{min-width:calc(50% - 6px);flex:1}.board-code-chip{font-size:26px}}
+
+.board-code-chip b,.board-code-chip small{display:block}.board-code-chip small{font:700 10px/1.5 var(--body,Arial,sans-serif);letter-spacing:.02em;color:var(--muted);margin-top:5px}

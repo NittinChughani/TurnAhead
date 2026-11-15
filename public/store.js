@@ -2,9 +2,9 @@
 import {
   collection,doc,getDocs,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
-import {db} from './firebase.js';
+import {db,auth} from './firebase.js';
 import {dayKey,departmentPrefix,initialQueue,initialControl,normalizedQueue,
-  nextTicket,nextInLine,publicQueue} from './queue-engine.js';
+  nextTicket,nextInLine,publicQueue,getDoctorLane,getDoctorControl,counterLabel,planDoctorCall,planDoctorFinish} from './queue-engine.js';
 import {ticketLink} from './org-model.js';
 import {cleanRoomNumber,doctorAvailable} from './doctor-model.js';
 
@@ -21,7 +21,7 @@ const historyDoc=(hid,day,qid,ticketId)=>doc(historyCollection(hid,day,qid),tick
 const archiveTicket=(ticketId,t,now)=>({ticketId,queueId:t.queueId,queueName:t.queueName,
   code:t.code,number:t.number,dayKey:t.dayKey,patientName:t.patientName,
   patientGender:t.patientGender,doctorId:t.doctorId,doctorName:t.doctorName,roomNumber:t.roomNumber,
-  status:t.status,attendance:t.attendance,issuedAt:t.createdAt,calledAt:t.calledAt,
+  status:t.status,attendance:t.attendance,calledCounter:t.calledCounter||'',calledBy:'',finishedBy:'',issuedAt:t.createdAt,calledAt:t.calledAt,
   finishedAt:t.finishedAt,updatedAt:now});
 
 export async function bootstrap(hid){
@@ -64,8 +64,16 @@ export function observeTickets(hid,next,error,maxItems=25){
     snap=>next(snap.docs.map(d=>({id:d.id,...d.data()}))),error);
 }
 export function observeTicket(hid,id,next,error){
-  return onSnapshot(hid?ticketDoc(hid,id):doc(db,'tickets',id),snap=>next(snap.exists()?{id:snap.id,...snap.data()}:null),error);
+  return onSnapshot(hid?ticketDoc(hid,id):doc(db,'tickets',id),{includeMetadataChanges:true},
+    snap=>next(snap.exists()?{id:snap.id,...snap.data(),_fromCache:snap.metadata.fromCache}:null),error);
 }
+/** Force a network read on Safari resume/foreground; never mistake stale cache for live status. */
+export async function fetchTicketFromServer(hid,id){
+  const {getDocFromServer}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js');
+  const snap=await getDocFromServer(hid?ticketDoc(hid,id):doc(db,'tickets',id));
+  return snap.exists()?{id:snap.id,...snap.data(),_fromCache:false}:null;
+}
+
 export function observeQueue(hid,id,next,error){
   return onSnapshot(hid?qDoc(hid,id):doc(db,'queues',id),snap=>next(snap.exists()?publicQueue(id,snap.data()):null),error);
 }
@@ -103,7 +111,9 @@ export async function issueTicket(hid,id,patientName,details={}){
     const {queue,ticket}=nextTicket(qs.data(),tr.id,today,now,patientName,finalDetails);
     ticket.queueId=id;
     const c=changed?initialControl():cs.data();
-    tx.set(qr,queue);tx.set(cr,{...c,pending:[...c.pending,{id:tr.id,number:ticket.number}]});
+    const previous=getDoctorControl(c,details.doctorId);
+    const lanes={...c.lanes,[details.doctorId]:{...previous,pending:[...previous.pending,{id:tr.id,number:ticket.number}]}};
+    tx.set(qr,queue);tx.set(cr,{...c,lanes});
     tx.set(tr,ticket);
     if(!ds.exists())tx.set(dr,{dayKey:today,createdAt:now});
     tx.set(historyDoc(hid,today,id,tr.id),archiveTicket(tr.id,ticket,now));
@@ -111,48 +121,53 @@ export async function issueTicket(hid,id,patientName,details={}){
   });
   return {...ticket,id:tr.id,queue:ticket.queueName,trackingUrl:ticketLink(hid,tr.id,window.location.href)};
 }
-export async function performAction(hid,id,action){
-  if(action==='pause'||action==='resume'){
-    await runTransaction(db,async tx=>{
-      const qr=qDoc(hid,id),snap=await tx.get(qr);
-      if(!snap.exists())throw Error('Unknown department.');
-      tx.update(qr,{paused:action==='pause',updatedAt:Date.now()});
-    });return {};
-  }
+/** All doctor actions operate on one lane, atomically, within the department documents.
+ * Every counter uses the same transaction. The control document is member-only.
+ * A counter which called a patient must complete/skip at that counter; another
+ * receptionist can take over by selecting that same counter if needed.
+ */
+export async function performAction(hid,id,action,doctorId,counterNumber=1){
+  if(!/^[A-Za-z0-9]{20}$/.test(doctorId||''))throw Error('Select a registered doctor queue.');
+  const counter=counterLabel(counterNumber),uid=auth.currentUser?.uid;
+  if(!uid)throw Error('Sign in to manage this queue.');
   const now=Date.now();
   return runTransaction(db,async tx=>{
     const qr=qDoc(hid,id),cr=controlDoc(hid,id);
-    const [qs,cs]=await Promise.all([tx.get(qr),tx.get(cr)]);
-    if(!qs.exists()||!cs.exists())throw Error('Department unavailable.');
+    const [qs,cs,doctorSnap]=await Promise.all([tx.get(qr),tx.get(cr),tx.get(doctorDoc(hid,doctorId))]);
+    if(!qs.exists()||!cs.exists()||!doctorSnap.exists()||doctorSnap.data().departmentId!==id)
+      throw Error('The selected doctor queue is unavailable.');
     const q=qs.data(),c=cs.data();
-    if(q.dayKey!==dayKey())throw Error('A new day has begun. Refresh reception to reset the queue.');
+    if(q.dayKey!==dayKey())throw Error('A new day has begun. Refresh reception to reset queues.');
+    const lane=getDoctorLane(q,doctorId),control=getDoctorControl(c,doctorId);
+    if(action==='pause-department'||action==='resume-department'){
+      const paused=action==='pause-department';
+      tx.update(qr,{paused,updatedAt:now});
+      return {status:paused?'paused':'resumed'};
+    }
+    if(action==='pause'||action==='resume'){
+      const paused=action==='pause';
+      tx.update(qr,{lanes:{...q.lanes,[doctorId]:{...lane,paused,updatedAt:now}},updatedAt:now});
+      return {doctorName:doctorSnap.data().name,status:paused?'paused':'resumed'};
+    }
+    // Finishing a patient must remain possible during an unexpected doctor break.
     if(action==='next'){
-      const first=nextInLine(q,c),tr=ticketDoc(hid,first.id),ts=await tx.get(tr);
-      if(!ts.exists()||ts.data().status!=='waiting')throw Error('Ticket status changed. Refresh reception.');
-      const original=ts.data(),called={...original,status:'called',calledAt:now};
-      tx.update(qr,{waitingNumbers:q.waitingNumbers.slice(1),active:{code:original.code,number:first.number},updatedAt:now});
-      tx.update(cr,{pending:c.pending.slice(1),activeId:first.id,activeSince:now});
-      tx.update(tr,{status:'called',calledAt:now});
-      if(original.patientName)tx.update(historyDoc(hid,original.dayKey,id,first.id),{status:'called',calledAt:now,updatedAt:now});
-      return {code:original.code};
+      if(q.paused||lane.paused)throw Error('This doctor queue is paused. Resume it first.');
+      const first=nextInLine(lane,control),tr=ticketDoc(hid,first.id),ts=await tx.get(tr);
+      if(!ts.exists())throw Error('Ticket changed. Refresh reception.');
+      const original=ts.data();
+      const plan=planDoctorCall(q,c,doctorId,original,first.id,counter,uid,now);
+      tx.update(qr,plan.queuePatch);tx.update(cr,plan.controlPatch);tx.update(tr,plan.ticketPatch);
+      if(original.patientName)tx.update(historyDoc(hid,original.dayKey,id,first.id),plan.historyPatch);
+      return {code:original.code,counter};
     }
     if(!['complete','skip'].includes(action))throw Error('Unknown queue action');
-    if(!c.activeId||!q.active)throw Error('There is no active ticket to finish.');
-    const tr=ticketDoc(hid,c.activeId),ts=await tx.get(tr);
-    if(!ts.exists()||ts.data().status!=='called')throw Error('Active ticket changed. Refresh reception.');
-    const old=ts.data(),status=action==='complete'?'completed':'skipped';
-    const attendance=action==='complete'?'present':'missed';
-    const patch={active:null,updatedAt:now};
-    if(action==='complete'){
-      const minutes=Math.max(1,Math.min(40,(now-(c.activeSince||now))/60000));
-      const sample=Math.min(9,q.served||0);
-      patch.avgMinutes=Math.round(((Number(q.avgMinutes)||8)*sample+minutes)/(sample+1));
-      patch.served=(q.served||0)+1;
-    }
-    tx.update(qr,patch);tx.update(cr,{activeId:null,activeSince:null});
-    tx.update(tr,{status,attendance,finishedAt:now});
-    if(old.patientName)tx.update(historyDoc(hid,old.dayKey,id,c.activeId),{status,attendance,finishedAt:now,updatedAt:now});
-    return {code:old.code,status};
+    if(!control.activeId||!lane.active)throw Error('There is no active ticket for this doctor.');
+    const tr=ticketDoc(hid,control.activeId),ts=await tx.get(tr);
+    if(!ts.exists())throw Error('Active ticket changed. Refresh reception.');
+    const old=ts.data(),plan=planDoctorFinish(q,c,doctorId,old,counter,uid,action,now);
+    tx.update(qr,plan.queuePatch);tx.update(cr,plan.controlPatch);tx.update(tr,plan.ticketPatch);
+    if(old.patientName)tx.update(historyDoc(hid,old.dayKey,id,control.activeId),plan.historyPatch);
+    return {code:old.code,status:plan.ticketPatch.status,counter};
   });
 }
 /** Day documents are created transactionally with the first ticket each day. */

@@ -4,7 +4,7 @@ import {observeAuth, login, logout, requestVerification, refreshVerification,
 import {canManageStaff, canManageDepartments, boardLink, isStaffRole, staffGreeting} from './org-model.js';
 import {bootstrap, rollOverAll, observeQueues, observeTickets,
   issueTicket, createQueue, performAction} from './store.js';
-import {dayKey,patientDisplayName} from './queue-engine.js';
+import {dayKey,patientDisplayName,getDoctorLane,doctorActiveCodes} from './queue-engine.js';
 import {watchDoctors} from './doctors.js';
 import {doctorAvailable} from './doctor-model.js';
 
@@ -13,7 +13,7 @@ const views=['login-view','verify-view','no-access-view','dashboard'];
 // Old v2.1 invitation URLs continue through the dedicated activation screen.
 if(new URLSearchParams(location.search).has('invite')) location.replace('./activate.html'+location.search);
 let currentHospital=null,currentMember=null,memberships=[],queues=[],tickets=[],selectedQueue=null,currentTicket=null;
-let doctors=[],stopDoctors=null;
+let doctors=[],stopDoctors=null,selectedDoctor=null,selectedCounter=1;
 let stopQueues=null,stopTickets=null,stopMember=null,authEpoch=0,toastTimer,noticeTimer;
 let pendingSignIn=false,pendingSignOut=false;
 const loginButton=$('login-form').querySelector('[type=submit]');
@@ -30,23 +30,44 @@ function render(){
   if(!currentHospital)return;
   $('facility-heading').textContent=`${currentHospital.name} · ${new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'})}`;
   $('stat-waiting').textContent=queues.reduce((n,q)=>n+q.waiting,0);
-  $('stat-active').textContent=queues.filter(q=>q.active).length;
+  $('stat-active').textContent=queues.reduce((n,q)=>n+(q.activeCount||0),0);
   $('stat-completed').textContent=queues.reduce((n,q)=>n+(q.served||0),0);
-  if(!selectedQueue||!queues.some(q=>q.id===selectedQueue))selectedQueue=queues[0]?.id;
+  if(!selectedQueue||!queues.some(q=>q.id===selectedQueue)){selectedQueue=queues[0]?.id;selectedDoctor=null;}
   $('queue-tabs').innerHTML=queues.map(q=>`<button class="queue-tab ${selectedQueue===q.id?'active':''}" data-queue="${esc(q.id)}" type="button">${esc(q.name)}</button>`).join('');
-  $('queue-tabs').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{selectedQueue=b.dataset.queue;render();}));
+  $('queue-tabs').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{selectedQueue=b.dataset.queue;selectedDoctor=null;render();}));
   const q=queues.find(q=>q.id===selectedQueue);
   $('issue-ticket').disabled=!q||!!q?.paused;
   if(q){
-    const active=!!q.active;
-    $('queue-detail').innerHTML=`<div class="queue-view"><div class="queue-topline"><div><strong>${esc(q.name)}</strong><small>Department ${esc(q.prefix)} · Today's walk-in queue</small></div><span class="state-pill ${q.paused?'paused':''}">${q.paused?'⏸ PAUSED':'● ACCEPTING'}</span></div><div class="serving-box"><div><span>NOW SERVING</span><strong>${esc(q.active?.code||'—')}</strong><small>${active?'Patient has been called':'No patient currently being served'}</small></div><span class="serving-symbol">↗</span></div><div class="queue-facts"><span><b>${q.waiting}</b> waiting</span><span><b>${q.served}</b> completed</span><span><b>${q.avgMinutes} min</b> average service</span></div><div class="queue-buttons"><button class="btn btn-primary" data-action="next" ${q.paused||active||!q.waiting?'disabled':''}>Call next ↗</button><button class="btn btn-positive" data-action="complete" ${!active?'disabled':''}>✓ Complete</button><button class="btn btn-danger" data-action="skip" ${!active?'disabled':''}>Skip</button><button class="btn btn-outline" data-action="${q.paused?'resume':'pause'}">${q.paused?'▶ Resume':'⏸ Pause'}</button></div><div class="queue-caption">Public pages display token numbers only. Complete or skip the current ticket before calling the next visitor.</div></div>`;
-    $('queue-detail').querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>action(q.id,b.dataset.action,b)));
+    const available=doctors.filter(d=>d.departmentId===q.id);
+    if(!selectedDoctor||!available.some(d=>d.id===selectedDoctor))selectedDoctor=available.find(d=>d.active)?.id||available[0]?.id||null;
+    const d=available.find(d=>d.id===selectedDoctor),lane=d?getDoctorLane(q,d.id):null;
+    const active=Boolean(lane?.active),paused=Boolean(q.paused||lane?.paused);
+    const belongsHere=active&&lane.active.counter===`Counter ${selectedCounter}`;
+    const doctorList=available.map(doc=>{
+      const ln=getDoctorLane(q,doc.id);
+      return `<button type="button" class="doctor-tab ${selectedDoctor===doc.id?'selected':''}" data-doctor-queue="${esc(doc.id)}"><span>${esc(doc.name)}</span><small>${ln.waitingNumbers.length} waiting · ${doc.active?'Available':'Inactive'}${ln.paused?' · On break':''}</small></button>`;
+    }).join('');
+    const detail=d?`<div class="doctor-queue-heading"><div><span class="kicker">DOCTOR-SPECIFIC QUEUE</span><h3>Dr. ${esc(d.name)}</h3><small>${esc(d.roomNumber?'Room '+d.roomNumber:'Room assigned on each ticket')}</small></div><span class="state-pill ${paused?'paused':''}">${paused?'⏸ ON BREAK':d.active?'● ACCEPTING':'INACTIVE'}</span></div><div class="serving-box"><div><span>NOW SERVING</span><strong>${esc(lane.active?.code||'—')}</strong><small>${active?`Called from ${esc(lane.active.counter||'reception')}`:'No patient currently being served'}</small></div><span class="serving-symbol">↗</span></div><div class="queue-facts"><span><b>${lane.waitingNumbers.length}</b> waiting for this doctor</span><span><b>${lane.served||0}</b> completed</span><span><b>${lane.avgMinutes||8} min</b> average</span></div><div class="queue-buttons"><button class="btn btn-primary" data-action="next" ${paused||active||!lane.waitingNumbers.length||!d.active?'disabled':''}>Call next ↗</button><button class="btn btn-positive" data-action="complete" ${!belongsHere?'disabled':''}>✓ Complete</button><button class="btn btn-danger" data-action="skip" ${!belongsHere?'disabled':''}>Skip</button><button class="btn btn-outline" data-action="${lane.paused?'resume':'pause'}" ${q.paused?'disabled':''}>${lane.paused?'▶ Resume':'⏸ Doctor break'}</button></div><p class="queue-caption">${active&&!belongsHere?`This patient belongs to ${esc(lane.active.counter)}. Select that counter to finish the ticket.`:'Each doctor has an independent FIFO line. Actions are committed atomically across reception counters.'}</p></div>`:'<div class="empty-state">No doctors registered in this department. Ask the administrator to add a doctor.</div>';
+    $('queue-detail').innerHTML=`<div class="queue-view"><div class="queue-topline"><div><strong>${esc(q.name)}</strong><small>${esc(q.prefix)} · ${q.waiting} waiting across ${available.length} doctors</small></div><span class="state-pill ${q.paused?'paused':''}">${q.paused?'⏸ DEPARTMENT PAUSED':'● LIVE'}</span></div><button type="button" class="btn btn-small btn-outline" data-action="${q.paused?'resume-department':'pause-department'}">${q.paused?'▶ Resume department':'⏸ Pause department'}</button><div class="doctor-tabs" role="group" aria-label="Select doctor queue">${doctorList||'<p class="queue-caption">No doctors added yet.</p>'}</div>${detail}</div>`;
+    $('queue-detail').querySelectorAll('[data-doctor-queue]').forEach(btn=>btn.addEventListener('click',()=>{selectedDoctor=btn.dataset.doctorQueue;render();}));
+    $('queue-detail').querySelectorAll('[data-action]').forEach(btn=>btn.addEventListener('click',()=>action(q.id,selectedDoctor,btn.dataset.action,btn)));
   }else $('queue-detail').innerHTML='<div class="empty-state">No department yet. Ask your hospital administrator to create one.</div>';
   const latest=tickets.filter(t=>t.dayKey===dayKey());
   $('activity-count').textContent=`${latest.length} recent`;
-  $('recent-tickets').innerHTML=latest.length?latest.slice(0,14).map(t=>`<div class="activity-item"><div class="activity-token">${esc(t.code)}</div><div class="activity-main"><b>${esc(t.patientName||'Older ticket')} · ${esc(t.queueName||'Service desk')}</b><small>${esc(fmt(t.createdAt))}</small></div><span class="activity-state">${esc(t.status)}</span></div>`).join(''):'<div class="empty-state">No tickets today. Create the first walk-in ticket to get started.</div>';
+  $('recent-tickets').innerHTML=latest.length?latest.slice(0,14).map(t=>`<div class="activity-item"><div class="activity-token">${esc(t.code)}</div><div class="activity-main"><b>${esc(t.patientName||'Older ticket')} · ${esc(t.queueName||'Service desk')}</b><small>Dr. ${esc(t.doctorName||'—')} · ${esc(fmt(t.createdAt))}${t.calledCounter?' · '+esc(t.calledCounter):''}</small></div><span class="activity-state">${esc(t.status)}</span></div>`).join(''):'<div class="empty-state">No tickets today. Create the first walk-in ticket to get started.</div>';
 }
-async function action(id,kind,button){const label=button.textContent;button.disabled=true;button.textContent='Updating…';try{const r=await performAction(currentHospital.id,id,kind);notice(`${r.code?r.code+' · ':''}${{next:'Called to reception',complete:'Marked complete',skip:'Skipped',pause:'Queue paused',resume:'Queue resumed'}[kind]}.`);}catch(e){notice(helpfulError(e),true);}finally{button.textContent=label;button.disabled=false;}}
+async function action(id,doctorId,kind,button){
+  const label=button.textContent;
+  button.disabled=true;button.textContent='Updating…';
+  try{const r=await performAction(currentHospital.id,id,kind,doctorId,selectedCounter);
+    notice(`${r.code?r.code+' · ':''}${{next:'Called from '+r.counter,complete:'Marked complete',skip:'Skipped',pause:'Doctor on break',resume:'Doctor resumed','pause-department':'Department paused','resume-department':'Department resumed'}[kind]}.`);
+  }catch(e){notice(helpfulError(e),true);}finally{button.textContent=label;button.disabled=false;}
+}
+$('counter-select').addEventListener('change',e=>{
+  selectedCounter=Number(e.target.value);
+  if(currentHospital)localStorage.setItem('turnahead-counter-'+currentHospital.id,String(selectedCounter));
+  render();
+});
 async function openHospital(member){
   stopSubscriptions();currentMember=member;currentHospital=await getHospital(member.hospitalId);
   localStorage.setItem('turnahead-hospital',member.hospitalId);
@@ -54,7 +75,10 @@ async function openHospital(member){
   $('admin-link').href='./admin.html?hospital='+encodeURIComponent(member.hospitalId);
   $('workspace-switch').innerHTML=memberships.filter(m=>isStaffRole(m.role)).map(m=>`<option value="${esc(m.hospitalId)}" ${m.hospitalId===member.hospitalId?'selected':''}>${esc(m.hospitalName||m.hospitalId)}</option>`).join('');
   refreshRole();
-  queues=[];tickets=[];selectedQueue=null;render();view('dashboard');
+  selectedCounter=Number(localStorage.getItem('turnahead-counter-'+member.hospitalId))||1;
+  if(selectedCounter<1||selectedCounter>12)selectedCounter=1;
+  $('counter-select').value=String(selectedCounter);
+  queues=[];tickets=[];selectedQueue=null;selectedDoctor=null;render();view('dashboard');
   stopMember=watchMembership(member.hospitalId,auth.currentUser.uid,updated=>{
     if(!updated?.active){toast('Your access to this hospital has been disabled.',true);stopSubscriptions();currentHospital=null;routeCurrentUser();return;}
     currentMember=updated;refreshRole();
@@ -62,7 +86,7 @@ async function openHospital(member){
   // Subscribe first: patients and reception see updates without waiting on daily maintenance.
   stopQueues=observeQueues(member.hospitalId,data=>{queues=data;render();},e=>notice(helpfulError(e),true));
   stopTickets=observeTickets(member.hospitalId,data=>{tickets=data;render();},e=>notice(helpfulError(e),true));
-  stopDoctors=watchDoctors(member.hospitalId,data=>{doctors=data;refreshDoctorChoices();},e=>notice(helpfulError(e),true));
+  stopDoctors=watchDoctors(member.hospitalId,data=>{doctors=data;refreshDoctorChoices();render();},e=>notice(helpfulError(e),true));
   // Maintenance happens asynchronously and is idempotent.
   (async()=>{if(canManageDepartments(member.role))await bootstrap(member.hospitalId);await rollOverAll(member.hospitalId);})().catch(e=>notice(helpfulError(e),true));
 }
@@ -109,10 +133,12 @@ $('logout').addEventListener('click',async()=>{
 });
 function refreshDoctorChoices(){
   const selector=$('patient-doctor'),current=selector.value;
-  const choices=doctors.filter(d=>doctorAvailable(d,selectedQueue));
+  const selectedDepartment=queues.find(q=>q.id===selectedQueue);
+  const choices=doctors.filter(d=>doctorAvailable(d,selectedQueue)&&!selectedDepartment?.paused&&!selectedDepartment?.lanes?.[d.id]?.paused);
   selector.innerHTML='<option value="">Select the doctor</option>'+choices.map(d=>`<option value="${esc(d.id)}">${esc(d.name)}${d.roomNumber?' · Room '+esc(d.roomNumber):''}</option>`).join('');
   if(choices.some(d=>d.id===current))selector.value=current;
-  $('doctor-help').textContent=choices.length?'Select the doctor the patient is visiting.':'No registered doctor in this department. Ask the hospital administrator to add one.';
+  else if(choices.some(d=>d.id===selectedDoctor))selector.value=selectedDoctor;
+  $('doctor-help').textContent=choices.length?'Select the available doctor the patient is visiting.':'No available doctor in this department. Ask reception to resume the paused queue, or an administrator to add an active doctor.';
 }
 $('patient-doctor').addEventListener('change',()=>{const d=doctors.find(x=>x.id===$('patient-doctor').value);if(d?.roomNumber)$('patient-room').value=d.roomNumber;});
 $('issue-ticket').addEventListener('click',()=>{

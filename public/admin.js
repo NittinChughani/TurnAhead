@@ -17,7 +17,7 @@ function stop(){unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;doctors
   $('patient-ticket-list').replaceChildren();$('history-days').replaceChildren();$('doctor-list').replaceChildren();}
 function displayMetrics(){
   const active=departments.filter(q=>q.dayKey===dayKey());
-  const waiting=active.reduce((n,q)=>n+q.waiting,0),inService=active.filter(q=>q.active).length;
+  const waiting=active.reduce((n,q)=>n+q.waiting,0),inService=active.reduce((n,q)=>n+(q.activeCount||0),0);
   const completed=active.reduce((n,q)=>n+q.served,0);
   const avg=active.length?Math.round(active.reduce((n,q)=>n+q.avgMinutes,0)/active.length):0;
   $('admin-waiting').textContent=waiting;
@@ -65,7 +65,7 @@ function renderInvites(){
   }));
 }
 function renderDepartments(){
-  $('department-list').innerHTML=departments.length?departments.map(d=>`<div class="admin-person"><div class="person-avatar">${esc(d.prefix)}</div><div class="person-info"><strong>${esc(d.name)}</strong><small>${d.dayKey===dayKey()?d.waiting:0} waiting · ${d.active?`Now serving ${esc(d.active.code)}`:d.paused?'Paused':'Ready'}</small></div><span class="role-chip">~${d.avgMinutes} MIN / PATIENT</span></div>`).join(''):'<div class="empty-state">Add the first department to begin tracking queues.</div>';
+  $('department-list').innerHTML=departments.length?departments.map(d=>`<div class="admin-person"><div class="person-avatar">${esc(d.prefix)}</div><div class="person-info"><strong>${esc(d.name)}</strong><small>${d.dayKey===dayKey()?d.waiting:0} waiting · ${d.activeCount?`${d.activeCount} doctor queue(s) serving`:d.paused?'Paused':'Ready'}</small></div><span class="role-chip">~${d.avgMinutes} MIN / PATIENT</span></div>`).join(''):'<div class="empty-state">Add the first department to begin tracking queues.</div>';
 }
 function departmentOptions(selected=''){
   return '<option value="">Choose department</option>'+departments.map(d=>`<option value="${esc(d.id)}" ${selected===d.id?'selected':''}>${esc(d.name)}</option>`).join('');
