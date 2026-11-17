@@ -1,6 +1,14 @@
-# TurnAhead v2.5.1 · Security and patient-data privacy
+# TurnAhead v2.5.2 · Security and patient-data privacy
 
 TurnAhead is a **queue-management pilot**, not an electronic health record, medical identity-verification tool, or certified hospital platform. Public use with real patient names requires a privacy/security review and a lawful organizational basis for data collection.
+
+## v2.5.2: avatar privacy, private PDF export and optional push
+
+- Profile photos are **self-managed only**. Accepted file types are JPG/PNG/WebP; the client center-crops, downscales and removes EXIF metadata by rendering into Canvas. The resulting small raster data URL lives in the **private Firebase membership document**, not a public Cloud Storage object or user-controlled URL. Firestore rules restrict changes to `profilePhoto` and `updatedAt` for the authenticated, verified active member; roles and names are not self-editable. The hospital owner can read staff memberships and see photos in the authorized staff list. Photos are not embedded in patient QR tickets.
+- The browser creates patient PDFs on **explicit administrator action** using a client-only PDF library. No patient records are sent to a third-party conversion service; JavaScript may retrieve the PDF-generation code from a public CDN. Protect downloaded files with hospital policy. The current default PDF font best supports Latin-script names; Unicode/localized PDF fonts need additional verification before multilingual deployment.
+- Patient background push is **not active** on the default zero-budget website. Optional server code requires Firebase Cloud Functions (Blaze billing), Cloud Messaging and App Check. The locked-screen message contains only ticket code, not patient name/doctor/room. Notifications are permission-dependent, non-guaranteed and particularly constrained on iOS. The optional code must be independently security-tested before deployment; see [push setup](docs/PUSH-NOTIFICATIONS.md).
+- The included optional push sender stores device push tokens in a server-only Firestore subcollection; client rules deny those reads/writes. Never place an FCM server key or service-account secret in GitHub Pages JavaScript.
+- Test profile-photo access (self/owner/other staff/other hospital) and patient PDF access as part of the Firebase Rules Emulator validation. Code-level unit tests and screenshot previews do **not** replace security testing with Firebase.
 
 ## Changes requiring v2.5 security validation
 

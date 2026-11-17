@@ -1,5 +1,6 @@
 import {configured,helpfulError} from './firebase.js';
 import {getHospital} from './org-store.js';
+import {registerTurnPush} from './push-client.js';
 import {observeTicket,observeQueue,fetchTicketFromServer} from './store.js';
 import {dayKey,waitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName,doctorQueueSummary,callHistoryLine} from './queue-engine.js';
 const $=id=>document.getElementById(id);
@@ -88,7 +89,9 @@ $('enable-alerts').addEventListener('click',async()=>{
   // User tap enables vibration where supported; many browsers (especially iOS) ignore it.
   if(vibrationEnabled)navigator.vibrate(40);
   if('Notification' in window&&window.isSecureContext)alerts=(await Notification.requestPermission())==='granted';
-  $('alert-state').textContent=[alerts?'Browser alerts on':'Browser alerts unavailable',vibrationEnabled?'Vibration enabled on this device':'Vibration not supported on this device'].join(' · ')+'. Keep the page open for alerts.';
+  let pushNote='Keep this page open for live browser alerts.';
+  if(alerts&&!legacy&&hospitalId){try{const push=await registerTurnPush(hospitalId,ticketId);pushNote=push.reason;}catch(err){console.warn('Background push not registered:',err);pushNote='Background push unavailable. Live alerts still work while this page stays open.';}}
+  $('alert-state').textContent=[alerts?'Browser alerts enabled':'Browser alerts unavailable',vibrationEnabled?'Vibration supported':'Vibration not supported',pushNote].join(' · ');
   $('enable-alerts').textContent='Turn alerts configured ✓';
 });
 if(!configured)fail('This website is not connected to Firebase yet. Please contact reception.');
