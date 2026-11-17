@@ -33,7 +33,7 @@ service cloud.firestore {
         data.name is string && data.name.size() >= 3 && data.name.size() <= 70 &&
         data.ownerUid is string && data.status == 'active' &&
         data.createdAt is timestamp && data.updatedAt is timestamp &&
-        data.get('recallGraceMinutes',10) is int && data.get('recallGraceMinutes',10) >= 5 && data.get('recallGraceMinutes',10) <= 30;
+        data.get('recallGraceMinutes',10) is int && data.get('recallGraceMinutes',10) >= 1 && data.get('recallGraceMinutes',10) <= 120;
     }
     function validAvatar(data) {
       return !('profilePhoto' in data) || (data.profilePhoto is string &&
@@ -224,31 +224,13 @@ service cloud.firestore {
            validRecall(hid,resource.data,request.resource.data,ticketId));
         allow delete: if false;
       }
-      // Visitor can create exactly one arrival request by possessing the unguessable ticket link.
-      // A second visitor write is denied; only verified staff may mark it confirmed.
-      match /arrivalRequests/{ticketId} {
-        allow get: if true;
-        allow list: if isMember(hid);
-        allow create: if exists(ticketPath(hid,ticketId)) &&
-          get(ticketPath(hid,ticketId)).data.status == 'waiting' &&
-          request.time.toMillis() - get(ticketPath(hid,ticketId)).data.createdAt >= 0 &&
-          request.time.toMillis() - get(ticketPath(hid,ticketId)).data.createdAt <= 86400000 &&
-          request.resource.data.keys().hasOnly(['ticketId','status','requestedAt']) &&
-          request.resource.data.ticketId == ticketId &&
-          request.resource.data.status == 'pending' && request.resource.data.requestedAt == request.time;
-        allow update: if isMember(hid) && resource.data.status == 'pending' &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','verifiedAt']) &&
-          request.resource.data.status == 'verified' && request.resource.data.verifiedAt == request.time;
-        allow delete: if false;
-      }
       // Feedback is immutable, one private response per completed bearer-QR ticket.
+      // Device clock skew must not block feedback once a ticket is completed.
       match /feedback/{ticketId} {
         allow get, list: if owner(hid);
         allow create: if exists(ticketPath(hid,ticketId)) &&
           get(ticketPath(hid,ticketId)).data.status == 'completed' &&
           get(ticketPath(hid,ticketId)).data.finishedAt is number &&
-          request.time.toMillis() >= get(ticketPath(hid,ticketId)).data.finishedAt &&
-          request.time.toMillis() - get(ticketPath(hid,ticketId)).data.finishedAt <= 86400000 &&
           request.resource.data.keys().hasOnly(['ticketId','rating','note','createdAt']) &&
           request.resource.data.ticketId == ticketId &&
           request.resource.data.rating is int && request.resource.data.rating >= 1 && request.resource.data.rating <= 5 &&
