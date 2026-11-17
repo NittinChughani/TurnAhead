@@ -1,3 +1,5 @@
+> **v2.6 development candidate (not deployed):** Near-turn in-page popups, one-time missed-turn recall, patient arrival verification, English/Urdu interface controls, opt-in public-board voice announcements, and one-time private feedback have been developed. They require Firestore rule deployment and real-device testing before release. System push notifications remain optional and disabled. See [v2.6 rollout and limitations](docs/V26-DEPLOYMENT-AND-TESTING.md).
+
 <div align="center">
 
 <img src="docs/assets/preview-home.webp" alt="TurnAhead — live walk-in queue management" width="100%" />

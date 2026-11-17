@@ -1,21 +1,22 @@
 import {configured,auth,helpfulError} from './firebase.js';
 import {observeAuth,login,logout,refreshVerification,requestVerification,myMemberships,getHospital,
-  watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js';
-import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory} from './store.js';
+  watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,updateRecallGrace,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js';
+import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory,observeFeedback} from './store.js';
 import {canChangeRole,normalizeEmail,invitationLink,boardLink,staffGreeting} from './org-model.js';
 import {dayKey,patientDisplayName} from './queue-engine.js';
 import {watchDoctors,addDoctor,changeDoctor} from './doctors.js';
 import {avatarHTML,avatarContents,compressProfilePhoto} from './profile-photo.js';
 import {patientReportRows,downloadPatientReport} from './patient-report.js';
+import {bindLanguage,t} from './locale.js';
 const $=id=>document.getElementById(id),esc=window.turnahead.esc,fmt=window.turnahead.fmt;
 let hospital=null,me=null,members=[],invites=[],departments=[],tickets=[],unsubs=[],toastTimer,authEpoch=0,pendingLogin=false,pendingLogout=false;
-let currentHistoryTicket=null,editingMember=null,editingDoctor=null,doctors=[],historyDays=[],archiveCursors=new Map(),historyRecords=new Map();
+let feedbackRecords=[],currentHistoryTicket=null,editingMember=null,editingDoctor=null,doctors=[],historyDays=[],archiveCursors=new Map(),historyRecords=new Map();
 const loginButton=$('admin-login-form').querySelector('[type=submit]'),loginLabel=loginButton.textContent;
 function loadingLogin(busy){loginButton.disabled=busy;loginButton.classList.toggle('is-loading',busy);loginButton.textContent=busy?'Checking access…':loginLabel;}
 const show=(id,value)=>$(id).hidden=!value;
 function toast(message,error=false){const el=$('admin-toast');el.textContent=message;el.classList.toggle('error',error);show('admin-toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('admin-toast',false),4800);}
 function stop(){unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;doctors=[];historyRecords.clear();
-  ['history-detail-modal','doctor-edit-modal','staff-edit-modal'].forEach(id=>show(id,false));
+  feedbackRecords=[];['history-detail-modal','doctor-edit-modal','staff-edit-modal'].forEach(id=>show(id,false));
   $('patient-ticket-list').replaceChildren();$('history-days').replaceChildren();$('doctor-list').replaceChildren();}
 function displayMetrics(){
   const active=departments.filter(q=>q.dayKey===dayKey());
@@ -205,6 +206,10 @@ $('staff-reset-password').addEventListener('click',async()=>{
   try{await sendStaffPasswordReset(editingMember.email);toast(`A secure reset email was requested for ${editingMember.email}.`);}
   catch(err){toast(helpfulError(err),true);}finally{btn.disabled=false;}
 });
+function renderFeedback(){
+  $('feedback-list').innerHTML=feedbackRecords.length?feedbackRecords.map(f=>`<div class="v26-mini-item"><div><strong>${'★'.repeat(f.rating)}${'☆'.repeat(5-f.rating)} · ${esc(f.createdAt?.toDate?.().toLocaleDateString('en-PK')||'')}</strong><small>${esc(f.note||'No written comment')}</small></div></div>`).join(''):`<div class="empty-state">${esc(t('noFeedback'))}</div>`;
+}
+bindLanguage(()=>{renderFeedback();});
 async function initialize(){
   const seq=++authEpoch;stop();show('admin-guard',true);show('admin-content',false);show('admin-sign-out',false);
   if(!configured){$('guard-message').textContent='Firebase is not configured yet.';return;}
@@ -221,7 +226,7 @@ async function initialize(){
     localStorage.setItem('turnahead-hospital',hospital.id);
     show('admin-guard',false);show('admin-content',true);show('admin-sign-out',true);loadingLogin(false);
     $('admin-hospital-name').textContent=`${hospital.name} · Live hospital operations`;
-    $('admin-role').textContent='ADMINISTRATOR';$('settings-name').value=hospital.name;renderOwnAvatar();
+    $('admin-role').textContent='ADMINISTRATOR';$('settings-name').value=hospital.name; $('recall-grace').value=String(hospital.recallGraceMinutes||10);renderOwnAvatar();
     $('open-reception').href=boardLink(hospital.id,location.href);
     if(pendingLogin){toast('Administrator logged in successfully.');pendingLogin=false;}
     // Start all four streams at once for a responsive admin dashboard.
@@ -230,6 +235,7 @@ async function initialize(){
     unsubs.push(watchDoctors(hospital.id,data=>{doctors=data;renderDoctors();},e=>toast(helpfulError(e),true)));
     unsubs.push(observeQueues(hospital.id,data=>{departments=data;renderDepartments();renderDoctors();displayMetrics();if(historyDays.length&&!$('history-days').querySelector('[data-history-dept]'))renderHistory();},e=>toast(helpfulError(e),true)));
     unsubs.push(observeTickets(hospital.id,data=>{tickets=data;renderTickets();},e=>toast(helpfulError(e),true),100));
+    unsubs.push(observeFeedback(hospital.id,data=>{feedbackRecords=data;renderFeedback();},e=>toast(helpfulError(e),true)));
     refreshHistory();
   }catch(e){if(seq===authEpoch){$('guard-message').textContent=helpfulError(e);pendingLogin=false;loadingLogin(false);}}
 }
@@ -252,6 +258,7 @@ $('copy-invite').addEventListener('click',async()=>{try{await navigator.clipboar
 $('copy-board').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(boardLink(hospital.id,location.href));toast('Public board link copied.');}catch{toast('Clipboard unavailable. Please try again.',true);}});
 $('department-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('[type=submit]');btn.disabled=true;
 try{const queue=await createQueue(hospital.id,$('admin-department-name').value);$('admin-department-name').value='';toast(`${queue.name} department added.`);}catch(e){toast(helpfulError(e),true);}finally{btn.disabled=false;}});
+$('grace-form').addEventListener('submit',async e=>{e.preventDefault();const b=e.target.querySelector('[type=submit]');b.disabled=true;try{await updateRecallGrace(hospital.id,Number($('recall-grace').value));hospital=await getHospital(hospital.id);toast('Recall grace period saved.');}catch(err){toast(helpfulError(err),true);}finally{b.disabled=false;}});
 $('settings-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('[type=submit]');btn.disabled=true;
 try{await renameHospital(hospital.id,$('settings-name').value);hospital=await getHospital(hospital.id);$('admin-hospital-name').textContent=`${hospital.name} · Live hospital operations`;toast('Hospital name saved.');}catch(e){toast(helpfulError(e),true);}finally{btn.disabled=false;}});
 $('admin-sign-out').addEventListener('click',async()=>{pendingLogout=true;try{await logout();}catch(e){pendingLogout=false;toast(helpfulError(e),true);}});
