@@ -1,9 +1,9 @@
 {
   "name": "turnahead-web",
-  "version": "2.5.1",
+  "version": "2.5.2",
   "private": true,
   "type": "module",
-  "description": "TurnAhead v2.5.1: reliable walk-in status, independent doctor queues, multi-counter reception, and glass UI",
+  "description": "TurnAhead v2.5.2: reliable walk-in status, independent doctor queues, multi-counter reception, and glass UI",
   "scripts": {
     "test": "node --test test/*.test.js",
     "check": "for file in public/*.js; do node --check \"$file\" || exit 1; done"

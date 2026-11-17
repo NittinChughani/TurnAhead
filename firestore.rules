@@ -34,14 +34,19 @@ service cloud.firestore {
         data.ownerUid is string && data.status == 'active' &&
         data.createdAt is timestamp && data.updatedAt is timestamp;
     }
+    function validAvatar(data) {
+      return !('profilePhoto' in data) || (data.profilePhoto is string &&
+        data.profilePhoto.size() <= 65000 &&
+        (data.profilePhoto == '' || data.profilePhoto.matches('^data:image/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$')));
+    }
     function validMembership(data,hid,uid) {
-      return data.keys().hasOnly(['uid','hospitalId','email','role','active','createdAt','updatedAt','invitedBy','displayName','gender']) &&
+      return data.keys().hasOnly(['uid','hospitalId','email','role','active','createdAt','updatedAt','invitedBy','displayName','gender','profilePhoto']) &&
         data.uid == uid && data.hospitalId == hid && data.email is string &&
         data.email.size() <= 254 && data.role in ['owner','supervisor','receptionist'] &&
         data.active is bool && data.createdAt is timestamp &&
         data.updatedAt is timestamp && data.invitedBy is string &&
         data.get('displayName','') is string && data.get('displayName','').size() <= 70 &&
-        data.get('gender','unspecified') in ['male','female','unspecified'];
+        data.get('gender','unspecified') in ['male','female','unspecified'] && validAvatar(data);
     }
     function validInvite(data,mail) {
       return data.keys().hasOnly(['email','role','status','createdBy','createdAt','expiresAt','acceptedUid','acceptedAt','displayName','gender']) &&
@@ -262,7 +267,11 @@ service cloud.firestore {
         getAfter(invitePath(request.resource.data.hospitalId,email())).data.status == 'accepted' &&
         getAfter(invitePath(request.resource.data.hospitalId,email())).data.acceptedUid == request.auth.uid;
 
-      allow update: if verified() && owner(resource.data.hospitalId) &&
+      allow update: if (verified() && request.auth.uid == resource.data.uid &&
+        isMember(resource.data.hospitalId) && validAvatar(request.resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['profilePhoto','updatedAt']) &&
+        request.resource.data.updatedAt == request.time) ||
+        (verified() && owner(resource.data.hospitalId) &&
         resource.data.role != 'owner' &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role','active','updatedAt','displayName','gender']) &&
         request.resource.data.role in ['supervisor','receptionist'] &&
@@ -270,7 +279,7 @@ service cloud.firestore {
         request.resource.data.get('displayName','') is string &&
         request.resource.data.get('displayName','').size() <= 70 &&
         request.resource.data.get('gender','unspecified') in ['male','female','unspecified'] &&
-        request.resource.data.updatedAt == request.time;
+        request.resource.data.updatedAt == request.time);
       allow delete: if false;
     }
 

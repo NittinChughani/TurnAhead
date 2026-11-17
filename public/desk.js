@@ -1,12 +1,13 @@
 import {configured, auth, helpfulError} from './firebase.js';
 import {observeAuth, login, logout, requestVerification, refreshVerification,
-  myMemberships, getHospital, watchMembership} from './org-store.js';
+  myMemberships, getHospital, watchMembership,updateOwnProfilePhoto} from './org-store.js';
 import {canManageStaff, canManageDepartments, boardLink, isStaffRole, staffGreeting} from './org-model.js';
 import {bootstrap, rollOverAll, observeQueues, observeTickets,
   issueTicket, createQueue, performAction} from './store.js';
 import {dayKey,patientDisplayName,getDoctorLane,doctorActiveCodes} from './queue-engine.js';
 import {watchDoctors} from './doctors.js';
 import {doctorAvailable} from './doctor-model.js';
+import {avatarContents,compressProfilePhoto} from './profile-photo.js';
 
 const {esc,fmt}=window.turnahead, $=id=>document.getElementById(id);
 const views=['login-view','verify-view','no-access-view','dashboard'];
@@ -25,7 +26,7 @@ function toast(message,error=false){const el=$('toast');el.textContent=message;e
 function notice(message,error=false){const el=$('notice');el.textContent=message;el.classList.toggle('error',error);show('notice',true);clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>show('notice',false),6000);}
 function stopSubscriptions(){stopQueues?.();stopTickets?.();stopMember?.();stopDoctors?.();stopQueues=stopTickets=stopMember=stopDoctors=null;doctors=[];
   if(!currentHospital){tickets=[];$('recent-tickets').replaceChildren();}}
-function refreshRole(){show('new-queue',canManageDepartments(currentMember?.role));show('admin-link',canManageStaff(currentMember?.role));$('role-chip').textContent=(currentMember?.role||'receptionist').toUpperCase();$('staff-greeting').textContent=currentMember?staffGreeting(currentMember):'';}
+function refreshRole(){show('new-queue',canManageDepartments(currentMember?.role));show('admin-link',canManageStaff(currentMember?.role));$('role-chip').textContent=(currentMember?.role||'receptionist').toUpperCase();$('staff-greeting-name').textContent=currentMember?staffGreeting(currentMember):'';if(currentMember){const photo=avatarContents(currentMember,esc);$('staff-nav-avatar').innerHTML=photo;$('staff-profile-avatar').innerHTML=photo;}}
 function render(){
   if(!currentHospital)return;
   $('facility-heading').textContent=`${currentHospital.name} · ${new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'})}`;
@@ -154,6 +155,8 @@ $('issue-form').addEventListener('submit',async e=>{
     $('receipt-patient').textContent=patientDisplayName(currentTicket);
     $('receipt-visit').textContent=`Dr. ${currentTicket.doctorName} · Room ${currentTicket.roomNumber}`;
     $('receipt-queue').textContent=currentTicket.queue;
+    $('receipt-counter').textContent=`Issued at Counter ${selectedCounter}`;
+    $('receipt-issued').textContent=`${new Date(currentTicket.createdAt).toLocaleString('en-PK',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Karachi'})} PKT`;
     $('receipt-qr').src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(window.turnaheadQR.svg(currentTicket.trackingUrl));
     $('receipt-link').textContent=currentTicket.trackingUrl;
     show('issue-modal',false);show('ticket-modal',true);
@@ -178,3 +181,13 @@ let lastSeenDay=dayKey();
 setInterval(()=>{const today=dayKey();if(today!==lastSeenDay){lastSeenDay=today;if(currentHospital)rollOverAll(currentHospital.id).catch(e=>notice(helpfulError(e),true));}},15000);
 if(!configured){$('login-error').textContent='Firebase is not configured yet. See the repository setup guide.';view('login-view');}
 else observeAuth(()=>routeCurrentUser());
+
+$('staff-profile-file').addEventListener('change',async e=>{
+ if(!currentHospital||!currentMember)return;const file=e.target.files?.[0];if(!file)return;
+ e.target.disabled=true;try{const photo=await compressProfilePhoto(file);await updateOwnProfilePhoto(currentHospital.id,photo);notice('Profile photo saved.');}
+ catch(err){notice(helpfulError(err),true);}finally{e.target.value='';e.target.disabled=false;}
+});
+$('staff-profile-remove').addEventListener('click',async()=>{
+ if(!currentHospital)return;try{await updateOwnProfilePhoto(currentHospital.id,'');notice('Profile photo removed.');}
+ catch(err){notice(helpfulError(err),true);}
+});

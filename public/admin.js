@@ -1,18 +1,20 @@
 import {configured,auth,helpfulError} from './firebase.js';
 import {observeAuth,login,logout,refreshVerification,requestVerification,myMemberships,getHospital,
-  watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,sendStaffPasswordReset} from './org-store.js';
+  watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js';
 import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory} from './store.js';
 import {canChangeRole,normalizeEmail,invitationLink,boardLink,staffGreeting} from './org-model.js';
 import {dayKey,patientDisplayName} from './queue-engine.js';
 import {watchDoctors,addDoctor,changeDoctor} from './doctors.js';
+import {avatarHTML,avatarContents,compressProfilePhoto} from './profile-photo.js';
+import {patientReportRows,downloadPatientReport} from './patient-report.js';
 const $=id=>document.getElementById(id),esc=window.turnahead.esc,fmt=window.turnahead.fmt;
 let hospital=null,me=null,members=[],invites=[],departments=[],tickets=[],unsubs=[],toastTimer,authEpoch=0,pendingLogin=false,pendingLogout=false;
-let editingMember=null,editingDoctor=null,doctors=[],historyDays=[],archiveCursors=new Map(),historyRecords=new Map();
+let currentHistoryTicket=null,editingMember=null,editingDoctor=null,doctors=[],historyDays=[],archiveCursors=new Map(),historyRecords=new Map();
 const loginButton=$('admin-login-form').querySelector('[type=submit]'),loginLabel=loginButton.textContent;
 function loadingLogin(busy){loginButton.disabled=busy;loginButton.classList.toggle('is-loading',busy);loginButton.textContent=busy?'Checking access…':loginLabel;}
 const show=(id,value)=>$(id).hidden=!value;
 function toast(message,error=false){const el=$('admin-toast');el.textContent=message;el.classList.toggle('error',error);show('admin-toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('admin-toast',false),4800);}
-function stop(){unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;doctors=[];historyRecords.clear();
+function stop(){unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;doctors=[];historyRecords.clear();
   ['history-detail-modal','doctor-edit-modal','staff-edit-modal'].forEach(id=>show(id,false));
   $('patient-ticket-list').replaceChildren();$('history-days').replaceChildren();$('doctor-list').replaceChildren();}
 function displayMetrics(){
@@ -39,12 +41,13 @@ function renderTickets(){
   $('patient-ticket-count').textContent=`Latest ${current.length} today · live`;
   $('patient-ticket-list').innerHTML=current.length?current.map(t=>`<div class="admin-person"><span class="activity-token">${esc(t.code)}</span><div class="person-info"><strong>${esc(patientDisplayName(t))} · ${esc(t.queueName||'Department')}</strong><small>${esc(t.doctorName?'Dr. '+t.doctorName:'Doctor not recorded')} · ${esc(t.roomNumber?'Room '+t.roomNumber:'Room not recorded')} · Issued ${esc(fmt(t.createdAt))} by ${esc(issuingReceptionist(t))} · ${esc(issuingCounter(t))} · Called ${esc(fmt(t.calledAt))} · ${t.attendance==='present'?'Attended':t.attendance==='missed'?'Missed':'Pending'}</small></div><span class="activity-state">${esc(t.status)}</span></div>`).join(''):'<div class="empty-state">No anonymous queue tickets in the recent sample today.</div>';
 }
+function renderOwnAvatar(){if(!me)return;$('admin-profile-avatar').innerHTML=avatarContents(me,esc);}
 function renderMembers(){
   $('staff-list').innerHTML=members.length?members.map(m=>{
     const isOwner=m.role==='owner',self=m.uid===auth.currentUser?.uid;
     const editable=canChangeRole(me.role,m.role,m.role==='owner'?'receptionist':m.role==='admin'?'supervisor':m.role)&&!self;
     const options=['supervisor','receptionist'];
-    return `<div class="admin-person"><div class="person-avatar" aria-hidden="true">${esc(m.email?.[0]||'?').toUpperCase()}</div><div class="person-info"><strong>${esc(isOwner?'Hospital administrator':staffGreeting(m))}</strong><small>${esc(m.email)} · ${isOwner?'Designated administrator':m.active?'Approved staff':'Access disabled'}</small></div><div class="person-actions">${isOwner?'<span class="role-chip">ADMINISTRATOR</span>':`<label class="visually-hidden" for="role-${esc(m.uid)}">Role for ${esc(m.email)}</label><select class="admin-role-select" id="role-${esc(m.uid)}" data-role-for="${esc(m.uid)}" ${editable?'':'disabled'}>${m.role==='admin'?'<option value="admin" disabled selected>Legacy admin</option>':''}${options.map(r=>`<option value="${r}" ${m.role===r?'selected':''}>${r==='supervisor'?'Supervisor':'Receptionist'}</option>`).join('')}</select><button class="btn btn-small btn-outline" type="button" data-edit-for="${esc(m.uid)}" ${editable?'':'disabled'}>Update details</button><button class="btn btn-small btn-outline" type="button" data-toggle-for="${esc(m.uid)}" ${editable?'':'disabled'}>${m.active?'Disable':'Enable'}</button>`}</div></div>`;
+    return `<div class="admin-person">${avatarHTML(m,esc)}<div class="person-info"><strong>${esc(isOwner?'Hospital administrator':staffGreeting(m))}</strong><small>${esc(m.email)} · ${isOwner?'Designated administrator':m.active?'Approved staff':'Access disabled'}</small></div><div class="person-actions">${isOwner?'<span class="role-chip">ADMINISTRATOR</span>':`<label class="visually-hidden" for="role-${esc(m.uid)}">Role for ${esc(m.email)}</label><select class="admin-role-select" id="role-${esc(m.uid)}" data-role-for="${esc(m.uid)}" ${editable?'':'disabled'}>${m.role==='admin'?'<option value="admin" disabled selected>Legacy admin</option>':''}${options.map(r=>`<option value="${r}" ${m.role===r?'selected':''}>${r==='supervisor'?'Supervisor':'Receptionist'}</option>`).join('')}</select><button class="btn btn-small btn-outline" type="button" data-edit-for="${esc(m.uid)}" ${editable?'':'disabled'}>Update details</button><button class="btn btn-small btn-outline" type="button" data-toggle-for="${esc(m.uid)}" ${editable?'':'disabled'}>${m.active?'Disable':'Enable'}</button>`}</div></div>`;
   }).join(''):'<div class="empty-state">No staff registered yet.</div>';
   $('staff-list').querySelectorAll('[data-role-for]').forEach(el=>el.addEventListener('change',async()=>{
     const m=members.find(x=>x.uid===el.dataset.roleFor);if(!m)return;el.disabled=true;
@@ -124,13 +127,21 @@ function historyRecordHtml(t,date,departmentId){
   historyRecords.set(key,t);
   return `<div class="history-record"><div><strong>${esc(t.code)} · ${esc(patientDisplayName(t))}</strong><small>${esc(t.queueName||'Department')} · ${esc(presence)}</small></div><div class="history-record-actions"><span class="activity-state">${esc(t.status)}</span><button type="button" class="btn btn-small btn-outline" data-record-key="${esc(key)}">Details</button></div></div>`;
 }
-function closeHistoryDetail(){show('history-detail-modal',false);}
+function closeHistoryDetail(){show('history-detail-modal',false);currentHistoryTicket=null;}
+$('history-download-pdf').addEventListener('click',async()=>{
+ if(!me||!hospital||!currentHistoryTicket)return;
+ const btn=$('history-download-pdf');btn.disabled=true;btn.textContent='Preparing PDF…';
+ try{const t=currentHistoryTicket;const person=uid=>uid?issuingReceptionist({issuedBy:uid}):'Not recorded';
+   const rows=patientReportRows(t,{issuedBy:person(t.issuedBy),calledBy:person(t.calledBy),finishedBy:person(t.finishedBy)});
+   await downloadPatientReport(t,rows,hospital.name);toast('Private PDF downloaded. Store it securely.');
+ }catch(err){toast('PDF download unavailable: '+helpfulError(err),true);}finally{btn.disabled=false;btn.textContent='↓ Download PDF';}
+});
 $('history-detail-close').addEventListener('click',closeHistoryDetail);
 $('history-detail-done').addEventListener('click',closeHistoryDetail);
 $('history-detail-modal').addEventListener('click',e=>{if(e.target===$('history-detail-modal'))closeHistoryDetail();});
 $('history-days').addEventListener('click',e=>{
  const b=e.target.closest('[data-record-key]');if(!b)return;
- const t=historyRecords.get(b.dataset.recordKey);if(!t)return;
+ const t=historyRecords.get(b.dataset.recordKey);if(!t)return;currentHistoryTicket=t;
  $('history-detail-title').textContent=`Details of ${patientDisplayName(t)}`;
  const rows=[['Ticket number',t.code],['Patient',patientDisplayName(t)],['Doctor',t.doctorName?'Dr. '+t.doctorName:'Not recorded'],['Room',t.roomNumber||'Not recorded'],['Department',t.queueName||'—'],['Date',t.dayKey],['Issued',fmt(t.issuedAt)],['Issued by receptionist',issuingReceptionist(t)],['Issuing counter',issuingCounter(t)],['Called',fmt(t.calledAt)],['Called from counter',t.calledCounter||'Not recorded'],['Called by staff',t.calledBy?issuingReceptionist({issuedBy:t.calledBy}):'Not recorded'],['Finished',fmt(t.finishedAt)],['Finished by staff',t.finishedBy?issuingReceptionist({issuedBy:t.finishedBy}):'Not recorded'],['Attendance',t.attendance==='present'?'Attended':t.attendance==='missed'?'Missed':'Not confirmed'],['Status',t.status]];
  $('history-detail-body').innerHTML=rows.map(([k,v])=>`<div class="history-detail-row"><span>${esc(k)}</span><strong>${esc(v||'—')}</strong></div>`).join('');
@@ -210,11 +221,11 @@ async function initialize(){
     localStorage.setItem('turnahead-hospital',hospital.id);
     show('admin-guard',false);show('admin-content',true);show('admin-sign-out',true);loadingLogin(false);
     $('admin-hospital-name').textContent=`${hospital.name} · Live hospital operations`;
-    $('admin-role').textContent='ADMINISTRATOR';$('settings-name').value=hospital.name;
+    $('admin-role').textContent='ADMINISTRATOR';$('settings-name').value=hospital.name;renderOwnAvatar();
     $('open-reception').href=boardLink(hospital.id,location.href);
     if(pendingLogin){toast('Administrator logged in successfully.');pendingLogin=false;}
     // Start all four streams at once for a responsive admin dashboard.
-    unsubs.push(watchHospitalMembers(hospital.id,data=>{members=data;renderMembers();renderTickets();displayMetrics();},e=>toast(helpfulError(e),true)));
+    unsubs.push(watchHospitalMembers(hospital.id,data=>{members=data;me=data.find(m=>m.uid===auth.currentUser?.uid)||me;renderOwnAvatar();renderMembers();renderTickets();displayMetrics();},e=>toast(helpfulError(e),true)));
     unsubs.push(watchInvitations(hospital.id,data=>{invites=data;renderInvites();displayMetrics();},e=>toast(helpfulError(e),true)));
     unsubs.push(watchDoctors(hospital.id,data=>{doctors=data;renderDoctors();},e=>toast(helpfulError(e),true)));
     unsubs.push(observeQueues(hospital.id,data=>{departments=data;renderDepartments();renderDoctors();displayMetrics();if(historyDays.length&&!$('history-days').querySelector('[data-history-dept]'))renderHistory();},e=>toast(helpfulError(e),true)));
@@ -245,3 +256,13 @@ $('settings-form').addEventListener('submit',async e=>{e.preventDefault();const 
 try{await renameHospital(hospital.id,$('settings-name').value);hospital=await getHospital(hospital.id);$('admin-hospital-name').textContent=`${hospital.name} · Live hospital operations`;toast('Hospital name saved.');}catch(e){toast(helpfulError(e),true);}finally{btn.disabled=false;}});
 $('admin-sign-out').addEventListener('click',async()=>{pendingLogout=true;try{await logout();}catch(e){pendingLogout=false;toast(helpfulError(e),true);}});
 if(configured)observeAuth(()=>initialize());else initialize();
+
+$('admin-profile-file').addEventListener('change',async e=>{
+ if(!hospital||!me)return;const file=e.target.files?.[0];if(!file)return;
+ e.target.disabled=true;try{const photo=await compressProfilePhoto(file);await updateOwnProfilePhoto(hospital.id,photo);toast('Profile photo saved.');}
+ catch(err){toast(helpfulError(err),true);}finally{e.target.value='';e.target.disabled=false;}
+});
+$('admin-profile-remove').addEventListener('click',async()=>{
+ if(!hospital)return;try{await updateOwnProfilePhoto(hospital.id,'');toast('Profile photo removed.');}
+ catch(err){toast(helpfulError(err),true);}
+});

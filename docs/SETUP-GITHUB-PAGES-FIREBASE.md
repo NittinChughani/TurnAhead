@@ -1,3 +1,19 @@
+# TurnAhead v2.5.2 · Profile, ticket and PDF rollout
+
+**Status:** source ready for a separate review branch. This release adds self-service staff/owner profile photos, improved print tickets, private patient PDF reports and **optional, not-yet-deployed push notification scaffolding**. The live site stays unchanged until coordinated rollout.
+
+## Safe deployment checklist
+
+1. Back up Firestore and verify the existing owner and staff memberships and v2.5.1 reception/queue status.
+2. Test this branch's **`firestore.rules` in the Firestore Rules Emulator or a test project**. Confirm active verified users can update only their own photo; unregistered users, other staff members and cross-hospital users cannot change someone else's photo or role; the owner can still update names and roles; private patient history remains owner-readable only.
+3. Publish the tested matching Firestore rules **before merging** the v2.5.2 review PR. Do not activate any push backend during this step.
+4. Verify prior version's staff logins, patient tracking and ticket issuance remain functional with the new rules. Merge the code PR, confirm GitHub Pages deployment, hard refresh and test uploads, removals, profile avatars in staff lists, the printed QR receipt and **Download PDF** using fictional patient records.
+5. Test profile uploads and print/PDF on desktop, Android and iPhone browsers, including slow network and failed CDN access. Manually verify the PDF content and print layout before real patient use.
+6. Leave `public/push-config.js` keys **empty** if the project must remain entirely zero cost. For opt-in background Web Push only after agreeing to billing and a security review, follow [`PUSH-NOTIFICATIONS.md`](PUSH-NOTIFICATIONS.md). Do not promise iPhone lock-screen notifications without a deployed sender and Home Screen app testing.
+7. Conduct privacy/compliance review, backup/recovery tests and hospital pilot before any production use.
+
+---
+
 # TurnAhead v2.5.1 · Firebase record-audit update and rollout checklist
 
 **v2.5 is already merged into the repository.** This v2.5.1 change set is a separate refinement: a floating rounded glass navigation, dark-mode Chromium README screenshots and **private issuing-receptionist + issuing-counter audit fields**. Do not merge the v2.5.1 PR until its matching `firestore.rules` has been tested and published.

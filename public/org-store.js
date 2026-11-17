@@ -8,6 +8,7 @@ import {
   sendEmailVerification, sendPasswordResetEmail, signOut, reload
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import {auth, db} from './firebase.js';
+import {validProfilePhoto} from './profile-photo.js';
 import {normalizeEmail, validHospitalName, canInviteRole, canChangeRole,
   membershipId, INVITE_DAYS, validStaffProfile} from './org-model.js';
 
@@ -108,4 +109,11 @@ export async function renameHospital(hospitalId,name) {
 /** Sends Firebase's secure password-reset email; administrators cannot view or set staff passwords. */
 export async function sendStaffPasswordReset(email){
   await sendPasswordResetEmail(auth,normalizeEmail(email));
+}
+
+/** Staff and owner may edit ONLY their own avatar, never role/access fields. */
+export async function updateOwnProfilePhoto(hospitalId,photo,user=auth.currentUser){
+  if(!user?.emailVerified)throw Error('Sign in with a verified hospital account.');
+  if(!validProfilePhoto(photo))throw Error('Invalid image. Choose a smaller JPG, PNG or WebP file.');
+  await updateDoc(memberRef(hospitalId,user.uid),{profilePhoto:photo,updatedAt:serverTimestamp()});
 }
