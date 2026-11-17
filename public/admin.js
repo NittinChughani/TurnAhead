@@ -3,7 +3,7 @@ import {observeAuth,login,logout,refreshVerification,requestVerification,myMembe
   watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,updateRecallGrace,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js';
 import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory,observeFeedback} from './store.js';
 import {canChangeRole,normalizeEmail,invitationLink,boardLink,staffGreeting} from './org-model.js';
-import {dayKey,patientDisplayName} from './queue-engine.js';
+import {dayKey,patientDisplayName,ticketStatusLabel} from './queue-engine.js';
 import {watchDoctors,addDoctor,changeDoctor} from './doctors.js';
 import {avatarHTML,avatarContents,compressProfilePhoto} from './profile-photo.js';
 import {patientReportRows,downloadPatientReport} from './patient-report.js';
@@ -18,6 +18,37 @@ function toast(message,error=false){const el=$('admin-toast');el.textContent=mes
 function stop(){unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;doctors=[];historyRecords.clear();
   feedbackRecords=[];['history-detail-modal','doctor-edit-modal','staff-edit-modal'].forEach(id=>show(id,false));
   $('patient-ticket-list').replaceChildren();$('history-days').replaceChildren();$('doctor-list').replaceChildren();}
+/** Keep the signed-in landing view focused: only overview cards and the profile. */
+const adminNavigation=document.querySelector('.admin-section-nav');
+function showAdminSection(section,scroll=false){
+  const available=new Set(['overview','team','invites','departments','doctors','patients','history','feedback','settings']);
+  const selected=available.has(section)?section:'overview';
+  $('admin-overview').hidden=selected!=='overview';
+  document.querySelectorAll('[data-admin-section]').forEach(panel=>{panel.hidden=panel.dataset.adminSection!==selected;});
+  document.querySelectorAll('[data-admin-tab]').forEach(button=>{
+    const active=button.dataset.adminTab===selected;
+    button.classList.toggle('is-active',active);
+    if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
+  });
+  if(scroll)adminNavigation.scrollIntoView({behavior:'smooth',block:'start'});
+}
+adminNavigation.addEventListener('click',event=>{
+  const button=event.target.closest('[data-admin-tab]');
+  if(button)showAdminSection(button.dataset.adminTab,true);
+});
+function toggleCustomGrace(){
+  const custom=$('recall-grace').value==='custom',input=$('recall-grace-custom');
+  $('recall-grace-custom-wrap').hidden=!custom;
+  input.disabled=!custom;
+  input.required=custom;
+}
+function showGraceValue(minutes){
+  const value=String(minutes||10);
+  $('recall-grace').value=['5','10','15','20','30'].includes(value)?value:'custom';
+  $('recall-grace-custom').value=value;
+  toggleCustomGrace();
+}
+$('recall-grace').addEventListener('change',toggleCustomGrace);
 function displayMetrics(){
   const active=departments.filter(q=>q.dayKey===dayKey());
   const waiting=active.reduce((n,q)=>n+q.waiting,0),inService=active.reduce((n,q)=>n+(q.activeCount||0),0);
@@ -40,7 +71,7 @@ function issuingCounter(t){return t.issuedCounter||'Not recorded on older ticket
 function renderTickets(){
   const current=tickets.filter(t=>t.dayKey===dayKey());
   $('patient-ticket-count').textContent=`Latest ${current.length} today · live`;
-  $('patient-ticket-list').innerHTML=current.length?current.map(t=>`<div class="admin-person"><span class="activity-token">${esc(t.code)}</span><div class="person-info"><strong>${esc(patientDisplayName(t))} · ${esc(t.queueName||'Department')}</strong><small>${esc(t.doctorName?'Dr. '+t.doctorName:'Doctor not recorded')} · ${esc(t.roomNumber?'Room '+t.roomNumber:'Room not recorded')} · Issued ${esc(fmt(t.createdAt))} by ${esc(issuingReceptionist(t))} · ${esc(issuingCounter(t))} · Called ${esc(fmt(t.calledAt))} · ${t.attendance==='present'?'Attended':t.attendance==='missed'?'Missed':'Pending'}</small></div><span class="activity-state">${esc(t.status)}</span></div>`).join(''):'<div class="empty-state">No anonymous queue tickets in the recent sample today.</div>';
+  $('patient-ticket-list').innerHTML=current.length?current.map(t=>`<div class="admin-person"><span class="activity-token">${esc(t.code)}</span><div class="person-info"><strong>${esc(patientDisplayName(t))} · ${esc(t.queueName||'Department')}</strong><small>${esc(t.doctorName?'Dr. '+t.doctorName:'Doctor not recorded')} · ${esc(t.roomNumber?'Room '+t.roomNumber:'Room not recorded')} · Issued ${esc(fmt(t.createdAt))} by ${esc(issuingReceptionist(t))} · ${esc(issuingCounter(t))} · Called ${esc(fmt(t.calledAt))} · ${t.attendance==='present'?(t.recallCount?'Recalled & completed':'Attended'):t.attendance==='missed'?'Missed':'Pending'}</small></div><span class="activity-state">${esc(ticketStatusLabel(t))}</span></div>`).join(''):'<div class="empty-state">No anonymous queue tickets in the recent sample today.</div>';
 }
 function renderOwnAvatar(){if(!me)return;$('admin-profile-avatar').innerHTML=avatarContents(me,esc);}
 function renderMembers(){
@@ -123,10 +154,10 @@ function renderHistory(){
   host.innerHTML=historyDays.map(date=>`<details class="history-day" data-history-day="${esc(date)}"><summary><b>${esc(date)}</b><span>Search by department and ticket number ↗</span></summary><div class="history-tools"><label>Department<select data-history-dept="${esc(date)}">${departments.map(d=>`<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.prefix)})</option>`).join('')}</select></label><label>Ticket number<input type="search" data-history-code="${esc(date)}" placeholder="CAR-001" maxlength="24"></label><button class="btn btn-small btn-primary" type="button" data-history-search="${esc(date)}">Search</button><button class="btn btn-small btn-outline" type="button" data-history-recent="${esc(date)}">Show recent</button></div><div class="history-results" data-history-results="${esc(date)}">Select a department to view its records.</div><button class="btn btn-small btn-outline history-more" data-history-more="${esc(date)}" type="button" hidden>Load 100 more ↗</button></details>`).join('');
 }
 function historyRecordHtml(t,date,departmentId){
-  const presence=t.attendance==='present'?'Attended':t.attendance==='missed'?'Missed':['waiting','called'].includes(t.status)&&date<dayKey()?'Unresolved after day end':'Pending';
+  const presence=t.attendance==='present'?(t.recallCount?'Recalled & completed':'Attended'):t.attendance==='missed'?'Missed':['waiting','called'].includes(t.status)&&date<dayKey()?'Unresolved after day end':'Pending';
   const key=[date,departmentId,t.id].join(':');
   historyRecords.set(key,t);
-  return `<div class="history-record"><div><strong>${esc(t.code)} · ${esc(patientDisplayName(t))}</strong><small>${esc(t.queueName||'Department')} · ${esc(presence)}</small></div><div class="history-record-actions"><span class="activity-state">${esc(t.status)}</span><button type="button" class="btn btn-small btn-outline" data-record-key="${esc(key)}">Details</button></div></div>`;
+  return `<div class="history-record"><div><strong>${esc(t.code)} · ${esc(patientDisplayName(t))}</strong><small>${esc(t.queueName||'Department')} · ${esc(presence)}</small></div><div class="history-record-actions"><span class="activity-state">${esc(ticketStatusLabel(t))}</span><button type="button" class="btn btn-small btn-outline" data-record-key="${esc(key)}">Details</button></div></div>`;
 }
 function closeHistoryDetail(){show('history-detail-modal',false);currentHistoryTicket=null;}
 $('history-download-pdf').addEventListener('click',async()=>{
@@ -144,7 +175,7 @@ $('history-days').addEventListener('click',e=>{
  const b=e.target.closest('[data-record-key]');if(!b)return;
  const t=historyRecords.get(b.dataset.recordKey);if(!t)return;currentHistoryTicket=t;
  $('history-detail-title').textContent=`Details of ${patientDisplayName(t)}`;
- const rows=[['Ticket number',t.code],['Patient',patientDisplayName(t)],['Doctor',t.doctorName?'Dr. '+t.doctorName:'Not recorded'],['Room',t.roomNumber||'Not recorded'],['Department',t.queueName||'—'],['Date',t.dayKey],['Issued',fmt(t.issuedAt)],['Issued by receptionist',issuingReceptionist(t)],['Issuing counter',issuingCounter(t)],['Called',fmt(t.calledAt)],['Called from counter',t.calledCounter||'Not recorded'],['Called by staff',t.calledBy?issuingReceptionist({issuedBy:t.calledBy}):'Not recorded'],['Finished',fmt(t.finishedAt)],['Finished by staff',t.finishedBy?issuingReceptionist({issuedBy:t.finishedBy}):'Not recorded'],['Attendance',t.attendance==='present'?'Attended':t.attendance==='missed'?'Missed':'Not confirmed'],['Status',t.status]];
+ const rows=[['Ticket number',t.code],['Patient',patientDisplayName(t)],['Doctor',t.doctorName?'Dr. '+t.doctorName:'Not recorded'],['Room',t.roomNumber||'Not recorded'],['Department',t.queueName||'—'],['Date',t.dayKey],['Issued',fmt(t.issuedAt)],['Issued by receptionist',issuingReceptionist(t)],['Issuing counter',issuingCounter(t)],['Called',fmt(t.calledAt)],['Called from counter',t.calledCounter||'Not recorded'],['Called by staff',t.calledBy?issuingReceptionist({issuedBy:t.calledBy}):'Not recorded'],['Finished',fmt(t.finishedAt)],['Finished by staff',t.finishedBy?issuingReceptionist({issuedBy:t.finishedBy}):'Not recorded'],['Attendance',t.attendance==='present'?'Attended':t.attendance==='missed'?'Missed':'Not confirmed'],['Status',ticketStatusLabel(t)]];
  $('history-detail-body').innerHTML=rows.map(([k,v])=>`<div class="history-detail-row"><span>${esc(k)}</span><strong>${esc(v||'—')}</strong></div>`).join('');
  show('history-detail-modal',true);
 });
@@ -226,7 +257,7 @@ async function initialize(){
     localStorage.setItem('turnahead-hospital',hospital.id);
     show('admin-guard',false);show('admin-content',true);show('admin-sign-out',true);loadingLogin(false);
     $('admin-hospital-name').textContent=`${hospital.name} · Live hospital operations`;
-    $('admin-role').textContent='ADMINISTRATOR';$('settings-name').value=hospital.name; $('recall-grace').value=String(hospital.recallGraceMinutes||10);renderOwnAvatar();
+    $('admin-role').textContent='ADMINISTRATOR';$('settings-name').value=hospital.name;showGraceValue(hospital.recallGraceMinutes||10);renderOwnAvatar();showAdminSection('overview');
     $('open-reception').href=boardLink(hospital.id,location.href);
     if(pendingLogin){toast('Administrator logged in successfully.');pendingLogin=false;}
     // Start all four streams at once for a responsive admin dashboard.
@@ -258,7 +289,7 @@ $('copy-invite').addEventListener('click',async()=>{try{await navigator.clipboar
 $('copy-board').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(boardLink(hospital.id,location.href));toast('Public board link copied.');}catch{toast('Clipboard unavailable. Please try again.',true);}});
 $('department-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('[type=submit]');btn.disabled=true;
 try{const queue=await createQueue(hospital.id,$('admin-department-name').value);$('admin-department-name').value='';toast(`${queue.name} department added.`);}catch(e){toast(helpfulError(e),true);}finally{btn.disabled=false;}});
-$('grace-form').addEventListener('submit',async e=>{e.preventDefault();const b=e.target.querySelector('[type=submit]');b.disabled=true;try{await updateRecallGrace(hospital.id,Number($('recall-grace').value));hospital=await getHospital(hospital.id);toast('Recall grace period saved.');}catch(err){toast(helpfulError(err),true);}finally{b.disabled=false;}});
+$('grace-form').addEventListener('submit',async e=>{e.preventDefault();const b=e.target.querySelector('[type=submit]');b.disabled=true;try{const minutes=$('recall-grace').value==='custom'?Number($('recall-grace-custom').value):Number($('recall-grace').value);await updateRecallGrace(hospital.id,minutes);hospital=await getHospital(hospital.id);showGraceValue(hospital.recallGraceMinutes);toast('Recall grace period saved.');}catch(err){toast(helpfulError(err),true);}finally{b.disabled=false;}});
 $('settings-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('[type=submit]');btn.disabled=true;
 try{await renameHospital(hospital.id,$('settings-name').value);hospital=await getHospital(hospital.id);$('admin-hospital-name').textContent=`${hospital.name} · Live hospital operations`;toast('Hospital name saved.');}catch(e){toast(helpfulError(e),true);}finally{btn.disabled=false;}});
 $('admin-sign-out').addEventListener('click',async()=>{pendingLogout=true;try{await logout();}catch(e){pendingLogout=false;toast(helpfulError(e),true);}});
