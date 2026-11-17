@@ -29,10 +29,11 @@ service cloud.firestore {
     function admin(hid) { return owner(hid); }
     function owner(hid) { return isMember(hid) && role(hid) == 'owner' && get(hospitalPath(hid)).data.ownerUid == request.auth.uid; }
     function validHospital(data) {
-      return data.keys().hasOnly(['name','ownerUid','status','createdAt','updatedAt']) &&
+      return data.keys().hasOnly(['name','ownerUid','status','createdAt','updatedAt','recallGraceMinutes']) &&
         data.name is string && data.name.size() >= 3 && data.name.size() <= 70 &&
         data.ownerUid is string && data.status == 'active' &&
-        data.createdAt is timestamp && data.updatedAt is timestamp;
+        data.createdAt is timestamp && data.updatedAt is timestamp &&
+        data.get('recallGraceMinutes',10) is int && data.get('recallGraceMinutes',10) >= 5 && data.get('recallGraceMinutes',10) <= 30;
     }
     function validAvatar(data) {
       return !('profilePhoto' in data) || (data.profilePhoto is string &&
@@ -85,7 +86,10 @@ service cloud.firestore {
     // v2.3 tickets remain readable and may be completed during a rules-first rollout.
     // New doctor fields are validated when present, and the registered doctor is verified on create.
     function validTicket(data) {
-      return data.keys().hasOnly(['queueId','queueName','code','number','dayKey','status','createdAt','calledAt','finishedAt','patientName','attendance','patientGender','doctorId','doctorName','roomNumber','calledCounter']) &&
+      return data.keys().hasOnly(['queueId','queueName','code','number','dayKey','status','createdAt','calledAt','finishedAt','patientName','attendance','patientGender','doctorId','doctorName','roomNumber','calledCounter','missedAt','recalledAt','recallCount']) &&
+        data.get('recallCount',0) is int && data.get('recallCount',0) >= 0 && data.get('recallCount',0) <= 1 &&
+        (!('missedAt' in data) || data.missedAt is number) &&
+        (!('recalledAt' in data) || data.recalledAt is number) &&
         (!('calledCounter' in data) || (data.calledCounter is string && data.calledCounter.matches('^Counter (?:[1-9]|1[0-2])$'))) &&
         data.queueId is string && data.queueName is string && data.code is string &&
         data.number is int && data.number >= 0 && data.dayKey is string &&
@@ -108,7 +112,10 @@ service cloud.firestore {
       );
     }
     function validHistoryRecord(data,hid,day,qid,ticketId) {
-      return data.keys().hasOnly(['ticketId','queueId','queueName','code','number','dayKey','patientName','status','attendance','issuedAt','calledAt','finishedAt','updatedAt','patientGender','doctorId','doctorName','roomNumber','calledCounter','calledBy','finishedBy','issuedBy','issuedCounter']) &&
+      return data.keys().hasOnly(['ticketId','queueId','queueName','code','number','dayKey','patientName','status','attendance','issuedAt','calledAt','finishedAt','updatedAt','patientGender','doctorId','doctorName','roomNumber','calledCounter','calledBy','finishedBy','issuedBy','issuedCounter','missedAt','recalledAt','recallCount']) &&
+        data.get('recallCount',0) is int && data.get('recallCount',0) >= 0 && data.get('recallCount',0) <= 1 &&
+        (!('missedAt' in data) || data.missedAt is number) &&
+        (!('recalledAt' in data) || data.recalledAt is number) &&
         data.get('issuedBy','') is string &&
         (!('issuedCounter' in data) || (data.issuedCounter is string && data.issuedCounter.matches('^Counter (?:[1-9]|1[0-2])$'))) &&
         data.get('calledBy','') is string && data.get('finishedBy','') is string &&
@@ -128,6 +135,18 @@ service cloud.firestore {
         getAfter(ticketPath(hid,ticketId)).data.get('roomNumber','') == data.get('roomNumber','') &&
         getAfter(ticketPath(hid,ticketId)).data.get('patientGender','') == data.get('patientGender','');
     }
+    function validRecall(hid, old, incoming, ticketId) {
+      return old.status == 'skipped' && old.get('recallCount',0) == 0 &&
+        old.finishedAt is number && old.finishedAt <= request.time.toMillis() &&
+        request.time.toMillis() - old.finishedAt <= get(hospitalPath(hid)).data.get('recallGraceMinutes',10) * 60000 &&
+        incoming.status == 'waiting' && incoming.attendance == 'pending' &&
+        incoming.calledAt == null && incoming.finishedAt == null &&
+        incoming.missedAt == old.finishedAt && incoming.recallCount == 1 &&
+        incoming.recalledAt is number && incoming.recalledAt <= request.time.toMillis() + 120000 &&
+        incoming.recalledAt >= request.time.toMillis() - 120000 &&
+        incoming.diff(old).affectedKeys().hasOnly(['status','attendance','calledAt','finishedAt','calledCounter','missedAt','recalledAt','recallCount']) &&
+        getAfter(/databases/$(database)/documents/hospitals/$(hid)/queues/$(old.queueId)).data.waitingNumbers.hasAny([old.number]);
+    }
     match /hospitals/{hid} {
       // Public landing/board can fetch a *known* hospital ID, never enumerate hospitals.
       allow get: if true;
@@ -135,7 +154,7 @@ service cloud.firestore {
       // Operator-provisioned only; browser users cannot register a hospital or an owner.
       allow create: if false;
       allow update: if admin(hid) &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','updatedAt']) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','updatedAt','recallGraceMinutes']) &&
         validHospital(request.resource.data) && request.resource.data.updatedAt == request.time;
 
       match /invites/{mail} {
@@ -196,13 +215,46 @@ service cloud.firestore {
           validDoctorOnNewTicket(hid,request.resource.data);
         allow update: if isMember(hid) && validTicket(request.resource.data) &&
           // Reception can advance status, never rewrite patient/doctor/room history.
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','attendance','calledAt','finishedAt','calledCounter']) &&
-          ((resource.data.status == 'waiting' && request.resource.data.status == 'called' &&
-            request.resource.data.calledAt is number) ||
-           (resource.data.status == 'called' && request.resource.data.status in ['completed','skipped'] &&
-            request.resource.data.finishedAt is number &&
-            request.resource.data.attendance == (request.resource.data.status == 'completed' ? 'present' : 'missed')));
+          ((request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','attendance','calledAt','finishedAt','calledCounter']) &&
+            ((resource.data.status == 'waiting' && request.resource.data.status == 'called' &&
+              request.resource.data.calledAt is number) ||
+             (resource.data.status == 'called' && request.resource.data.status in ['completed','skipped'] &&
+              request.resource.data.finishedAt is number &&
+              request.resource.data.attendance == (request.resource.data.status == 'completed' ? 'present' : 'missed')))) ||
+           validRecall(hid,resource.data,request.resource.data,ticketId));
         allow delete: if false;
+      }
+      // Visitor can create exactly one arrival request by possessing the unguessable ticket link.
+      // A second visitor write is denied; only verified staff may mark it confirmed.
+      match /arrivalRequests/{ticketId} {
+        allow get: if true;
+        allow list: if isMember(hid);
+        allow create: if exists(ticketPath(hid,ticketId)) &&
+          get(ticketPath(hid,ticketId)).data.status == 'waiting' &&
+          request.time.toMillis() - get(ticketPath(hid,ticketId)).data.createdAt >= 0 &&
+          request.time.toMillis() - get(ticketPath(hid,ticketId)).data.createdAt <= 86400000 &&
+          request.resource.data.keys().hasOnly(['ticketId','status','requestedAt']) &&
+          request.resource.data.ticketId == ticketId &&
+          request.resource.data.status == 'pending' && request.resource.data.requestedAt == request.time;
+        allow update: if isMember(hid) && resource.data.status == 'pending' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','verifiedAt']) &&
+          request.resource.data.status == 'verified' && request.resource.data.verifiedAt == request.time;
+        allow delete: if false;
+      }
+      // Feedback is immutable, one private response per completed bearer-QR ticket.
+      match /feedback/{ticketId} {
+        allow get, list: if owner(hid);
+        allow create: if exists(ticketPath(hid,ticketId)) &&
+          get(ticketPath(hid,ticketId)).data.status == 'completed' &&
+          get(ticketPath(hid,ticketId)).data.finishedAt is number &&
+          request.time.toMillis() >= get(ticketPath(hid,ticketId)).data.finishedAt &&
+          request.time.toMillis() - get(ticketPath(hid,ticketId)).data.finishedAt <= 86400000 &&
+          request.resource.data.keys().hasOnly(['ticketId','rating','note','createdAt']) &&
+          request.resource.data.ticketId == ticketId &&
+          request.resource.data.rating is int && request.resource.data.rating >= 1 && request.resource.data.rating <= 5 &&
+          request.resource.data.note is string && request.resource.data.note.size() <= 300 &&
+          request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
       }
       match /history/{date} {
         // Every day's index is written at first ticket issue, not by an unreliable browser cron.
@@ -223,7 +275,7 @@ service cloud.firestore {
             getAfter(ticketPath(hid,ticketId)).data.patientName == request.resource.data.patientName &&
             getAfter(ticketPath(hid,ticketId)).data.code == request.resource.data.code;
           allow update: if isMember(hid) &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','attendance','calledAt','finishedAt','updatedAt','calledCounter','calledBy','finishedBy']) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','attendance','calledAt','finishedAt','updatedAt','calledCounter','calledBy','finishedBy','missedAt','recalledAt','recallCount']) &&
             (!('calledBy' in request.resource.data) || request.resource.data.calledBy == request.auth.uid || resource.data.get('calledBy','') == request.resource.data.calledBy) &&
             (!('finishedBy' in request.resource.data) || request.resource.data.finishedBy == request.auth.uid || resource.data.get('finishedBy','') == request.resource.data.finishedBy) &&
             validHistoryRecord(request.resource.data,hid,date,qid,ticketId) &&

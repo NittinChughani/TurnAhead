@@ -3,11 +3,13 @@ import {observeAuth, login, logout, requestVerification, refreshVerification,
   myMemberships, getHospital, watchMembership,updateOwnProfilePhoto} from './org-store.js';
 import {canManageStaff, canManageDepartments, boardLink, isStaffRole, staffGreeting} from './org-model.js';
 import {bootstrap, rollOverAll, observeQueues, observeTickets,
-  issueTicket, createQueue, performAction} from './store.js';
+  issueTicket, createQueue, performAction,observeArrivals,verifyArrival,recallMissedTicket} from './store.js';
 import {dayKey,patientDisplayName,getDoctorLane,doctorActiveCodes} from './queue-engine.js';
 import {watchDoctors} from './doctors.js';
 import {doctorAvailable} from './doctor-model.js';
 import {avatarContents,compressProfilePhoto} from './profile-photo.js';
+import {bindLanguage,t} from './locale.js';
+import {recallEligibility,graceMinutes} from './v26-engine.js';
 
 const {esc,fmt}=window.turnahead, $=id=>document.getElementById(id);
 const views=['login-view','verify-view','no-access-view','dashboard'];
@@ -15,7 +17,7 @@ const views=['login-view','verify-view','no-access-view','dashboard'];
 if(new URLSearchParams(location.search).has('invite')) location.replace('./activate.html'+location.search);
 let currentHospital=null,currentMember=null,memberships=[],queues=[],tickets=[],selectedQueue=null,currentTicket=null;
 let doctors=[],stopDoctors=null,selectedDoctor=null,selectedCounter=1;
-let stopQueues=null,stopTickets=null,stopMember=null,authEpoch=0,toastTimer,noticeTimer;
+let stopQueues=null,stopTickets=null,stopMember=null,stopArrivals=null,arrivalRequests=[],authEpoch=0,toastTimer,noticeTimer;
 let pendingSignIn=false,pendingSignOut=false;
 const loginButton=$('login-form').querySelector('[type=submit]');
 const loginOriginal=loginButton.textContent;
@@ -24,7 +26,7 @@ const show=(id,visible)=>$(id).hidden=!visible;
 function view(name){if(name!=='login-view')loadingLogin(false);views.forEach(v=>show(v,v===name));show('logout',Boolean(auth?.currentUser));show('workspace-switch',name==='dashboard'&&memberships.filter(m=>isStaffRole(m.role)).length>1);show('public-board-link',name==='dashboard');show('staff-greeting',name==='dashboard'&&Boolean(currentMember));show('admin-link',name==='dashboard'&&canManageStaff(currentMember?.role));window.scrollTo(0,0);}
 function toast(message,error=false){const el=$('toast');el.textContent=message;el.classList.toggle('error',error);show('toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('toast',false),4600);}
 function notice(message,error=false){const el=$('notice');el.textContent=message;el.classList.toggle('error',error);show('notice',true);clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>show('notice',false),6000);}
-function stopSubscriptions(){stopQueues?.();stopTickets?.();stopMember?.();stopDoctors?.();stopQueues=stopTickets=stopMember=stopDoctors=null;doctors=[];
+function stopSubscriptions(){stopQueues?.();stopTickets?.();stopMember?.();stopDoctors?.();stopArrivals?.();stopQueues=stopTickets=stopMember=stopDoctors=stopArrivals=null;arrivalRequests=[];doctors=[];
   if(!currentHospital){tickets=[];$('recent-tickets').replaceChildren();}}
 function refreshRole(){show('new-queue',canManageDepartments(currentMember?.role));show('admin-link',canManageStaff(currentMember?.role));$('role-chip').textContent=(currentMember?.role||'receptionist').toUpperCase();$('staff-greeting-name').textContent=currentMember?staffGreeting(currentMember):'';if(currentMember){const photo=avatarContents(currentMember,esc);$('staff-nav-avatar').innerHTML=photo;$('staff-profile-avatar').innerHTML=photo;}}
 function render(){
@@ -54,9 +56,33 @@ function render(){
     $('queue-detail').querySelectorAll('[data-action]').forEach(btn=>btn.addEventListener('click',()=>action(q.id,selectedDoctor,btn.dataset.action,btn)));
   }else $('queue-detail').innerHTML='<div class="empty-state">No department yet. Ask your hospital administrator to create one.</div>';
   const latest=tickets.filter(t=>t.dayKey===dayKey());
+  renderV26();
   $('activity-count').textContent=`${latest.length} recent`;
   $('recent-tickets').innerHTML=latest.length?latest.slice(0,14).map(t=>`<div class="activity-item"><div class="activity-token">${esc(t.code)}</div><div class="activity-main"><b>${esc(t.patientName||'Older ticket')} · ${esc(t.queueName||'Service desk')}</b><small>Dr. ${esc(t.doctorName||'—')} · ${esc(fmt(t.createdAt))}${t.calledCounter?' · '+esc(t.calledCounter):''}</small></div><span class="activity-state">${esc(t.status)}</span></div>`).join(''):'<div class="empty-state">No tickets today. Create the first walk-in ticket to get started.</div>';
 }
+function renderV26(){
+  if(!currentHospital)return;
+  const minutes=graceMinutes(currentHospital.recallGraceMinutes);
+  const missed=tickets.filter(x=>x.dayKey===dayKey()&&recallEligibility(x,Date.now(),minutes,dayKey()).ok);
+  $('missed-list').innerHTML=missed.length?missed.map(x=>`<div class="v26-mini-item"><div><strong>${esc(x.code)} · ${esc(x.patientName)}</strong><small>Dr. ${esc(x.doctorName||'—')} · ${esc(x.queueName||'—')} · missed ${esc(fmt(x.finishedAt))} · ${minutes}-minute grace</small></div><button type="button" class="btn btn-small btn-outline" data-recall="${esc(x.id)}">${esc(t('recall'))}</button></div>`).join(''):`<div class="empty-state">${esc(t('noMissed'))}</div>`;
+  const todays=new Map(tickets.filter(x=>x.dayKey===dayKey()).map(x=>[x.id,x]));
+  const pending=arrivalRequests.filter(x=>x.status==='pending'&&todays.has(x.id));
+  $('arrival-list').innerHTML=pending.length?pending.map(x=>{const ticket=todays.get(x.id);return `<div class="v26-mini-item"><div><strong>${esc(ticket.code)} · ${esc(ticket.patientName)}</strong><small>Dr. ${esc(ticket.doctorName||'—')} · ${esc(ticket.queueName||'—')}</small></div><button type="button" class="btn btn-small btn-outline" data-verify-arrival="${esc(x.id)}">${esc(t('verify'))}</button></div>`;}).join(''):`<div class="empty-state">${esc(t('noArrivals'))}</div>`;
+}
+$('missed-list').addEventListener('click',async e=>{
+  const b=e.target.closest('[data-recall]');if(!b||!currentHospital)return;
+  const ticket=tickets.find(x=>x.id===b.dataset.recall);if(!ticket)return;
+  b.disabled=true;
+  try{const result=await recallMissedTicket(currentHospital.id,ticket.queueId,ticket.id);notice(`${result.code} recalled to the END of the doctor queue.`,false);}
+  catch(err){notice(helpfulError(err),true);}finally{b.disabled=false;}
+});
+$('arrival-list').addEventListener('click',async e=>{
+  const b=e.target.closest('[data-verify-arrival]');if(!b||!currentHospital)return;
+  b.disabled=true;
+  try{await verifyArrival(currentHospital.id,b.dataset.verifyArrival);notice('Patient arrival verified.');}
+  catch(err){notice(helpfulError(err),true);}finally{b.disabled=false;}
+});
+bindLanguage(()=>render());
 async function action(id,doctorId,kind,button){
   const label=button.textContent;
   button.disabled=true;button.textContent='Updating…';
@@ -79,21 +105,22 @@ async function openHospital(member){
   selectedCounter=Number(localStorage.getItem('turnahead-counter-'+member.hospitalId))||1;
   if(selectedCounter<1||selectedCounter>12)selectedCounter=1;
   $('counter-select').value=String(selectedCounter);
-  queues=[];tickets=[];selectedQueue=null;selectedDoctor=null;render();view('dashboard');
+  queues=[];tickets=[];arrivalRequests=[];selectedQueue=null;selectedDoctor=null;render();view('dashboard');show('v26-operations',true);
   stopMember=watchMembership(member.hospitalId,auth.currentUser.uid,updated=>{
     if(!updated?.active){toast('Your access to this hospital has been disabled.',true);stopSubscriptions();currentHospital=null;routeCurrentUser();return;}
     currentMember=updated;refreshRole();
   },e=>toast(helpfulError(e),true));
   // Subscribe first: patients and reception see updates without waiting on daily maintenance.
   stopQueues=observeQueues(member.hospitalId,data=>{queues=data;render();},e=>notice(helpfulError(e),true));
-  stopTickets=observeTickets(member.hospitalId,data=>{tickets=data;render();},e=>notice(helpfulError(e),true));
+  stopTickets=observeTickets(member.hospitalId,data=>{tickets=data;render();},e=>notice(helpfulError(e),true),100);
+  stopArrivals=observeArrivals(member.hospitalId,data=>{arrivalRequests=data;renderV26();},e=>notice(helpfulError(e),true));
   stopDoctors=watchDoctors(member.hospitalId,data=>{doctors=data;refreshDoctorChoices();render();},e=>notice(helpfulError(e),true));
   // Maintenance happens asynchronously and is idempotent.
   (async()=>{if(canManageDepartments(member.role))await bootstrap(member.hospitalId);await rollOverAll(member.hospitalId);})().catch(e=>notice(helpfulError(e),true));
 }
 async function routeCurrentUser(){
   const seq=++authEpoch;
-  stopSubscriptions();currentHospital=null;currentMember=null;
+  stopSubscriptions();show('v26-operations',false);currentHospital=null;currentMember=null;
   const user=auth?.currentUser;
   if(!user){memberships=[];view('login-view');if(pendingSignOut){toast('You have been signed out successfully.');pendingSignOut=false;}return;}
   show('logout',true);

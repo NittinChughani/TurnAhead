@@ -117,3 +117,8 @@ export async function updateOwnProfilePhoto(hospitalId,photo,user=auth.currentUs
   if(!validProfilePhoto(photo))throw Error('Invalid image. Choose a smaller JPG, PNG or WebP file.');
   await updateDoc(memberRef(hospitalId,user.uid),{profilePhoto:photo,updatedAt:serverTimestamp()});
 }
+
+export async function updateRecallGrace(hospitalId,minutes){
+  if(!Number.isInteger(minutes)||minutes<5||minutes>30)throw Error('Choose a grace period between 5 and 30 minutes.');
+  await updateDoc(hospitalRef(hospitalId),{recallGraceMinutes:minutes,updatedAt:serverTimestamp()});
+}

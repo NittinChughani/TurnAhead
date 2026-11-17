@@ -1,12 +1,13 @@
 /** Hospital-scoped Firestore queues, atomic ticket transitions and private dated history. */
 import {
-  collection,doc,getDocs,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter
+  collection,doc,getDocs,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter,deleteField
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {db,auth} from './firebase.js';
 import {dayKey,departmentPrefix,initialQueue,initialControl,normalizedQueue,
   nextTicket,nextInLine,publicQueue,getDoctorLane,getDoctorControl,counterLabel,planDoctorCall,planDoctorFinish} from './queue-engine.js';
 import {ticketLink} from './org-model.js';
 import {cleanRoomNumber,doctorAvailable} from './doctor-model.js';
+import {planRecall,safeFeedback,graceMinutes} from './v26-engine.js';
 
 const ref=(hid,group,id)=>doc(db,'hospitals',hid,group,id);
 const qDoc=(hid,id)=>ref(hid,'queues',id);
@@ -15,6 +16,8 @@ const ticketDoc=(hid,id)=>ref(hid,'tickets',id);
 const metaDoc=hid=>ref(hid,'meta','sequence');
 const prefixDoc=(hid,prefix)=>ref(hid,'prefixes',prefix);
 const dayDoc=(hid,day)=>ref(hid,'history',day);
+const arrivalDoc=(hid,ticketId)=>ref(hid,'arrivalRequests',ticketId);
+const feedbackDoc=(hid,ticketId)=>ref(hid,'feedback',ticketId);
 const doctorDoc=(hid,id)=>ref(hid,'doctors',id);
 const historyCollection=(hid,day,qid)=>collection(db,'hospitals',hid,'history',day,'departments',qid,'records');
 const historyDoc=(hid,day,qid,ticketId)=>doc(historyCollection(hid,day,qid),ticketId);
@@ -191,4 +194,50 @@ export async function readHistory(hid,date,departmentId,code='',cursor=null){
       query(coll,orderBy('issuedAt','desc'),limit(100));
   const snap=await getDocs(search);
   return {records:snap.docs.map(d=>({id:d.id,...d.data()})),cursor:number?null:(snap.docs.at(-1)||null),hasMore:!number&&snap.docs.length===100};
+}
+
+/** A public bearer-QR visitor may request verification once; only staff can confirm it. */
+export function observeArrival(hid,ticketId,next,error){
+  return onSnapshot(arrivalDoc(hid,ticketId),snap=>next(snap.exists()?snap.data():null),error);
+}
+export function observeArrivals(hid,next,error){
+  return onSnapshot(query(collection(db,'hospitals',hid,'arrivalRequests'),orderBy('requestedAt','desc'),limit(100)),
+    snap=>next(snap.docs.map(d=>({id:d.id,...d.data()}))),error);
+}
+export async function requestArrival(hid,ticketId){
+  const {setDoc,serverTimestamp}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js');
+  await setDoc(arrivalDoc(hid,ticketId),{ticketId,status:'pending',requestedAt:serverTimestamp()});
+}
+export async function verifyArrival(hid,ticketId){
+  const {updateDoc,serverTimestamp}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js');
+  await updateDoc(arrivalDoc(hid,ticketId),{status:'verified',verifiedAt:serverTimestamp()});
+}
+/** Single-shot feedback: a completed ticket can create one private owner-readable record. */
+export async function submitFeedback(hid,ticketId,rating,note){
+  const {setDoc,serverTimestamp}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js');
+  const safe=safeFeedback(rating,note);
+  await setDoc(feedbackDoc(hid,ticketId),{ticketId,...safe,createdAt:serverTimestamp()});
+}
+export function observeFeedback(hid,next,error){
+  return onSnapshot(query(collection(db,'hospitals',hid,'feedback'),orderBy('createdAt','desc'),limit(40)),
+    snap=>next(snap.docs.map(d=>({id:d.id,...d.data()}))),error);
+}
+/** Atomically return one missed patient to the END of their doctor lane within owner-defined grace. */
+export async function recallMissedTicket(hid,queueId,ticketId){
+  const uid=auth.currentUser?.uid;
+  if(!uid)throw Error('Staff authorization is required.');
+  const now=Date.now(),today=dayKey();
+  return runTransaction(db,async tx=>{
+    const qr=qDoc(hid,queueId),cr=controlDoc(hid,queueId),tr=ticketDoc(hid,ticketId);
+    const hospitalRef=doc(db,'hospitals',hid);
+    const [qs,cs,ts,hs]=await Promise.all([tx.get(qr),tx.get(cr),tx.get(tr),tx.get(hospitalRef)]);
+    if(!qs.exists()||!cs.exists()||!ts.exists()||!hs.exists())throw Error('Ticket or hospital unavailable.');
+    const old=ts.data();
+    if(old.queueId!==queueId)throw Error('Ticket belongs to a different department.');
+    const minutes=graceMinutes(hs.data().recallGraceMinutes);
+    const plan=planRecall(qs.data(),cs.data(),old,ticketId,now,minutes,today);
+    tx.update(qr,plan.queuePatch);tx.update(cr,plan.controlPatch);tx.update(tr,{...plan.ticketPatch,calledCounter:deleteField()});
+    if(old.patientName)tx.update(historyDoc(hid,old.dayKey,queueId,ticketId),{...plan.historyPatch,calledCounter:''});
+    return {code:old.code,minutes};
+  });
 }

@@ -34,7 +34,7 @@ test('issuer identity and issuing counter are recorded atomically in owner-only 
   assert.match(admin,/Issued by receptionist/);
   assert.match(admin,/Issuing counter/);
   assert.match(rules,/request\.resource\.data\.issuedBy == request\.auth\.uid/);
-  assert.match(rules,/affectedKeys\(\)\.hasOnly\(\['status','attendance','calledAt','finishedAt','updatedAt','calledCounter','calledBy','finishedBy'\]\)/);
+  assert.match(rules,/affectedKeys\(\)\.hasOnly\(\['status','attendance','calledAt','finishedAt','updatedAt','calledCounter','calledBy','finishedBy','missedAt','recalledAt','recallCount'\]\)/);
 });
 test('private staff name in archived records comes from authorized hospital member profiles',()=>{
   const admin=pub('admin.js');
