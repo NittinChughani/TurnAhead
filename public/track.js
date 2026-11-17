@@ -4,7 +4,7 @@ import {registerTurnPush} from './push-client.js';
 import {observeTicket,observeQueue,fetchTicketFromServer,submitFeedback} from './store.js';
 import {t as tfn,bindLanguage} from './locale.js?v=2.6.1';
 import {nearTurnMilestone,shouldApplyTicket} from './v26-engine.js?v=2.6.2';
-import {dayKey,waitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName,doctorQueueSummary,callHistoryLine} from './queue-engine.js';
+import {dayKey,waitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName,doctorQueueSummary,callHistoryLine} from './queue-engine.js?v=2.6.2';
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
 const ticketId=params.get('ticket'),hospitalId=params.get('hospital');
