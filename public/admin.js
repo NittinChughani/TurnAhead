@@ -7,7 +7,7 @@ import {dayKey,patientDisplayName} from './queue-engine.js';
 import {watchDoctors,addDoctor,changeDoctor} from './doctors.js';
 import {avatarHTML,avatarContents,compressProfilePhoto} from './profile-photo.js';
 import {patientReportRows,downloadPatientReport} from './patient-report.js';
-import {bindLanguage,t} from './locale.js';
+import {bindLanguage,t} from './locale.js?v=2.6.1';
 const $=id=>document.getElementById(id),esc=window.turnahead.esc,fmt=window.turnahead.fmt;
 let hospital=null,me=null,members=[],invites=[],departments=[],tickets=[],unsubs=[],toastTimer,authEpoch=0,pendingLogin=false,pendingLogout=false;
 let feedbackRecords=[],currentHistoryTicket=null,editingMember=null,editingDoctor=null,doctors=[],historyDays=[],archiveCursors=new Map(),historyRecords=new Map();
