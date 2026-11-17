@@ -256,8 +256,6 @@
 @media(max-width:570px){.profile-card{align-items:flex-start;padding:13px}.member-avatar-xl{width:54px;height:54px}.receipt-top{padding:15px 16px 10px}}
 @media print{.print-ticket{width:76mm!important;max-width:76mm!important;border:0!important;border-radius:0!important;box-shadow:none!important;margin:0!important;break-inside:avoid;print-color-adjust:exact;-webkit-print-color-adjust:exact}.receipt-top{padding:3mm 3mm 1mm}.receipt-brand img{width:30mm}.receipt-facility{padding:3mm 2mm 0}.receipt-number-box{padding:4mm 2mm;margin:2mm 2mm 0}.receipt-code{font-size:15mm!important}.receipt-visit-card{margin:3mm 2mm 1mm;padding:3mm}.receipt-qr-box{margin:2mm 1mm}.receipt-qr{width:38mm!important;height:38mm!important}.receipt-link{margin:2mm!important;overflow-wrap:anywhere}.receipt-footer{padding:2mm!important}@page{size:80mm auto;margin:0}}
 /* v2.6 — permission-free in-page alerts, visit confirmation and queue recovery */
-.language-switch{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border,#dae2e8);padding:6px 9px;border-radius:999px;background:var(--card,#fff);font-size:12px;white-space:nowrap}
-.language-switch select{border:0;background:transparent;color:inherit;font:inherit;font-weight:700;max-width:85px;cursor:pointer}
 .v26-popup-wrap[hidden],.v26-desk-panels[hidden],.v26-arrival[hidden],.v26-feedback[hidden]{display:none!important}
 .v26-popup-wrap{position:fixed;inset:0;z-index:1500;display:grid;place-items:center;background:rgba(9,23,35,.62);padding:18px;backdrop-filter:blur(6px)}
 .v26-popup{width:min(100%,440px);background:var(--surface,#fff);color:var(--ink,#192f37);border-radius:25px;padding:30px;box-shadow:0 28px 75px #08171f50;border:1px solid #ffffff25;text-align:center;animation:v26In .3s cubic-bezier(.2,.7,.3,1)}
@@ -277,13 +275,8 @@
 .v26-mini-item{padding:12px;border:1px solid var(--border,#e0e7eb);border-radius:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .v26-mini-item strong{display:block;font-size:14px}.v26-mini-item small{display:block;color:var(--muted,#607280);line-height:1.5}
 .v26-feedback-admin{margin-top:24px}.v26-feedback-admin h3{margin-bottom:7px}.v26-settings{margin:24px 0}
-[dir=rtl] .v26-popup,[dir=rtl] .v26-arrival,[dir=rtl] .v26-feedback{text-align:right}
-[dir=rtl] .v26-popup-icon{margin-inline:auto}
-[dir=rtl] .track-code,[dir=rtl] .board-code-chip,[dir=rtl] .activity-token,[dir=rtl] #ahead-count{direction:ltr;unicode-bidi:isolate}
-@media(max-width:730px){.v26-desk-panels{grid-template-columns:1fr}.v26-popup{padding:24px}.language-switch{padding:5px 6px}.language-switch select{max-width:66px}}
 @media(prefers-reduced-motion:reduce){.v26-popup{animation:none}}
 /* Theme-token alignment for all v2.6 surfaces */
-.language-switch{background:var(--paper);border-color:var(--line);color:var(--ink)}
 .v26-popup{background:var(--paper);color:var(--ink);border-color:var(--line)}
 .v26-popup p{color:var(--muted)}
 .rating-stars label{border-color:var(--line)}
@@ -291,8 +284,6 @@
 .v26-mini-item{border-color:var(--line)}
 .v26-mini-item small{color:var(--muted)}
 .v26-board-voice span{color:var(--muted)}
-[dir=rtl] .language-switch select{direction:ltr}
-[dir=rtl] .rating-stars{direction:ltr;justify-content:flex-end}
 @media(max-width:590px){
  .board-page .nav{flex-wrap:wrap;justify-content:center;gap:7px;padding-top:9px;padding-bottom:9px}
  .board-page .workspace-label{display:none}
@@ -301,3 +292,36 @@
  .board-page .nav-actions{margin-left:0;gap:6px}
  .board-page .nav-actions .btn-small{padding-inline:8px;min-height:34px;font-size:11px}
 }
+
+/* v2.6.1 — arrival CTA sits immediately below the patient heading */
+.track-arrival-banner{display:flex;align-items:center;justify-content:space-between;gap:24px;
+ background:linear-gradient(110deg,var(--paper) 20%,var(--wash) 115%);
+ border:1px solid color-mix(in srgb,var(--blue) 22%,var(--line));border-radius:21px;
+ padding:22px 25px;margin:-6px 0 25px;box-shadow:0 12px 34px #13447e0c}
+.track-arrival-banner[hidden]{display:none!important}
+.track-arrival-text{min-width:0;flex:1}
+.track-arrival-banner h2{font-size:22px;line-height:1.2;letter-spacing:-.7px;margin:8px 0 5px}
+.track-arrival-banner p{color:var(--muted);font-size:12px;line-height:1.65;margin:0;max-width:570px}
+.track-arrival-banner .btn{flex:0 0 auto;min-width:210px;white-space:normal;padding:10px 15px;line-height:1.3}
+.track-arrival-banner small{font-size:12px;color:var(--blue);font-weight:700;line-height:1.5}
+.track-arrival-banner small:empty{display:none}
+/* Completion feedback is a single modal, never a permanent bottom-of-page section. */
+.v26-feedback-dialog{max-height:calc(100dvh - 36px);overflow-y:auto;text-align:center}
+.v26-feedback-dialog p{margin-bottom:15px}
+.v26-feedback-dialog .v26-feedback-icon{background:var(--wash);color:var(--blue)}
+.v26-feedback-dialog form{display:grid;gap:13px}
+.v26-feedback-dialog .rating-stars{display:flex;justify-content:center;flex-wrap:wrap;gap:7px}
+.v26-feedback-dialog .rating-stars label{padding:9px 10px;font-size:13px;min-width:49px}
+.v26-feedback-dialog textarea{width:100%;min-height:74px;resize:vertical;border:1px solid var(--line);border-radius:12px;
+ padding:12px 13px;font:inherit;font-size:13px;color:var(--ink);background:var(--paper-soft)}
+.v26-feedback-dialog #feedback-state{display:block;color:var(--muted);font-size:11px;margin-top:10px;line-height:1.6}
+.v26-feedback-dialog #feedback-state:empty{display:none}
+.v26-feedback-dialog .v26-feedback-skip{margin-top:12px;min-height:43px;border:0;background:transparent;color:var(--muted)}
+@media(max-width:730px){.v26-desk-panels{grid-template-columns:1fr}.v26-popup{padding:24px}}
+@media(max-width:650px){.track-arrival-banner{flex-direction:column;align-items:stretch;gap:15px;padding:20px;margin:0 0 22px}
+ .track-arrival-banner h2{font-size:20px}.track-arrival-banner .btn{width:100%;min-width:0;flex:auto}
+ .v26-feedback-dialog{padding:22px 18px}.v26-feedback-dialog .rating-stars label{min-width:46px;padding:8px}}
+/* Keep all five feedback ratings visible in one row on narrow phones. */
+.v26-feedback-dialog .rating-stars{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
+.v26-feedback-dialog .rating-stars label{min-width:0;padding:9px 2px;font-size:12px;text-align:center}
+.v26-feedback-dialog .rating-stars input{width:13px;height:13px;margin:0 2px 0 0;vertical-align:middle}
