@@ -2,12 +2,17 @@ import {configured,helpfulError} from './firebase.js';
 import {getHospital} from './org-store.js';
 import {observeQueues} from './store.js';
 import {dayKey,displayClock,doctorActiveCodes} from './queue-engine.js';
-import {t,language,bindLanguage} from './locale.js';
-import {activeAnnouncements} from './v26-engine.js';
+import {t,bindLanguage} from './locale.js?v=2.6.1';
+import {announcementChanges} from './v26-engine.js?v=2.6.1';
 const {esc}=window.turnahead,el=document.getElementById('board-grid');
 const hospitalId=new URLSearchParams(location.search).get('hospital');
 let displayedQueues=[],displayedDate=dayKey(),lastActive=new Map(),boardReady=false,voiceEnabled=false;
 const voiceButton=document.getElementById('board-voice-toggle'),voiceState=document.getElementById('board-voice-state');
+const synth=window.speechSynthesis;
+const pendingCalls=[];
+const MAX_QUEUED_CALLS=10;
+const MAX_QUEUED_AGE_MS=120000;
+let currentUtterance=null,utteranceTimer=null;
 function clock(){
   document.getElementById('board-time').textContent=displayClock(new Date());
 }
@@ -20,32 +25,88 @@ function renderBoard(queues){
    return `<article class="board-card"><div class="board-card-top">${esc(q.name)} <span>${q.paused?'PAUSED':'LIVE'}</span></div><div class="board-card-middle"><small>NOW SERVING · ${serving.length} DOCTOR${serving.length===1?'':'S'}</small><div class="board-active-codes">${codes}</div></div><div class="board-card-bottom"><span>${esc(t('boardWait'))}</span><b>${q.waiting}</b></div></article>`;
  }).join('')||'<div class="empty-state">No departments configured yet.</div>';
 }
-function announce(queueCode,counter){
-  if(!voiceEnabled||!('speechSynthesis' in window)||document.hidden)return;
-  const text=language()==='ur'?`ٹکٹ ${queueCode}، ${counter} پر تشریف لائیں۔`:`Ticket ${queueCode.split('').join(' ')}, please proceed to ${counter}.`;
+/** Speak on the public display after a user gesture has enabled sound. */
+function speakText(text,onFinish=()=>{}){
+  if(!synth||!('SpeechSynthesisUtterance' in window))return false;
   const utterance=new SpeechSynthesisUtterance(text);
-  const voices=window.speechSynthesis.getVoices();
-  const voice=voices.find(v=>v.lang.toLowerCase().startsWith(language()==='ur'?'ur':'en-pk')) || voices.find(v=>v.lang.toLowerCase().startsWith('en'));
+  const voices=synth.getVoices();
+  const voice=voices.find(v=>v.lang.toLowerCase().startsWith('en-pk'))||
+    voices.find(v=>v.lang.toLowerCase().startsWith('en'));
   if(voice)utterance.voice=voice;
   utterance.lang=voice?.lang||'en-US';utterance.rate=.9;
-  window.speechSynthesis.speak(utterance);
+  currentUtterance=utterance;
+  function finish(){
+    if(currentUtterance!==utterance)return;
+    clearTimeout(utteranceTimer);utteranceTimer=null;
+    currentUtterance=null;onFinish();
+  }
+  utterance.onend=finish;
+  utterance.onerror=()=>{
+    voiceState.textContent='Voice playback was interrupted. Keep this board open and try a new call.';
+    finish();
+  };
+  try{
+    // Some browsers pause synthesis after a tab has been backgrounded.
+    if(synth.paused)synth.resume();
+    synth.speak(utterance);
+    utteranceTimer=setTimeout(()=>{if(currentUtterance===utterance){synth.cancel();finish();}},20000);
+    return true;
+  }catch(err){console.warn('Board announcement unavailable:',err);finish();return false;}
+}
+function flushAnnouncements(){
+  if(!voiceEnabled||!synth||document.hidden||currentUtterance)return;
+  const cutoff=Date.now()-MAX_QUEUED_AGE_MS;
+  while(pendingCalls.length&&pendingCalls[0].queuedAt<cutoff)pendingCalls.shift();
+  const item=pendingCalls.shift();
+  if(!item)return;
+  const spokenCode=item.code.replace(/[^A-Za-z0-9]/g,'').split('').join(' ');
+  const phrase=`Ticket ${spokenCode}, please proceed to ${item.counter}.`;
+  if(!speakText(phrase,()=>{
+    voiceState.textContent=`Last announced: ${item.code} · ${item.counter}`;
+    flushAnnouncements();
+  })){
+    pendingCalls.unshift(item);
+    voiceState.textContent='Voice could not start. Tap Enable announcements again.';
+  }
 }
 function checkCalls(queues){
- const current=new Map(activeAnnouncements(queues).map(x=>[x.key,x]));
- if(boardReady){for(const [key,item] of current){
-   if(lastActive.get(key)!==item.code)announce(item.code,item.counter);
- }}
- lastActive=new Map([...current].map(([key,item])=>[key,item.code]));boardReady=true;
+  const {current,calls}=announcementChanges(lastActive,queues,dayKey());
+  if(boardReady&&voiceEnabled){
+    for(const item of calls){
+      pendingCalls.push({...item,queuedAt:Date.now()});
+    }
+    if(pendingCalls.length>MAX_QUEUED_CALLS)pendingCalls.splice(0,pendingCalls.length-MAX_QUEUED_CALLS);
+    flushAnnouncements();
+  }
+  lastActive=current;
+  boardReady=true;
 }
 voiceButton.addEventListener('click',()=>{
-  if(!('speechSynthesis' in window)){voiceState.textContent=t('voiceUnavailable');return;}
+  if(!synth||!('SpeechSynthesisUtterance' in window)){
+    voiceState.textContent=t('voiceUnavailable');return;
+  }
   voiceEnabled=!voiceEnabled;
-  if(!voiceEnabled)window.speechSynthesis.cancel();
-  else{const primer=new SpeechSynthesisUtterance(language()==='ur'?'اعلانات فعال ہیں۔':'Announcements enabled.');primer.volume=.5;window.speechSynthesis.speak(primer);}
+  pendingCalls.length=0;
+  clearTimeout(utteranceTimer);utteranceTimer=null;
+  currentUtterance=null;
+  synth.cancel();
+  if(voiceEnabled){
+    voiceState.textContent='Sound enabled. New patient calls will be spoken aloud.';
+    speakText('Announcements enabled.',flushAnnouncements);
+  }else{
+    voiceState.textContent=t('voiceOff');
+  }
   voiceButton.textContent=t(voiceEnabled?'voiceMute':'voiceEnable');
-  voiceState.textContent=t(voiceEnabled?'voiceOn':'voiceOff');
 });
-bindLanguage(()=>{renderBoard(displayedQueues);voiceButton.textContent=t(voiceEnabled?'voiceMute':'voiceEnable');});
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&voiceEnabled){
+    // Browser tabs used for reception often hide the public board while staff call.
+    // Replay the queued fresh calls once this board is visible again.
+    if(synth?.paused)synth.resume();
+    flushAnnouncements();
+  }
+});
+bindLanguage();
 function startBoard(){
   if(!configured){el.innerHTML='<div class="empty-state">TurnAhead is not connected to Firebase yet.</div>';return;}
   if(!/^[A-Za-z0-9]{20}$/.test(hospitalId||'')){

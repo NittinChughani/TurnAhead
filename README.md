@@ -1,4 +1,4 @@
-> **v2.6 development candidate (not deployed):** Near-turn in-page popups, one-time missed-turn recall, patient arrival verification, English/Urdu interface controls, opt-in public-board voice announcements, and one-time private feedback have been developed. They require Firestore rule deployment and real-device testing before release. System push notifications remain optional and disabled. See [v2.6 rollout and limitations](docs/V26-DEPLOYMENT-AND-TESTING.md).
+> **v2.6.1 refinement (review candidate):** “I’m Here” now appears directly below the patient heading; completion feedback opens as a one-time dialog; the incomplete Urdu option has been removed in favor of consistent English; and public-board voice calls are queued if the board tab is hidden, then announced on return. No Firebase rule changes or paid services are required for this UI/voice-only patch. See [testing and rollout notes](docs/V26-DEPLOYMENT-AND-TESTING.md).
 
 <div align="center">
 
@@ -175,7 +175,7 @@ Node.js 22 is used only by developers running tests. Hospitals and patients use 
 - [x] **v2.5 implementation candidate:** doctor-specific queues, 12 reception counters, doctor pauses, real-time resync recovery, transaction regression tests and glass navigation.
 - [x] **v2.5.1 refinements in review:** rounded hiding-on-scroll navbar, original-logo blending, Chromium-rendered dark README screenshots and private issuance receptionist/counter history.
 - [ ] **v2.5 deployment gate:** real Firebase Rules Emulator, iOS/Android two-device verification, load and recovery tests.
-- [ ] **v2.6:** near-turn alerts, missed-turn grace, "I'm here" confirmation, English/Urdu, voice announcements and optional patient feedback.
+- [x] **v2.6:** near-turn alerts, missed-turn grace, "I'm here" confirmation, English-only experience, voice announcements and optional patient feedback.
 - [ ] **v3.0:** advanced analytics, exportable reports, hospital branding and validated market launch.
 
 **TurnAhead is a queue-management pilot, not a medical record system or appointment-booking product.** Production use requires access/privacy audits, monitoring, backups, retention procedures, a real pilot, and independent security review.

@@ -8,7 +8,7 @@ import {dayKey,patientDisplayName,getDoctorLane,doctorActiveCodes} from './queue
 import {watchDoctors} from './doctors.js';
 import {doctorAvailable} from './doctor-model.js';
 import {avatarContents,compressProfilePhoto} from './profile-photo.js';
-import {bindLanguage,t} from './locale.js';
+import {bindLanguage,t} from './locale.js?v=2.6.1';
 import {recallEligibility,graceMinutes} from './v26-engine.js';
 
 const {esc,fmt}=window.turnahead, $=id=>document.getElementById(id);

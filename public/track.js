@@ -2,8 +2,8 @@ import {configured,helpfulError} from './firebase.js';
 import {getHospital} from './org-store.js';
 import {registerTurnPush} from './push-client.js';
 import {observeTicket,observeQueue,fetchTicketFromServer,observeArrival,requestArrival,submitFeedback} from './store.js';
-import {language,t as tfn,bindLanguage} from './locale.js';
-import {nearTurnMilestone} from './v26-engine.js';
+import {t as tfn,bindLanguage} from './locale.js?v=2.6.1';
+import {nearTurnMilestone} from './v26-engine.js?v=2.6.1';
 import {dayKey,waitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName,doctorQueueSummary,callHistoryLine} from './queue-engine.js';
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
@@ -83,7 +83,7 @@ function update(){
       notify('Almost your turn',`${ahead} ahead of ${t.code}. Stay nearby.`);sessionStorage.setItem('ta-near-'+ticketId,'yes');
     }
   }
-  renderArrival(status);renderFeedback(status);showNearTurn(t,shownStatus,validWait?ahead:null);
+  renderArrival(status);showNearTurn(t,shownStatus,validWait?ahead:null);renderFeedback(status);
   lastStatus=shownStatus;lastAhead=ahead;hadLoaded=true;setSyncStatus();
 }
 function notify(title,body){new Notification('TurnAhead: '+title,{body,icon:'./assets/favicon.png'});}
@@ -106,37 +106,57 @@ function showNearTurn(ticket,status,ahead){
   nearModal.hidden=false;$('near-popup-close').focus({preventScroll:true});
 }
 $('near-popup-close').addEventListener('click',()=>{nearModal.hidden=true;currentlyShown=null;});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!nearModal.hidden){e.preventDefault();nearModal.hidden=true;currentlyShown=null;}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){
+  if(!feedbackModal.hidden){e.preventDefault();closeFeedback();}
+  else if(!nearModal.hidden){e.preventDefault();nearModal.hidden=true;currentlyShown=null;}
+}});
 function renderArrival(status){
-  const panel=$('arrival-panel');panel.hidden=legacy||status!=='waiting'&&!arrival;
+  const panel=$('arrival-panel');
+  panel.hidden=legacy||status!=='waiting';
   if(panel.hidden)return;
-  const button=$('arrival-button');button.hidden=Boolean(arrival);button.disabled=Boolean(arrival);
+  const button=$('arrival-button');
+  button.hidden=Boolean(arrival);
+  button.disabled=Boolean(arrival);
   $('arrival-status').textContent=arrival?tfn(arrival.status==='verified'?'arrivalVerified':'arrivalWaiting'):'';
 }
-function renderFeedback(status){
-  const completed=status==='completed'&&!legacy,submitted=localStorage.getItem(`turnahead-v26-feedback:${hospitalId}:${ticketId}`)==='yes';
-  $('feedback-panel').hidden=!completed;
-  $('feedback-form').hidden=submitted;
-  $('feedback-state').textContent=submitted?tfn('thanksFeedback'):'';
+/** Completion feedback is a one-time, permission-free foreground dialog, never an inline card. */
+const feedbackModal=$('feedback-popup');
+const feedbackSeenKey=`turnahead-v26-feedback-seen:${hospitalId}:${ticketId}`;
+const feedbackSubmittedKey=`turnahead-v26-feedback:${hospitalId}:${ticketId}`;
+function closeFeedback(){
+  feedbackModal.hidden=true;
+  // The offer was already recorded when the modal appeared, including when dismissed.
+  $('feedback-close').blur();
 }
+function renderFeedback(status){
+  if(legacy||status!=='completed'||document.visibilityState!=='visible'||!feedbackModal.hidden)return;
+  if(localStorage.getItem(feedbackSeenKey)==='yes'||localStorage.getItem(feedbackSubmittedKey)==='yes')return;
+  // Completion takes priority over a previously displayed near-turn popup.
+  nearModal.hidden=true;currentlyShown=null;
+  localStorage.setItem(feedbackSeenKey,'yes');
+  feedbackModal.hidden=false;
+  $('feedback-form').hidden=false;
+  $('feedback-state').textContent='';
+  $('feedback-close').focus({preventScroll:true});
+}
+$('feedback-close').addEventListener('click',closeFeedback);
 $('arrival-button').addEventListener('click',async()=>{
   const b=$('arrival-button');b.disabled=true;
-  try{await requestArrival(hospitalId,ticketId);$('arrival-status').textContent=tfn('arrivalWaiting');}
+  try{await requestArrival(hospitalId,ticketId);arrival={status:'pending'};renderArrival('waiting');}
   catch(err){$('arrival-status').textContent=helpfulError(err);b.disabled=false;}
 });
 $('feedback-form').addEventListener('submit',async e=>{
   e.preventDefault();const form=e.currentTarget,b=form.querySelector('[type=submit]');b.disabled=true;
   const rating=form.querySelector('input[name=rating]:checked')?.value;
-  try{await submitFeedback(hospitalId,ticketId,Number(rating),$('feedback-note').value);
-    localStorage.setItem(`turnahead-v26-feedback:${hospitalId}:${ticketId}`,'yes');renderFeedback('completed');}
-  catch(err){$('feedback-state').textContent='Feedback could not be submitted. It may already have been received. '+helpfulError(err);}
-  finally{b.disabled=false;}
+  try{
+    await submitFeedback(hospitalId,ticketId,Number(rating),$('feedback-note').value);
+    localStorage.setItem(feedbackSubmittedKey,'yes');
+    closeFeedback();
+  }catch(err){
+    $('feedback-state').textContent='Feedback could not be submitted. It may already have been received. '+helpfulError(err);
+  }finally{b.disabled=false;}
 });
-bindLanguage(()=>{if(currentTicket)update();if(!nearModal.hidden&&currentlyShown){
- const k=currentlyShown;nearModal.hidden=true;currentlyShown=null;
- sessionStorage.removeItem(`turnahead-v26-near:${hospitalId}:${ticketId}:${k}`);
- showNearTurn(currentTicket,effectiveTicketStatus(currentTicket,currentQueue,dayKey()),lastAhead);
-}});
+bindLanguage();
 $('enable-alerts').addEventListener('click',async()=>{
   vibrationEnabled=typeof navigator.vibrate==='function';
   // User tap enables vibration where supported; many browsers (especially iOS) ignore it.

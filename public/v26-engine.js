@@ -34,15 +34,27 @@ export function planRecall(q,c,ticket,ticketId,now,minutes,today){
     controlPatch:{lanes:{...c.lanes,[ticket.doctorId]:{...control,pending:[...control.pending,{id:ticketId,number:ticket.number}]}}},
     ticketPatch:patch,historyPatch:{...patch,updatedAt:now}};
 }
-/** A stable spoken signature detects actual call changes, rather than snapshots. */
-export function activeAnnouncements(queues){
+/** Public board call events. The UI can queue them while its tab is hidden instead
+ * of marking them handled and permanently losing the spoken announcement. */
+export function activeAnnouncements(queues,today=null){
   const active=[];
   for(const q of queues||[]){
+    if(today&&q.dayKey&&q.dayKey!==today)continue;
     for(const [doctorId,lane] of Object.entries(q.lanes||{})){
       if(lane.active?.code)active.push({key:`${q.id}:${doctorId}`,code:lane.active.code,counter:lane.active.counter||'Reception'});
     }
+    // Older departments with one shared active ticket still deserve announcements.
+    if(q.active?.code)active.push({key:`${q.id}:legacy`,code:q.active.code,counter:q.active.counter||'Reception'});
   }
   return active;
+}
+export function announcementChanges(previous,queues,today=null){
+  const current=new Map(activeAnnouncements(queues,today).map(call=>[call.key,call]));
+  const calls=[...current.values()].filter(call=>{
+    const last=previous.get(call.key);
+    return !last||last.code!==call.code||last.counter!==call.counter;
+  });
+  return {current,calls};
 }
 export function safeFeedback(score,comment){
   const rating=Number(score);
