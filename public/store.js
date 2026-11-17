@@ -4,10 +4,10 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {db,auth} from './firebase.js';
 import {dayKey,departmentPrefix,initialQueue,initialControl,normalizedQueue,
-  nextTicket,nextInLine,publicQueue,getDoctorLane,getDoctorControl,counterLabel,planDoctorCall,planDoctorFinish} from './queue-engine.js';
+  nextTicket,nextInLine,publicQueue,getDoctorLane,getDoctorControl,counterLabel,planDoctorCall,planDoctorFinish} from './queue-engine.js?v=2.6.2';
 import {ticketLink} from './org-model.js';
 import {cleanRoomNumber,doctorAvailable} from './doctor-model.js';
-import {planRecall,safeFeedback,graceMinutes} from './v26-engine.js';
+import {planRecall,safeFeedback,graceMinutes} from './v26-engine.js?v=2.6.2';
 
 const ref=(hid,group,id)=>doc(db,'hospitals',hid,group,id);
 const qDoc=(hid,id)=>ref(hid,'queues',id);
