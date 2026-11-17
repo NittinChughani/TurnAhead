@@ -137,6 +137,13 @@ export function planDoctorFinish(q,c,doctorId,ticket,counter,uid,action,now){
   };
 }
 
+/** A recalled ticket retains its distinction throughout waiting, service, and completion. */
+export function ticketStatusLabel(ticket){
+  if(!ticket)return 'Unknown';
+  const standard={waiting:'Waiting',called:'Called',completed:'Completed',skipped:'Missed'};
+  const recalled={waiting:'Recalled · Waiting',called:'Recalled · Called',completed:'Recalled & completed',skipped:'Recalled · Missed again'};
+  return ((ticket.recallCount||0)>0?recalled:standard)[ticket.status]||ticket.status;
+}
 /** A ticket's call time survives Safari suspension and a subsequent completion. */
 export function callHistoryLine(ticket,timezone=TIME_ZONE){
   if(!ticket?.calledAt)return '';
