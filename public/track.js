@@ -1,15 +1,15 @@
 import {configured,helpfulError} from './firebase.js';
 import {getHospital} from './org-store.js';
 import {registerTurnPush} from './push-client.js';
-import {observeTicket,observeQueue,fetchTicketFromServer,observeArrival,requestArrival,submitFeedback} from './store.js';
+import {observeTicket,observeQueue,fetchTicketFromServer,submitFeedback} from './store.js';
 import {t as tfn,bindLanguage} from './locale.js?v=2.6.1';
-import {nearTurnMilestone} from './v26-engine.js?v=2.6.1';
-import {dayKey,waitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName,doctorQueueSummary,callHistoryLine} from './queue-engine.js';
+import {nearTurnMilestone,shouldApplyTicket} from './v26-engine.js?v=2.6.2';
+import {dayKey,waitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName,doctorQueueSummary,callHistoryLine} from './queue-engine.js?v=2.6.2';
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
 const ticketId=params.get('ticket'),hospitalId=params.get('hospital');
 const legacy=!hospitalId;
-let facility='Your hospital',currentTicket=null,currentQueue=null,stopQueue=null,stopArrival=null,arrival=null,subscribedQueueId=null,alerts=false,vibrationEnabled=false,hadLoaded=false,lastStatus='',lastAhead=null,lastConfirmed=0,refreshing=false,lastRefresh=0;
+let facility='Your hospital',currentTicket=null,currentQueue=null,stopQueue=null,subscribedQueueId=null,alerts=false,vibrationEnabled=false,hadLoaded=false,lastStatus='',lastAhead=null,lastConfirmed=0,refreshing=false,lastRefresh=0;
 const loader=$('track-loading');
 setTimeout(()=>{if(!loader.hidden)$('track-loading-note').textContent='Still connecting. Your queue will appear as soon as the live service responds.';},3200);
 const messages={waiting:'Your place updates as reception calls each patient.',called:"It's your turn. Please go to your service counter.",completed:'Your visit was marked completed. Thank you for coming.',skipped:'Reception marked this turn as missed. Please ask them for help.',syncing:'Checking the latest status with reception…',expired:'This ticket belongs to an earlier day. Please ask reception for a new one.'};
@@ -23,8 +23,7 @@ function setSyncStatus(){
 /** Prevent an older cached snapshot from undoing a confirmed call or final state. */
 function applyTicket(ticket){
   if(!ticket)return;
-  const rank={waiting:0,called:1,completed:2,skipped:2};
-  if(currentTicket?.id===ticket.id && (rank[ticket.status]||0)<(rank[currentTicket.status]||0))return;
+  if(!shouldApplyTicket(currentTicket,ticket))return;
   currentTicket=ticket;
   if(!ticket._fromCache)lastConfirmed=Date.now();
   if(subscribedQueueId!==ticket.queueId){
@@ -62,7 +61,7 @@ function update(){
   $('track-patient').textContent=t.patientName?`Ticket for ${patientDisplayName(t)}`:'Patient name not recorded on this older ticket';
   $('track-visit').textContent=t.doctorName?`Visiting Dr. ${t.doctorName}${t.roomNumber?' · Room '+t.roomNumber:''}`:'Doctor / room details not recorded on this older ticket';
   $('track-call-history').textContent=callHistoryLine(t);
-  $('track-state').textContent=tfn(shownStatus);
+  $('track-state').textContent=t.recallCount?({waiting:'RECALLED · WAITING',called:'RECALLED · YOUR TURN',completed:'RECALLED & COMPLETED',skipped:'RECALLED · MISSED AGAIN'}[shownStatus]||tfn(shownStatus)):tfn(shownStatus);
   $('track-state').style.color=shownStatus==='called'?'#095c46':'';
   $('ahead-label').textContent=tfn(validWait?'ahead':'queueStatus');
   $('ahead-count').textContent=validWait?ahead:shownStatus==='called'?'↗':shownStatus==='syncing'?'…':'✓';
@@ -70,7 +69,7 @@ function update(){
   const eta=validWait&&!doctorQueue.paused?approximateTurnTime(estimate):null;
   $('track-eta-clock').textContent=eta?`Around ${eta.clock} (PKT) · estimate only`:'';
   $('track-serving').textContent=doctorQueue?.active?.code||'—';
-  $('track-message').textContent=shownStatus==='called'?tfn('turnMessage',{counter:t.calledCounter||'reception'}):legacy?'This uses the older queue system. Please request a new QR ticket.':doctorQueue?.paused&&validWait?tfn('paused'):tfn(({waiting:'pleaseWait',completed:'completedMessage',skipped:'missedMessage'}[shownStatus]||shownStatus));
+  $('track-message').textContent=shownStatus==='called'?tfn('turnMessage',{counter:t.calledCounter||'reception'}):shownStatus==='waiting'&&t.recallCount?'Your ticket has been recalled. You are back in the queue for your doctor.':shownStatus==='completed'&&t.recallCount?'Your recalled turn was completed. Thank you for visiting.':shownStatus==='skipped'&&t.recallCount?'Your recalled turn was marked missed again. Please ask reception for help.':legacy?'This uses the older queue system. Please request a new QR ticket.':doctorQueue?.paused&&validWait?tfn('paused'):tfn(({waiting:'pleaseWait',completed:'completedMessage',skipped:'missedMessage'}[shownStatus]||shownStatus));
   const pct=validWait?Math.max(10,Math.min(92,Math.round(100/(ahead+1)))):shownStatus==='syncing'?65:100;
   $('track-progress-bar').style.width=`${pct}%`;
   $('progress-description').textContent=validWait?`${ahead===0?'You are next in line.':`${ahead} ${ahead===1?'person':'people'} ahead of you.`} Times can change; stay near reception.`:messages[shownStatus]||'';
@@ -79,11 +78,11 @@ function update(){
   }
   if(hadLoaded&&alerts&&'Notification' in window&&Notification.permission==='granted'){
     if(lastStatus!=='called'&&shownStatus==='called')notify('Your turn is ready',`${t.code} — please return to ${t.queueName}.`);
-    else if(validWait&&ahead>0&&ahead<=2&&(lastAhead===null||lastAhead>2)&&!sessionStorage.getItem('ta-near-'+ticketId)){
-      notify('Almost your turn',`${ahead} ahead of ${t.code}. Stay nearby.`);sessionStorage.setItem('ta-near-'+ticketId,'yes');
+    else if(validWait&&ahead>0&&ahead<=2&&(lastAhead===null||lastAhead>2)&&!sessionStorage.getItem('ta-near-'+ticketId+'-'+(t.recallCount||0))){
+      notify('Almost your turn',`${ahead} ahead of ${t.code}. Stay nearby.`);sessionStorage.setItem('ta-near-'+ticketId+'-'+(t.recallCount||0),'yes');
     }
   }
-  renderArrival(status);showNearTurn(t,shownStatus,validWait?ahead:null);renderFeedback(status);
+  showNearTurn(t,shownStatus,validWait?ahead:null);renderFeedback(status);
   lastStatus=shownStatus;lastAhead=ahead;hadLoaded=true;setSyncStatus();
 }
 function notify(title,body){new Notification('TurnAhead: '+title,{body,icon:'./assets/favicon.png'});}
@@ -95,11 +94,12 @@ function showNearTurn(ticket,status,ahead){
   if(document.visibilityState!=='visible'||!ticketId||legacy)return;
   const kind=nearTurnMilestone(status,ahead);
   if(!kind)return;
-  const key=`turnahead-v26-near:${hospitalId}:${ticketId}:${kind}`;
+  const phase=`turnahead-v26-near:${hospitalId}:${ticketId}:${ticket.recallCount||0}`;
+  const key=`${phase}:${kind}`;
   const previously=sessionStorage.getItem(key);
   if(previously||currentlyShown&&milestonePriority[currentlyShown]>=milestonePriority[kind])return;
-  if(kind==='near'&&(sessionStorage.getItem(`turnahead-v26-near:${hospitalId}:${ticketId}:next`)||sessionStorage.getItem(`turnahead-v26-near:${hospitalId}:${ticketId}:called`)))return;
-  if(kind==='next'&&sessionStorage.getItem(`turnahead-v26-near:${hospitalId}:${ticketId}:called`))return;
+  if(kind==='near'&&(sessionStorage.getItem(`${phase}:next`)||sessionStorage.getItem(`${phase}:called`)))return;
+  if(kind==='next'&&sessionStorage.getItem(`${phase}:called`))return;
   sessionStorage.setItem(key,'1');currentlyShown=kind;
   $('near-popup-title').textContent=tfn('alert'+kind.charAt(0).toUpperCase()+kind.slice(1));
   $('near-popup-text').textContent=tfn('alert'+kind.charAt(0).toUpperCase()+kind.slice(1)+'Text',kind==='called'?{counter:ticket.calledCounter||'reception'}:{n:kind==='next'?1:Math.max(2,ahead)});
@@ -110,22 +110,13 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){
   if(!feedbackModal.hidden){e.preventDefault();closeFeedback();}
   else if(!nearModal.hidden){e.preventDefault();nearModal.hidden=true;currentlyShown=null;}
 }});
-function renderArrival(status){
-  const panel=$('arrival-panel');
-  panel.hidden=legacy||status!=='waiting';
-  if(panel.hidden)return;
-  const button=$('arrival-button');
-  button.hidden=Boolean(arrival);
-  button.disabled=Boolean(arrival);
-  $('arrival-status').textContent=arrival?tfn(arrival.status==='verified'?'arrivalVerified':'arrivalWaiting'):'';
-}
 /** Completion feedback is a one-time, permission-free foreground dialog, never an inline card. */
 const feedbackModal=$('feedback-popup');
-const feedbackSeenKey=`turnahead-v26-feedback-seen:${hospitalId}:${ticketId}`;
+const feedbackSeenKey=`turnahead-v262-feedback-seen:${hospitalId}:${ticketId}`;
 const feedbackSubmittedKey=`turnahead-v26-feedback:${hospitalId}:${ticketId}`;
 function closeFeedback(){
   feedbackModal.hidden=true;
-  // The offer was already recorded when the modal appeared, including when dismissed.
+  localStorage.setItem(feedbackSeenKey,'yes');
   $('feedback-close').blur();
 }
 function renderFeedback(status){
@@ -133,18 +124,12 @@ function renderFeedback(status){
   if(localStorage.getItem(feedbackSeenKey)==='yes'||localStorage.getItem(feedbackSubmittedKey)==='yes')return;
   // Completion takes priority over a previously displayed near-turn popup.
   nearModal.hidden=true;currentlyShown=null;
-  localStorage.setItem(feedbackSeenKey,'yes');
   feedbackModal.hidden=false;
   $('feedback-form').hidden=false;
   $('feedback-state').textContent='';
   $('feedback-close').focus({preventScroll:true});
 }
 $('feedback-close').addEventListener('click',closeFeedback);
-$('arrival-button').addEventListener('click',async()=>{
-  const b=$('arrival-button');b.disabled=true;
-  try{await requestArrival(hospitalId,ticketId);arrival={status:'pending'};renderArrival('waiting');}
-  catch(err){$('arrival-status').textContent=helpfulError(err);b.disabled=false;}
-});
 $('feedback-form').addEventListener('submit',async e=>{
   e.preventDefault();const form=e.currentTarget,b=form.querySelector('[type=submit]');b.disabled=true;
   const rating=form.querySelector('input[name=rating]:checked')?.value;
@@ -153,7 +138,7 @@ $('feedback-form').addEventListener('submit',async e=>{
     localStorage.setItem(feedbackSubmittedKey,'yes');
     closeFeedback();
   }catch(err){
-    $('feedback-state').textContent='Feedback could not be submitted. It may already have been received. '+helpfulError(err);
+    $('feedback-state').textContent=err?.code==='permission-denied'?'Feedback was not saved. Hospital feedback permissions may need the updated Firestore rules. Ask the administrator to check the deployment.':'Feedback was not saved. Please try again. '+helpfulError(err);
   }finally{b.disabled=false;}
 });
 bindLanguage();
@@ -172,7 +157,6 @@ else if(!ticketId||!/^[A-Za-z0-9]{20}$/.test(ticketId)||(hospitalId&&!/^[A-Za-z0
   fail('No valid ticket was supplied. Scan the QR code on your receipt to open your queue status.');
 else{
   if(!legacy)getHospital(hospitalId).then(h=>{facility=h.name;update();}).catch(err=>console.warn('Hospital name unavailable:',helpfulError(err)));
-  if(!legacy)stopArrival=observeArrival(hospitalId,ticketId,value=>{arrival=value;if(currentTicket)renderArrival(effectiveTicketStatus(currentTicket,currentQueue,dayKey()));},err=>console.warn('Arrival status unavailable:',helpfulError(err)));
   observeTicket(hospitalId,ticketId,t=>{
     if(!t){fail('Ticket not found. Check your QR code or ask reception.');return;}
     applyTicket(t);
@@ -187,7 +171,7 @@ else{
   window.addEventListener('online',()=>syncTicket(true));
   window.addEventListener('offline',setSyncStatus);
   setInterval(()=>{setSyncStatus();if(document.visibilityState==='visible'){
-    if(!['completed','skipped','expired'].includes(currentTicket?.status))syncTicket();
+    if(!['completed','expired'].includes(currentTicket?.status))syncTicket();
     if(currentTicket)update();
   }},15000);
 }

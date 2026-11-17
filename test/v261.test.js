@@ -32,17 +32,12 @@ test('English-only UI has no language switches, Urdu strings or RTL flipping',()
   assert.doesNotMatch(content('public/locale.js'),/document\.documentElement\.dir=lang===/);
   assert.doesNotMatch(content('public/locale.js'),/ur:\{/);
 });
-test('arrival CTA is right below the patient heading and feedback exists only as a modal',()=>{
+test('patient experience has foreground feedback but no arrival confirmation',()=>{
   const html=content('public/track.html');
-  const head=html.indexOf('class="track-head"');
-  const arrival=html.indexOf('id="arrival-panel"');
-  const loader=html.indexOf('id="track-loading"');
-  const tickets=html.indexOf('id="track-content"');
-  assert.ok(head>=0&&arrival>head&&loader>arrival&&tickets>loader);
   assert.match(html,/id="feedback-popup" class="v26-popup-wrap" hidden/);
   assert.match(html,/role="dialog" aria-modal="true" aria-labelledby="feedback-title"/);
-  assert.doesNotMatch(html,/id="feedback-panel"/);
-  assert.match(content('public/track.js'),/turnahead-v26-feedback-seen/);
+  assert.doesNotMatch(html,/id="feedback-panel"|id="arrival-panel"|id="arrival-button"/);
+  assert.match(content('public/track.js'),/turnahead-v262-feedback-seen/);
   assert.match(content('public/track.js'),/localStorage\.setItem\(feedbackSeenKey,'yes'\)/);
   assert.match(content('public/track.js'),/document\.visibilityState!=='visible'/);
 });

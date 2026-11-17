@@ -1,6 +1,16 @@
 /** v2.6: deterministic, side-effect-free walk-in rules. */
 export const DEFAULT_RECALL_GRACE = 10;
-export function graceMinutes(value){return Number.isInteger(value)&&value>=5&&value<=30?value:DEFAULT_RECALL_GRACE;}
+export const MIN_RECALL_GRACE = 1;
+export const MAX_RECALL_GRACE = 120;
+export function graceMinutes(value){return Number.isInteger(value)&&value>=MIN_RECALL_GRACE&&value<=MAX_RECALL_GRACE?value:DEFAULT_RECALL_GRACE;}
+/** A new recall cycle supersedes the older missed state, even though its status rank resets. */
+export function shouldApplyTicket(previous,next){
+  if(!previous||previous.id!==next.id)return true;
+  const before=previous.recallCount||0,after=next.recallCount||0;
+  if(before!==after)return after>before;
+  const rank={waiting:0,called:1,completed:2,skipped:2};
+  return (rank[next.status]??-1)>=(rank[previous.status]??-1);
+}
 /** Return the most relevant milestone; never stack or regress alerts. */
 export function nearTurnMilestone(status, ahead){
   if(status==='called')return 'called';

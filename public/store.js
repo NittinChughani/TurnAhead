@@ -4,10 +4,10 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {db,auth} from './firebase.js';
 import {dayKey,departmentPrefix,initialQueue,initialControl,normalizedQueue,
-  nextTicket,nextInLine,publicQueue,getDoctorLane,getDoctorControl,counterLabel,planDoctorCall,planDoctorFinish} from './queue-engine.js';
+  nextTicket,nextInLine,publicQueue,getDoctorLane,getDoctorControl,counterLabel,planDoctorCall,planDoctorFinish} from './queue-engine.js?v=2.6.2';
 import {ticketLink} from './org-model.js';
 import {cleanRoomNumber,doctorAvailable} from './doctor-model.js';
-import {planRecall,safeFeedback,graceMinutes} from './v26-engine.js';
+import {planRecall,safeFeedback,graceMinutes} from './v26-engine.js?v=2.6.2';
 
 const ref=(hid,group,id)=>doc(db,'hospitals',hid,group,id);
 const qDoc=(hid,id)=>ref(hid,'queues',id);
@@ -16,7 +16,6 @@ const ticketDoc=(hid,id)=>ref(hid,'tickets',id);
 const metaDoc=hid=>ref(hid,'meta','sequence');
 const prefixDoc=(hid,prefix)=>ref(hid,'prefixes',prefix);
 const dayDoc=(hid,day)=>ref(hid,'history',day);
-const arrivalDoc=(hid,ticketId)=>ref(hid,'arrivalRequests',ticketId);
 const feedbackDoc=(hid,ticketId)=>ref(hid,'feedback',ticketId);
 const doctorDoc=(hid,id)=>ref(hid,'doctors',id);
 const historyCollection=(hid,day,qid)=>collection(db,'hospitals',hid,'history',day,'departments',qid,'records');
@@ -196,22 +195,6 @@ export async function readHistory(hid,date,departmentId,code='',cursor=null){
   return {records:snap.docs.map(d=>({id:d.id,...d.data()})),cursor:number?null:(snap.docs.at(-1)||null),hasMore:!number&&snap.docs.length===100};
 }
 
-/** A public bearer-QR visitor may request verification once; only staff can confirm it. */
-export function observeArrival(hid,ticketId,next,error){
-  return onSnapshot(arrivalDoc(hid,ticketId),snap=>next(snap.exists()?snap.data():null),error);
-}
-export function observeArrivals(hid,next,error){
-  return onSnapshot(query(collection(db,'hospitals',hid,'arrivalRequests'),orderBy('requestedAt','desc'),limit(100)),
-    snap=>next(snap.docs.map(d=>({id:d.id,...d.data()}))),error);
-}
-export async function requestArrival(hid,ticketId){
-  const {setDoc,serverTimestamp}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js');
-  await setDoc(arrivalDoc(hid,ticketId),{ticketId,status:'pending',requestedAt:serverTimestamp()});
-}
-export async function verifyArrival(hid,ticketId){
-  const {updateDoc,serverTimestamp}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js');
-  await updateDoc(arrivalDoc(hid,ticketId),{status:'verified',verifiedAt:serverTimestamp()});
-}
 /** Single-shot feedback: a completed ticket can create one private owner-readable record. */
 export async function submitFeedback(hid,ticketId,rating,note){
   const {setDoc,serverTimestamp}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js');
