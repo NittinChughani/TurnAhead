@@ -1,9 +1,9 @@
 import {configured,auth,helpfulError} from './firebase.js';
 import {observeAuth,login,logout,refreshVerification,requestVerification,myMemberships,getHospital,
-  watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,updateRecallGrace,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js';
+  watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,updateRecallGrace,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js?v=2.6.2';
 import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory,observeFeedback} from './store.js';
 import {canChangeRole,normalizeEmail,invitationLink,boardLink,staffGreeting} from './org-model.js';
-import {dayKey,patientDisplayName,ticketStatusLabel} from './queue-engine.js';
+import {dayKey,patientDisplayName,ticketStatusLabel} from './queue-engine.js?v=2.6.2';
 import {watchDoctors,addDoctor,changeDoctor} from './doctors.js';
 import {avatarHTML,avatarContents,compressProfilePhoto} from './profile-photo.js';
 import {patientReportRows,downloadPatientReport} from './patient-report.js';
