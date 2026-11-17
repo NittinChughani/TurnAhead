@@ -4,12 +4,12 @@ import {observeAuth, login, logout, requestVerification, refreshVerification,
 import {canManageStaff, canManageDepartments, boardLink, isStaffRole, staffGreeting} from './org-model.js';
 import {bootstrap, rollOverAll, observeQueues, observeTickets,
   issueTicket, createQueue, performAction,recallMissedTicket} from './store.js';
-import {dayKey,patientDisplayName,getDoctorLane,doctorActiveCodes,ticketStatusLabel} from './queue-engine.js';
+import {dayKey,patientDisplayName,getDoctorLane,doctorActiveCodes,ticketStatusLabel} from './queue-engine.js?v=2.6.2';
 import {watchDoctors} from './doctors.js';
 import {doctorAvailable} from './doctor-model.js';
 import {avatarContents,compressProfilePhoto} from './profile-photo.js';
 import {bindLanguage,t} from './locale.js?v=2.6.1';
-import {recallEligibility,graceMinutes} from './v26-engine.js';
+import {recallEligibility,graceMinutes} from './v26-engine.js?v=2.6.2';
 
 const {esc,fmt}=window.turnahead, $=id=>document.getElementById(id);
 const views=['login-view','verify-view','no-access-view','dashboard'];
