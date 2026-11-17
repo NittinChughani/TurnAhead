@@ -119,6 +119,6 @@ export async function updateOwnProfilePhoto(hospitalId,photo,user=auth.currentUs
 }
 
 export async function updateRecallGrace(hospitalId,minutes){
-  if(!Number.isInteger(minutes)||minutes<5||minutes>30)throw Error('Choose a grace period between 5 and 30 minutes.');
+  if(!Number.isInteger(minutes)||minutes<1||minutes>120)throw Error('Choose a grace period between 1 and 120 minutes.');
   await updateDoc(hospitalRef(hospitalId),{recallGraceMinutes:minutes,updatedAt:serverTimestamp()});
 }
