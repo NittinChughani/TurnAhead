@@ -354,3 +354,51 @@
   .admin-nav-link{min-height:42px;padding:0 12px;font-size:11px}
   .admin-grid>.admin-feedback-panel .v26-mini-list{grid-template-columns:1fr}
 }
+
+
+/* v2.6.3 · Non-blocking feedback send and joyful verified receipt. */
+.feedback-progress-toast[hidden]{display:none!important}
+.feedback-progress-toast{
+  position:fixed;z-index:1700;left:50%;bottom:max(22px,env(safe-area-inset-bottom));
+  transform:translateX(-50%);width:max-content;max-width:calc(100vw - 32px);
+  padding:13px 19px;display:flex;align-items:center;gap:12px;
+  background:var(--paper);color:var(--ink);border:1px solid var(--line);
+  border-radius:16px;box-shadow:0 14px 42px #0a213638;
+  font-size:13px;font-weight:700;pointer-events:none;
+}
+.feedback-progress-spinner{
+  display:block;width:19px;height:19px;flex-shrink:0;border-radius:50%;
+  border:2px solid var(--line);border-top-color:var(--blue);
+  animation:feedbackProgressSpin .7s linear infinite;
+}
+@keyframes feedbackProgressSpin{to{transform:rotate(360deg)}}
+.feedback-success-dialog{max-width:400px;position:relative;overflow:hidden}
+.feedback-success-dialog::before{
+  content:"";position:absolute;inset:-85px -95px auto;
+  height:220px;pointer-events:none;
+  background:radial-gradient(ellipse at center,color-mix(in srgb,var(--teal) 16%,transparent),transparent 67%);
+}
+.feedback-success-icon{
+  width:90px;height:90px;display:grid;place-items:center;margin:3px auto 18px;
+  background:color-mix(in srgb,var(--teal) 12%,var(--paper));border-radius:50%;
+  color:var(--teal);position:relative;
+  animation:feedbackSuccessBloom .65s cubic-bezier(.18,.89,.32,1.35) both;
+}
+.feedback-success-icon::after{
+  content:"";position:absolute;inset:-9px;border-radius:50%;
+  border:2px solid color-mix(in srgb,var(--teal) 28%,transparent);
+  animation:feedbackSuccessPulse 1.2s ease-out .18s both;
+}
+.feedback-success-icon svg{width:65px;height:65px;display:block;overflow:visible}
+.feedback-success-ring{stroke-dasharray:164;stroke-dashoffset:164;animation:feedbackSuccessDraw .55s ease .12s forwards}
+.feedback-success-tick{stroke-dasharray:45;stroke-dashoffset:45;animation:feedbackSuccessDraw .45s ease .45s forwards}
+.feedback-success-dialog h2{font-size:clamp(23px,5.3vw,29px);line-height:1.22}
+.feedback-success-dialog p{margin-bottom:22px}
+.feedback-success-dialog .btn{position:relative;z-index:1}
+@keyframes feedbackSuccessBloom{from{opacity:0;transform:scale(.35) rotate(-13deg)}to{opacity:1;transform:scale(1) rotate(0)}}
+@keyframes feedbackSuccessPulse{from{opacity:.85;transform:scale(.75)}to{opacity:0;transform:scale(1.45)}}
+@keyframes feedbackSuccessDraw{to{stroke-dashoffset:0}}
+@media(prefers-reduced-motion:reduce){
+  .feedback-progress-spinner,.feedback-success-icon,.feedback-success-icon::after,.feedback-success-ring,.feedback-success-tick{animation:none!important}
+  .feedback-success-ring,.feedback-success-tick{stroke-dashoffset:0}
+}

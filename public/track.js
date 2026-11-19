@@ -1,10 +1,10 @@
 import {configured,helpfulError} from './firebase.js';
 import {getHospital} from './org-store.js';
 import {registerTurnPush} from './push-client.js';
-import {observeTicket,observeQueue,fetchTicketFromServer,submitFeedback} from './store.js';
+import {observeTicket,observeQueue,fetchTicketFromServer,submitFeedback} from './store.js?v=2.6.3';
 import {t as tfn,bindLanguage} from './locale.js?v=2.6.1';
-import {nearTurnMilestone,shouldApplyTicket} from './v26-engine.js?v=2.6.2';
-import {dayKey,waitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName,doctorQueueSummary,callHistoryLine} from './queue-engine.js?v=2.6.2';
+import {nearTurnMilestone,shouldApplyTicket} from './v26-engine.js?v=2.6.3';
+import {dayKey,waitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName,doctorQueueSummary,callHistoryLine} from './queue-engine.js?v=2.6.3';
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
 const ticketId=params.get('ticket'),hospitalId=params.get('hospital');
@@ -107,39 +107,73 @@ function showNearTurn(ticket,status,ahead){
 }
 $('near-popup-close').addEventListener('click',()=>{nearModal.hidden=true;currentlyShown=null;});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){
-  if(!feedbackModal.hidden){e.preventDefault();closeFeedback();}
+  if(!feedbackSuccess.hidden){e.preventDefault();closeFeedbackSuccess();}
+  else if(!feedbackModal.hidden){e.preventDefault();closeFeedback();}
   else if(!nearModal.hidden){e.preventDefault();nearModal.hidden=true;currentlyShown=null;}
 }});
-/** Completion feedback is a one-time, permission-free foreground dialog, never an inline card. */
+/** Save without holding the patient in a blocking modal; confirm only after Firestore acknowledges. */
 const feedbackModal=$('feedback-popup');
-const feedbackSeenKey=`turnahead-v262-feedback-seen:${hospitalId}:${ticketId}`;
-const feedbackSubmittedKey=`turnahead-v26-feedback:${hospitalId}:${ticketId}`;
+const feedbackProgress=$('feedback-progress');
+const feedbackSuccess=$('feedback-success');
+const feedbackSeenKey='turnahead-v262-feedback-seen:'+hospitalId+':'+ticketId;
+const feedbackSubmittedKey='turnahead-v26-feedback:'+hospitalId+':'+ticketId;
+let feedbackSending=false,feedbackSuccessTimer=null;
 function closeFeedback(){
+  if(feedbackSending)return;
   feedbackModal.hidden=true;
   localStorage.setItem(feedbackSeenKey,'yes');
   $('feedback-close').blur();
 }
+function closeFeedbackSuccess(){
+  clearTimeout(feedbackSuccessTimer);
+  feedbackSuccessTimer=null;
+  feedbackSuccess.hidden=true;
+  if(document.activeElement===$('feedback-success-close'))$('feedback-success-close').blur();
+}
+function showFeedbackSuccess(){
+  feedbackModal.hidden=true;
+  feedbackProgress.hidden=true;
+  feedbackSuccess.hidden=false;
+  $('feedback-success-close').focus({preventScroll:true});
+  clearTimeout(feedbackSuccessTimer);
+  feedbackSuccessTimer=setTimeout(closeFeedbackSuccess,2200);
+}
 function renderFeedback(status){
-  if(legacy||status!=='completed'||document.visibilityState!=='visible'||!feedbackModal.hidden)return;
+  if(legacy||status!=='completed'||document.visibilityState!=='visible'||feedbackSending||!feedbackModal.hidden||!feedbackSuccess.hidden)return;
   if(localStorage.getItem(feedbackSeenKey)==='yes'||localStorage.getItem(feedbackSubmittedKey)==='yes')return;
-  // Completion takes priority over a previously displayed near-turn popup.
+  // Completion takes priority over the near-turn alert.
   nearModal.hidden=true;currentlyShown=null;
   feedbackModal.hidden=false;
-  $('feedback-form').hidden=false;
   $('feedback-state').textContent='';
   $('feedback-close').focus({preventScroll:true});
 }
 $('feedback-close').addEventListener('click',closeFeedback);
+$('feedback-success-close').addEventListener('click',closeFeedbackSuccess);
 $('feedback-form').addEventListener('submit',async e=>{
-  e.preventDefault();const form=e.currentTarget,b=form.querySelector('[type=submit]');b.disabled=true;
+  e.preventDefault();
+  if(feedbackSending)return;
+  const form=e.currentTarget,b=form.querySelector('[type=submit]');
   const rating=form.querySelector('input[name=rating]:checked')?.value;
+  feedbackSending=true;
+  b.disabled=true;
+  $('feedback-state').textContent='';
+  // Leave the tracking page usable while the network confirms the write.
+  feedbackModal.hidden=true;
+  feedbackProgress.hidden=false;
   try{
     await submitFeedback(hospitalId,ticketId,Number(rating),$('feedback-note').value);
     localStorage.setItem(feedbackSubmittedKey,'yes');
-    closeFeedback();
+    localStorage.setItem(feedbackSeenKey,'yes');
+    showFeedbackSuccess();
   }catch(err){
+    feedbackProgress.hidden=true;
+    feedbackModal.hidden=false;
     $('feedback-state').textContent=err?.code==='permission-denied'?'Feedback was not saved. Hospital feedback permissions may need the updated Firestore rules. Ask the administrator to check the deployment.':'Feedback was not saved. Please try again. '+helpfulError(err);
-  }finally{b.disabled=false;}
+    $('feedback-state').focus({preventScroll:true});
+  }finally{
+    feedbackSending=false;
+    b.disabled=false;
+  }
 });
 bindLanguage();
 $('enable-alerts').addEventListener('click',async()=>{

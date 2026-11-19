@@ -1,4 +1,4 @@
-> **v2.6.2 development candidate:** Removed arrival confirmation, synced recalled patient statuses, added an admin section navigation, separated feedback, added custom recall grace, and revised completed-ticket feedback permissions. **Publish the Firestore rules separately after merging.** See [rollout notes](docs/V26-DEPLOYMENT-AND-TESTING.md).
+> **v2.6.3:** Patient feedback now sends without blocking queue tracking, then shows an animated “Thank you for your response” confirmation once Firestore accepts it. Reception has one Public board link, and failed feedback stays retryable. No new Firestore rules are required for this UI update; previously required v2.6.2 rules must already be published. See [deployment notes](docs/V26-DEPLOYMENT-AND-TESTING.md).
 
 <div align="center">
 
@@ -10,8 +10,8 @@
 
 **A smarter walk-in queue for hospitals and clinics.** A printed QR ticket, a clear place in line, and live updates from reception. No patient account or app installation.
 
-[![Version](https://img.shields.io/badge/Preview-v2.5.2-0D8478?style=for-the-badge)](docs/SETUP-GITHUB-PAGES-FIREBASE.md)
-[![Tests](https://img.shields.io/badge/Tests-69%20passing-182D4C?style=for-the-badge)](test/)
+[![Version](https://img.shields.io/badge/Preview-v2.6.3-0D8478?style=for-the-badge)](docs/SETUP-GITHUB-PAGES-FIREBASE.md)
+[![Tests](https://img.shields.io/badge/Tests-92%20passing-182D4C?style=for-the-badge)](test/)
 [![Firebase](https://img.shields.io/badge/Realtime-Firestore-182D4C?style=for-the-badge&logo=firebase&logoColor=FFCA28)](https://firebase.google.com/)
 [![GitHub Pages](https://img.shields.io/badge/Hosting-GitHub%20Pages-182D4C?style=for-the-badge&logo=githubpages&logoColor=54E0BB)](https://pages.github.com/)
 [![MIT](https://img.shields.io/badge/License-MIT-182D4C?style=for-the-badge)](LICENSE)
