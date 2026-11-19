@@ -1,6 +1,6 @@
 /** Hospital-scoped Firestore queues, atomic ticket transitions and private dated history. */
 import {
-  collection,doc,getDocs,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter,deleteField
+  collection,doc,getDocs,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter,deleteField,setDoc,serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {db,auth} from './firebase.js';
 import {dayKey,departmentPrefix,initialQueue,initialControl,normalizedQueue,
@@ -197,7 +197,6 @@ export async function readHistory(hid,date,departmentId,code='',cursor=null){
 
 /** Single-shot feedback: a completed ticket can create one private owner-readable record. */
 export async function submitFeedback(hid,ticketId,rating,note){
-  const {setDoc,serverTimestamp}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js');
   const safe=safeFeedback(rating,note);
   await setDoc(feedbackDoc(hid,ticketId),{ticketId,...safe,createdAt:serverTimestamp()});
 }
