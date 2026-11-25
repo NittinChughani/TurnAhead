@@ -16,7 +16,7 @@ test('queue mutations require online and server-confirmed data, with no pending 
 });
 test('denied browser storage does not convert a successful operation into a failure',()=>{
  const s=safeStorage(()=>{throw Error('storage denied');});
- assert.equal(s.getItem('x'),null);assert.doesNotThrow(()=>s.setItem('x','y'));assert.doesNotThrow(()=>s.removeItem('x'));
+ assert.equal(s.getItem('x'),null);assert.doesNotThrow(()=>s.setItem('x','y'));assert.equal(s.getItem('x'),'y');assert.doesNotThrow(()=>s.removeItem('x'));assert.equal(s.getItem('x'),null);
  const map=new Map(),ok=safeStorage(()=>({getItem:k=>map.get(k),setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)}));
  ok.setItem('x','yes');assert.equal(ok.getItem('x'),'yes');ok.removeItem('x');assert.equal(ok.getItem('x'),null);
 });
