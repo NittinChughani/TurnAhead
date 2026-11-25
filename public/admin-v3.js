@@ -1,7 +1,7 @@
-import {loadAnalytics} from './analytics-store.js?v=3.1.0';
+import {loadAnalytics} from './analytics-store.js?v=3.2.0';
 import {buildAnalytics,reportRows,analyticsCSV} from './analytics-engine.js?v=3.1.0';
 import {hospitalCustomization,validateCustomization,compressHospitalLogo,applyHospitalBrand} from './hospital-custom.js?v=3.1.0';
-import {updateHospitalCustomization} from './org-store.js?v=3.1.0';
+import {updateHospitalCustomization} from './org-store.js?v=3.2.0';
 import {dayKey} from './queue-engine.js';
 const $=id=>document.getElementById(id),esc=window.turnahead.esc;
 let generation=0,report=null,reportInfo=null,logo='',context=()=>null,notify=()=>{},customGeneration=0;
