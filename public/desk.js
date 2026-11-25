@@ -40,7 +40,7 @@ function clearPrivateDesk(){
  for(const id of ['patient-name','patient-room','patient-gender','patient-doctor'])if($(id))$(id).value='';
 }
 window.addEventListener('offline',()=>{queueConfirmed=false;if(currentHospital)render();});
-window.addEventListener('online',()=>{if(currentHospital)render();});
+window.addEventListener('online',()=>{if(currentHospital){connectQueueStream(currentHospital.id,workspaceEpoch);render();}});
 
 const loginButton=$('login-form').querySelector('[type=submit]');
 const loginOriginal=loginButton.textContent;
@@ -122,6 +122,10 @@ $('counter-select').addEventListener('change',e=>{
   if(currentHospital)persistent.setItem('turnahead-counter-'+currentHospital.id,String(selectedCounter));
   render();
 });
+function connectQueueStream(hid,epoch){
+ stopQueues?.();queueConfirmed=false;
+ stopQueues=observeQueues(hid,(data,meta)=>{if(epoch!==workspaceEpoch)return;queues=data;queueConfirmed=Boolean(meta?.confirmed);render();},e=>{if(epoch!==workspaceEpoch)return;queueConfirmed=false;render();notice(helpfulError(e),true);});
+}
 async function openHospital(member){
   stopSubscriptions();clearPrivateDesk();currentHospital=null;currentMember=null;show('dashboard',false);const epoch=workspaceEpoch;
   const nextHospital=await getHospital(member.hospitalId);if(epoch!==workspaceEpoch||!auth.currentUser)return;
@@ -142,7 +146,7 @@ async function openHospital(member){
   },e=>toast(helpfulError(e),true));
   stopHospital=watchHospital(member.hospitalId,h=>{if(epoch!==workspaceEpoch||currentHospital?.id!==h.id)return;currentHospital=h;applyHospitalBrand(h);render();},e=>notice(helpfulError(e),true));
   // Subscribe first: patients and reception see updates without waiting on daily maintenance.
-  stopQueues=observeQueues(member.hospitalId,(data,meta)=>{if(epoch!==workspaceEpoch)return;queues=data;queueConfirmed=Boolean(meta?.confirmed);render();},e=>{if(epoch!==workspaceEpoch)return;queueConfirmed=false;render();notice(helpfulError(e),true);});
+  connectQueueStream(member.hospitalId,epoch);
   stopTickets=observeTickets(member.hospitalId,data=>{if(epoch!==workspaceEpoch)return;tickets=data;render();},e=>notice(helpfulError(e),true),100);
   stopDoctors=watchDoctors(member.hospitalId,data=>{if(epoch!==workspaceEpoch)return;doctors=data;refreshDoctorChoices();render();},e=>notice(helpfulError(e),true));
   // Maintenance happens asynchronously and is idempotent.
