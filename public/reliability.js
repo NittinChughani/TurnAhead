@@ -12,7 +12,10 @@ export function connectionLabel({online,confirmed,pending}){
  if(pending)return 'Saving · waiting for confirmation';
  return 'Connected · live queue';
 }
-export function safeStorage(storage){return {getItem(key){try{return storage()?.getItem(key)??null;}catch{return null;}},setItem(key,value){try{storage()?.setItem(key,value);}catch{}},removeItem(key){try{storage()?.removeItem(key);}catch{}}};}
+export function safeStorage(storage){
+ const fallback=new Map();
+ return {getItem(key){if(fallback.has(key))return fallback.get(key);try{return storage()?.getItem(key)??null;}catch{return null;}},setItem(key,value){fallback.set(key,String(value));try{storage()?.setItem(key,value);}catch{}},removeItem(key){fallback.set(key,null);try{storage()?.removeItem(key);}catch{}}};
+}
 export const persistent=safeStorage(()=>globalThis.localStorage);
 export const session=safeStorage(()=>globalThis.sessionStorage);
 export async function mapLimited(items,concurrency,fn){
