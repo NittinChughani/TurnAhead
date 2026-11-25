@@ -11,7 +11,7 @@
 **A smarter walk-in queue for hospitals and clinics.** A printed QR ticket, a clear place in line, and live updates from reception. No patient account or app installation.
 
 [![Version](https://img.shields.io/badge/Preview-v3.2.0-0D8478?style=for-the-badge)](docs/SETUP-GITHUB-PAGES-FIREBASE.md)
-[![Tests](https://img.shields.io/badge/Tests-unit%20and%20emulator-182D4C-182D4C?style=for-the-badge)](test/)
+[![Tests](https://img.shields.io/badge/Tests-unit%20and%20emulator-182D4C?style=for-the-badge)](test/)
 [![Firebase](https://img.shields.io/badge/Realtime-Firestore-182D4C?style=for-the-badge&logo=firebase&logoColor=FFCA28)](https://firebase.google.com/)
 [![GitHub Pages](https://img.shields.io/badge/Hosting-GitHub%20Pages-182D4C?style=for-the-badge&logo=githubpages&logoColor=54E0BB)](https://pages.github.com/)
 [![MIT](https://img.shields.io/badge/License-MIT-182D4C?style=for-the-badge)](LICENSE)
