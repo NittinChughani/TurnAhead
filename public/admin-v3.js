@@ -59,6 +59,7 @@ export function bindV3(getContext,toast){
  $('analytics-date').value=dayKey();$('analytics-date').max=dayKey();
  $('analytics-load').addEventListener('click',async()=>{
   const h=context()?.hospital;if(!h)return;
+  if(!navigator.onLine){$('analytics-state').textContent='Offline. Reconnect before generating a private report.';return;}
   const end=$('analytics-date').value,days=Number($('analytics-period').value),token=++generation;
   report=null;reportInfo=null;exportReady(false);$('analytics-output').replaceChildren();$('analytics-state').textContent='Loading private archive totals…';$('analytics-load').disabled=true;$('analytics-cancel').hidden=false;
   try{
@@ -75,7 +76,7 @@ export function bindV3(getContext,toast){
  $('custom-logo-file').addEventListener('change',async e=>{const token=customGeneration;const file=e.target.files?.[0];if(!file)return;e.target.disabled=true;$('custom-save').disabled=true;try{const next=await compressHospitalLogo(file);if(token===customGeneration){logo=next;previewLogo();}}catch(err){notify(err.message,true);}finally{e.target.value='';e.target.disabled=false;$('custom-save').disabled=false;}});
  $('custom-logo-remove').addEventListener('click',()=>{logo='';previewLogo();});
  $('customization-form').addEventListener('submit',async e=>{
-  e.preventDefault();const h=context()?.hospital;if(!h)return;
+  e.preventDefault();const h=context()?.hospital;if(!h)return;if(!navigator.onLine){notify('Reconnect before saving settings.',true);return;}
   const b=$('custom-save'),token=customGeneration;b.disabled=true;
   try{
    const c=validateCustomization({logo,accent:$('custom-accent').value,receiptNote:$('custom-receipt').value.trim(),opens:$('custom-open').value,closes:$('custom-close').value,hoursEnabled:$('custom-hours-enabled').checked,counters:Number($('custom-counters').value),boardLayout:$('custom-layout').value,boardMessage:$('custom-message').value.trim()});
