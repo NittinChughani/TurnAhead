@@ -34,7 +34,7 @@ function beginMutation(){if(!mutationAllowed()){notice('Wait for a live connecti
 function endMutation(token){gate.end(token);if(currentHospital)render();else updateConnection();}
 function clearPrivateDesk(){
  currentTicket=null;queues=[];tickets=[];doctors=[];selectedQueue=null;selectedDoctor=null;queueConfirmed=false;
- for(const id of ['issue-modal','ticket-modal','new-queue-modal']){const el=$(id);if(el)el.hidden=true;}
+ for(const id of ['issue-modal','ticket-modal','queue-modal']){const el=$(id);if(el)el.hidden=true;}
  for(const id of ['recent-tickets','queue-detail','queue-tabs','missed-list','receipt-patient','receipt-visit','receipt-code','receipt-link','receipt-issued','receipt-queue','receipt-counter','receipt-facility','receipt-custom-note'])$(id)?.replaceChildren();
  $('receipt-qr')?.removeAttribute('src');
  for(const id of ['patient-name','patient-room','patient-gender','patient-doctor'])if($(id))$(id).value='';
@@ -231,12 +231,12 @@ $('close-ticket').addEventListener('click',()=>show('ticket-modal',false));
 $('ticket-modal').addEventListener('click',e=>{if(e.target===$('ticket-modal'))show('ticket-modal',false);});
 $('print-button').addEventListener('click',()=>window.print());
 $('copy-button').addEventListener('click',async()=>{if(!currentTicket)return;try{await navigator.clipboard.writeText(currentTicket.trackingUrl);$('copy-button').textContent='Copied ✓';setTimeout(()=>$('copy-button').textContent='Copy tracking link',1800);}catch{notice('Copy unavailable. Select the link shown on the receipt.',true);}});
-$('new-queue').addEventListener('click',()=>{if(canManageDepartments(currentMember?.role))show('queue-modal',true);});
+$('new-queue').addEventListener('click',()=>{if(mutationAllowed()&&canManageDepartments(currentMember?.role))show('queue-modal',true);});
 $('close-queue').addEventListener('click',()=>show('queue-modal',false));
 $('queue-modal').addEventListener('click',e=>{if(e.target===$('queue-modal'))show('queue-modal',false);});
 $('queue-form').addEventListener('submit',async e=>{
-  e.preventDefault();const b=e.target.querySelector('[type=submit]');b.disabled=true;
-  try{const q=await createQueue(currentHospital.id,$('queue-name').value);selectedQueue=q.id;$('queue-name').value='';show('queue-modal',false);notice(`${q.name} has been created.`);}catch(err){notice(helpfulError(err),true);}finally{b.disabled=false;}
+  e.preventDefault();const token=beginMutation();if(!token)return;const epoch=workspaceEpoch,hid=currentHospital.id,b=e.target.querySelector('[type=submit]');b.disabled=true;
+  try{const q=await createQueue(hid,$('queue-name').value);if(epoch!==workspaceEpoch)return;selectedQueue=q.id;$('queue-name').value='';show('queue-modal',false);notice(`${q.name} has been created.`);}catch(err){if(epoch===workspaceEpoch)notice(helpfulError(err),true);}finally{b.disabled=false;endMutation(token);}
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){show('ticket-modal',false);show('queue-modal',false);show('issue-modal',false);}});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentHospital)rollOverAll(currentHospital.id).catch(e=>notice(helpfulError(e),true));});
@@ -247,7 +247,7 @@ else observeAuth(()=>routeCurrentUser());
 
 $('staff-profile-file').addEventListener('change',async e=>{
  if(!currentHospital||!currentMember)return;const file=e.target.files?.[0];if(!file)return;
- e.target.disabled=true;try{const photo=await compressProfilePhoto(file);await updateOwnProfilePhoto(currentHospital.id,photo);notice('Profile photo saved.');}
+ const epoch=workspaceEpoch,hid=currentHospital.id;e.target.disabled=true;try{const photo=await compressProfilePhoto(file);if(epoch!==workspaceEpoch)return;await updateOwnProfilePhoto(hid,photo);notice('Profile photo saved.');}
  catch(err){notice(helpfulError(err),true);}finally{e.target.value='';e.target.disabled=false;}
 });
 $('staff-profile-remove').addEventListener('click',async()=>{
