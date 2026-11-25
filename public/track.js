@@ -16,11 +16,12 @@ const loader=$('track-loading');
 setTimeout(()=>{if(!loader.hidden)$('track-loading-note').textContent='Still connecting. Your queue will appear as soon as the live service responds.';},3200);
 const messages={waiting:'Your place updates as reception calls each patient.',called:"It's your turn. Please go to your service counter.",completed:'Your visit was marked completed. Thank you for coming.',skipped:'Reception marked this turn as missed. Please ask them for help.',syncing:'Checking the latest status with reception…',expired:'This ticket belongs to an earlier day. Please ask reception for a new one.'};
 function clearPrivateTicket(){currentTicket=null;currentQueue=null;stopQueue?.();stopQueue=null;subscribedQueueId=null;lastConfirmed=0;for(const id of ['track-code','track-patient','track-visit','track-queue','track-call-history'])$(id).textContent='';}
-function missingTicket(){missingConfirmed=true;clearPrivateTicket();fail('Ticket not found or no longer available. Ask reception for help.');}
+function missingTicket(){missingConfirmed=true;clearPrivateTicket();for(const id of ['near-popup','feedback-popup','feedback-success','feedback-progress']){const node=$(id);if(node)node.hidden=true;}if($('feedback-note'))$('feedback-note').value='';fail('Ticket not found or no longer available. Ask reception for help.');}
 function fail(message){loader.hidden=true;$('track-error').textContent=message;$('track-error').hidden=false;$('track-content').hidden=true;}
 function setSyncStatus(){
   const element=$('sync-state');
   const seconds=lastConfirmed?Math.floor((Date.now()-lastConfirmed)/1000):Infinity;
+  if(missingConfirmed){element.textContent='TICKET UNAVAILABLE';return;}
   if(!navigator.onLine){element.textContent='OFFLINE · RECONNECTING';return;}
   element.textContent=refreshing?'CHECKING LIVE STATUS':seconds>35?'RECONNECTING…':lastConfirmed?'LIVE · SYNCED':'CONNECTING…';
 }
