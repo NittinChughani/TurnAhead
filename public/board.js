@@ -7,6 +7,9 @@ import {t,bindLanguage} from './locale.js?v=2.6.1';
 import {announcementChanges} from './v26-engine.js?v=2.6.1';
 const {esc}=window.turnahead,el=document.getElementById('board-grid');
 const hospitalId=new URLSearchParams(location.search).get('hospital');
+let boardConfirmed=false;
+function boardConnection(){const node=document.getElementById('board-connection');node.textContent=!navigator.onLine?'OFFLINE · LAST KNOWN DATA':boardConfirmed?'LIVE · SYNCED':'RECONNECTING · LAST KNOWN DATA';node.dataset.state=boardConfirmed&&navigator.onLine?'live':'paused';}
+window.addEventListener('offline',()=>{boardConfirmed=false;boardConnection();});window.addEventListener('online',boardConnection);
 let displayedQueues=[],displayedDate=dayKey(),lastActive=new Map(),boardReady=false,voiceEnabled=false;
 const voiceButton=document.getElementById('board-voice-toggle'),voiceState=document.getElementById('board-voice-state');
 const synth=window.speechSynthesis;
@@ -119,7 +122,7 @@ function startBoard(){
     const message=document.getElementById('board-custom-message');message.textContent=c.boardMessage;message.hidden=!c.boardMessage;
     document.getElementById('board-facility').textContent=`${h.name} · Live queue overview`;
   },e=>{document.getElementById('board-facility').textContent=helpfulError(e);});
-  observeQueues(hospitalId,queues=>{checkCalls(queues);displayedQueues=queues;displayedDate=dayKey();renderBoard(queues);
-  },err=>{el.innerHTML=`<div class="empty-state">Unable to load the queue. ${esc(helpfulError(err))}</div>`;});
+  observeQueues(hospitalId,(queues,meta)=>{boardConfirmed=Boolean(meta?.confirmed);boardConnection();if(boardConfirmed)checkCalls(queues);displayedQueues=queues;displayedDate=dayKey();renderBoard(queues);
+  },err=>{boardConfirmed=false;boardConnection();el.innerHTML=`<div class="empty-state">Unable to load the queue. ${esc(helpfulError(err))}</div>`;});
 }
 startBoard();
