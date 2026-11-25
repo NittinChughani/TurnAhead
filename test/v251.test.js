@@ -30,7 +30,8 @@ test('issuer identity and issuing counter are recorded atomically in owner-only 
   assert.match(store,/issuedCounter=counterLabel\(details\.counterNumber\)/);
   assert.match(store,/tx\.set\(historyDoc\(hid,today,id,tr\.id\),\{\.\.\.archiveTicket\(tr\.id,ticket,now\),issuedBy,issuedCounter\}\)/);
   assert.doesNotMatch(store,/tx\.set\(tr,\{[^}]*issuedBy/);
-  assert.match(desk,/counterNumber:selectedCounter/);
+  assert.match(desk,/const epoch=workspaceEpoch,hid=currentHospital.id,counter=selectedCounter/);
+  assert.match(desk,/counterNumber:counter/);
   assert.match(admin,/Issued by receptionist/);
   assert.match(admin,/Issuing counter/);
   assert.match(rules,/request\.resource\.data\.issuedBy == request\.auth\.uid/);

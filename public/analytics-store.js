@@ -22,7 +22,9 @@ export async function loadAnalytics(hid,end,days,progress=()=>{},cancelled=()=>f
  const dayDocs=await fetchPage(query(collection(db,...root,'history'),where('dayKey','>=',dates[0]),where('dayKey','<=',end),orderBy('dayKey')));
  const records=[];
  for(const d of dayDocs.docs){
+  if(cancelled())throw Error('Report cancelled.');
   for(const dept of depts.docs){
+   if(cancelled())throw Error('Report cancelled.');
    const items=await read(collection(db,...root,'history',d.id,'departments',dept.id,'records'),[orderBy('issuedAt')],t=>({dayKey:t.dayKey,queueId:t.queueId,queueName:t.queueName,doctorId:t.doctorId,doctorName:t.doctorName,status:t.status,recallCount:t.recallCount,issuedAt:t.issuedAt,calledAt:t.calledAt,finishedAt:t.finishedAt}));
    records.push(...items);
   }

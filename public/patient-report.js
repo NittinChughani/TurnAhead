@@ -17,9 +17,10 @@ export function patientReportRows(ticket, names={}) {
 export function safeReportFilename(ticket) {
   return `TurnAhead-${String(ticket.code||'ticket').replace(/[^A-Za-z0-9-]/g,'')}-${String(ticket.dayKey||'date').replace(/[^0-9-]/g,'')}.pdf`;
 }
-export async function downloadPatientReport(ticket,rows,hospitalName='TurnAhead hospital') {
+export async function downloadPatientReport(ticket,rows,hospitalName='TurnAhead hospital',authorized=()=>true) {
   // Load only on explicit click; no remote PDF processing or server upload.
   const {jsPDF}=await import('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm');
+  if(!authorized())throw Error('Administrator session changed; export cancelled.');
   const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
   const width=210,side=19;let y=19;
   pdf.setFillColor(13,43,76);pdf.rect(0,0,width,43,'F');

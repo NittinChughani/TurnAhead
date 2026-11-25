@@ -1,9 +1,9 @@
 import {configured, auth, helpfulError} from './firebase.js';
 import {observeAuth, login, logout, requestVerification, refreshVerification,
-  myMemberships, getHospital, watchMembership,updateOwnProfilePhoto,watchHospital} from './org-store.js?v=3.1.0';
+  myMemberships, getHospital, watchMembership,updateOwnProfilePhoto,watchHospital} from './org-store.js?v=3.2.0';
 import {canManageStaff, canManageDepartments, boardLink, isStaffRole, staffGreeting} from './org-model.js';
 import {bootstrap, rollOverAll, observeQueues, observeTickets,
-  issueTicket, createQueue, performAction,recallMissedTicket} from './store.js';
+  issueTicket, createQueue, performAction,recallMissedTicket} from './store.js?v=3.2.0';
 import {dayKey,patientDisplayName,getDoctorLane,doctorActiveCodes,ticketStatusLabel} from './queue-engine.js?v=2.6.2';
 import {watchDoctors} from './doctors.js';
 import {doctorAvailable} from './doctor-model.js';
@@ -12,6 +12,7 @@ import {bindLanguage,t} from './locale.js?v=2.6.1';
 import {recallEligibility,graceMinutes} from './v26-engine.js?v=2.6.2';
 
 import {hospitalCustomization,counterOptions,applyHospitalBrand} from './hospital-custom.js?v=3.1.0';
+import {operationGate,canMutateQueue,connectionLabel,persistent} from './reliability.js?v=3.2.0';
 const {esc,fmt}=window.turnahead, $=id=>document.getElementById(id);
 const views=['login-view','verify-view','no-access-view','dashboard'];
 // Old v2.1 invitation URLs continue through the dedicated activation screen.
@@ -20,6 +21,27 @@ let currentHospital=null,currentMember=null,memberships=[],queues=[],tickets=[],
 let doctors=[],stopDoctors=null,stopHospital=null,selectedDoctor=null,selectedCounter=1;
 let stopQueues=null,stopTickets=null,stopMember=null,authEpoch=0,toastTimer,noticeTimer;
 let pendingSignIn=false,pendingSignOut=false;
+const gate=operationGate();
+let queueConfirmed=false,workspaceEpoch=0;
+const connection=()=>({online:navigator.onLine,confirmed:queueConfirmed,pending:gate.busy});
+function mutationAllowed(){return Boolean(currentHospital&&canMutateQueue(connection()));}
+function updateConnection(){
+ const el=$('desk-connection');if(!el)return;
+ el.textContent=connectionLabel(connection());el.dataset.state=mutationAllowed()?'live':'paused';
+ $('workspace-switch').disabled=gate.busy;
+}
+function beginMutation(){if(!mutationAllowed()){notice('Wait for a live connection and the current operation to finish.',true);return null;}const token=gate.begin();render();return token;}
+function endMutation(token){gate.end(token);if(currentHospital)render();else updateConnection();}
+function clearPrivateDesk(){
+ currentTicket=null;queues=[];tickets=[];doctors=[];selectedQueue=null;selectedDoctor=null;queueConfirmed=false;
+ for(const id of ['issue-modal','ticket-modal','queue-modal']){const el=$(id);if(el)el.hidden=true;}
+ for(const id of ['recent-tickets','queue-detail','queue-tabs','missed-list','receipt-patient','receipt-visit','receipt-code','receipt-link','receipt-issued','receipt-queue','receipt-counter','receipt-facility','receipt-custom-note'])$(id)?.replaceChildren();
+ $('receipt-qr')?.removeAttribute('src');
+ for(const id of ['patient-name','patient-room','patient-gender','patient-doctor'])if($(id))$(id).value='';
+}
+window.addEventListener('offline',()=>{queueConfirmed=false;if(currentHospital)render();});
+window.addEventListener('online',()=>{if(currentHospital){connectQueueStream(currentHospital.id,workspaceEpoch);render();}});
+
 const loginButton=$('login-form').querySelector('[type=submit]');
 const loginOriginal=loginButton.textContent;
 function loadingLogin(busy){loginButton.disabled=busy;loginButton.classList.toggle('is-loading',busy);loginButton.textContent=busy?'Signing in…':loginOriginal;}
@@ -27,7 +49,7 @@ const show=(id,visible)=>$(id).hidden=!visible;
 function view(name){if(name!=='login-view')loadingLogin(false);views.forEach(v=>show(v,v===name));show('logout',Boolean(auth?.currentUser));show('workspace-switch',name==='dashboard'&&memberships.filter(m=>isStaffRole(m.role)).length>1);show('public-board-link',name==='dashboard');show('staff-greeting',name==='dashboard'&&Boolean(currentMember));show('admin-link',name==='dashboard'&&canManageStaff(currentMember?.role));window.scrollTo(0,0);}
 function toast(message,error=false){const el=$('toast');el.textContent=message;el.classList.toggle('error',error);show('toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('toast',false),4600);}
 function notice(message,error=false){const el=$('notice');el.textContent=message;el.classList.toggle('error',error);show('notice',true);clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>show('notice',false),6000);}
-function stopSubscriptions(){stopQueues?.();stopTickets?.();stopMember?.();stopDoctors?.();stopHospital?.();stopHospital=null;stopQueues=stopTickets=stopMember=stopDoctors=null;doctors=[];
+function stopSubscriptions(){workspaceEpoch++;queueConfirmed=false;stopQueues?.();stopTickets?.();stopMember?.();stopDoctors?.();stopHospital?.();stopHospital=null;stopQueues=stopTickets=stopMember=stopDoctors=null;doctors=[];
   if(!currentHospital){tickets=[];$('recent-tickets').replaceChildren();}}
 function refreshRole(){show('new-queue',canManageDepartments(currentMember?.role));show('admin-link',canManageStaff(currentMember?.role));$('role-chip').textContent=(currentMember?.role||'receptionist').toUpperCase();$('staff-greeting-name').textContent=currentMember?staffGreeting(currentMember):'';if(currentMember){const photo=avatarContents(currentMember,esc);$('staff-nav-avatar').innerHTML=photo;$('staff-profile-avatar').innerHTML=photo;}}
 function syncCounters(){
@@ -39,7 +61,7 @@ function syncCounters(){
 }
 function render(){
   if(!currentHospital)return;
-  syncCounters();
+  syncCounters();updateConnection();
   $('facility-heading').textContent=`${currentHospital.name} · ${new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'})}`;
   $('stat-waiting').textContent=queues.reduce((n,q)=>n+q.waiting,0);
   $('stat-active').textContent=queues.reduce((n,q)=>n+(q.activeCount||0),0);
@@ -48,7 +70,8 @@ function render(){
   $('queue-tabs').innerHTML=queues.map(q=>`<button class="queue-tab ${selectedQueue===q.id?'active':''}" data-queue="${esc(q.id)}" type="button">${esc(q.name)}</button>`).join('');
   $('queue-tabs').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{selectedQueue=b.dataset.queue;selectedDoctor=null;render();}));
   const q=queues.find(q=>q.id===selectedQueue);
-  $('issue-ticket').disabled=!q||!!q?.paused||selectedCounter>hospitalCustomization(currentHospital).counters;
+  $('issue-ticket').disabled=!mutationAllowed()||!q||!!q?.paused||selectedCounter>hospitalCustomization(currentHospital).counters;
+  $('new-queue').disabled=!mutationAllowed();
   if(q){
     const available=doctors.filter(d=>d.departmentId===q.id);
     if(!selectedDoctor||!available.some(d=>d.id===selectedDoctor))selectedDoctor=available.find(d=>d.active)?.id||available[0]?.id||null;
@@ -66,6 +89,8 @@ function render(){
   }else $('queue-detail').innerHTML='<div class="empty-state">No department yet. Ask your hospital administrator to create one.</div>';
   const latest=tickets.filter(t=>t.dayKey===dayKey());
   renderV26();
+  if(!mutationAllowed())document.querySelectorAll('#queue-detail [data-action],#missed-list [data-recall],#issue-form [type=submit]').forEach(b=>b.disabled=true);
+  else if(!$('issue-form').querySelector('[type=submit]').classList.contains('is-loading'))$('issue-form').querySelector('[type=submit]').disabled=false;
   $('activity-count').textContent=`${latest.length} recent`;
   $('recent-tickets').innerHTML=latest.length?latest.slice(0,14).map(t=>`<div class="activity-item"><div class="activity-token">${esc(t.code)}</div><div class="activity-main"><b>${esc(t.patientName||'Older ticket')} · ${esc(t.queueName||'Service desk')}</b><small>Dr. ${esc(t.doctorName||'—')} · ${esc(fmt(t.createdAt))}${t.calledCounter?' · '+esc(t.calledCounter):''}</small></div><span class="activity-state">${esc(ticketStatusLabel(t))}</span></div>`).join(''):'<div class="empty-state">No tickets today. Create the first walk-in ticket to get started.</div>';
 }
@@ -78,49 +103,58 @@ function renderV26(){
 $('missed-list').addEventListener('click',async e=>{
   const b=e.target.closest('[data-recall]');if(!b||!currentHospital)return;
   const ticket=tickets.find(x=>x.id===b.dataset.recall);if(!ticket)return;
+  const token=beginMutation();if(!token)return;const hid=currentHospital.id,epoch=workspaceEpoch;
   b.disabled=true;
-  try{const result=await recallMissedTicket(currentHospital.id,ticket.queueId,ticket.id);notice(`${result.code} recalled to the END of the doctor queue.`,false);}
-  catch(err){notice(helpfulError(err),true);}finally{b.disabled=false;}
+  try{const result=await recallMissedTicket(hid,ticket.queueId,ticket.id);if(epoch!==workspaceEpoch)return;notice(`${result.code} recalled to the END of the doctor queue.`,false);}
+  catch(err){if(epoch===workspaceEpoch)notice(helpfulError(err),true);}finally{endMutation(token);}
 });
 bindLanguage(()=>render());
 async function action(id,doctorId,kind,button){
-  const label=button.textContent;
+  const token=beginMutation();if(!token)return;const epoch=workspaceEpoch,hid=currentHospital.id,counter=selectedCounter;
   button.disabled=true;button.textContent='Updating…';
-  try{if(kind==='next'&&selectedCounter>hospitalCustomization(currentHospital).counters)throw Error('This counter is available for finishing active tickets only.');const r=await performAction(currentHospital.id,id,kind,doctorId,selectedCounter);
+  try{if(kind==='next'&&selectedCounter>hospitalCustomization(currentHospital).counters)throw Error('This counter is available for finishing active tickets only.');const r=await performAction(hid,id,kind,doctorId,counter);
+    if(epoch!==workspaceEpoch)return;
     notice(`${r.code?r.code+' · ':''}${{next:'Called from '+r.counter,complete:'Marked complete',skip:'Skipped',pause:'Doctor on break',resume:'Doctor resumed','pause-department':'Department paused','resume-department':'Department resumed'}[kind]}.`);
-  }catch(e){notice(helpfulError(e),true);}finally{button.textContent=label;button.disabled=false;}
+  }catch(e){if(epoch===workspaceEpoch)notice(helpfulError(e),true);}finally{endMutation(token);}
 }
 $('counter-select').addEventListener('change',e=>{
   selectedCounter=Number(e.target.value);
-  if(currentHospital)localStorage.setItem('turnahead-counter-'+currentHospital.id,String(selectedCounter));
+  if(currentHospital)persistent.setItem('turnahead-counter-'+currentHospital.id,String(selectedCounter));
   render();
 });
+function connectQueueStream(hid,epoch){
+ stopQueues?.();queueConfirmed=false;
+ stopQueues=observeQueues(hid,(data,meta)=>{if(epoch!==workspaceEpoch)return;queues=data;queueConfirmed=Boolean(meta?.confirmed);render();},e=>{if(epoch!==workspaceEpoch)return;queueConfirmed=false;render();notice(helpfulError(e),true);});
+}
 async function openHospital(member){
-  stopSubscriptions();currentMember=member;currentHospital=await getHospital(member.hospitalId);
-  localStorage.setItem('turnahead-hospital',member.hospitalId);
+  stopSubscriptions();clearPrivateDesk();currentHospital=null;currentMember=null;show('dashboard',false);const epoch=workspaceEpoch;
+  const nextHospital=await getHospital(member.hospitalId);if(epoch!==workspaceEpoch||!auth.currentUser)return;
+  currentMember=member;currentHospital=nextHospital;
+  persistent.setItem('turnahead-hospital',member.hospitalId);
   $('public-board-link').href=boardLink(member.hospitalId,location.href);
   $('admin-link').href='./admin.html?hospital='+encodeURIComponent(member.hospitalId);
   $('workspace-switch').innerHTML=memberships.filter(m=>isStaffRole(m.role)).map(m=>`<option value="${esc(m.hospitalId)}" ${m.hospitalId===member.hospitalId?'selected':''}>${esc(m.hospitalName||m.hospitalId)}</option>`).join('');
   refreshRole();
-  selectedCounter=Number(localStorage.getItem('turnahead-counter-'+member.hospitalId))||1;
+  selectedCounter=Number(persistent.getItem('turnahead-counter-'+member.hospitalId))||1;
   if(selectedCounter<1||selectedCounter>12)selectedCounter=1;
   $('counter-select').value=String(selectedCounter);
   queues=[];tickets=[];selectedQueue=null;selectedDoctor=null;applyHospitalBrand(currentHospital);render();view('dashboard');show('v26-operations',true);
   stopMember=watchMembership(member.hospitalId,auth.currentUser.uid,updated=>{
-    if(!updated?.active){toast('Your access to this hospital has been disabled.',true);stopSubscriptions();currentHospital=null;routeCurrentUser();return;}
+    if(epoch!==workspaceEpoch)return;
+    if(!updated?.active||!isStaffRole(updated.role)){toast('Your access to this hospital has been disabled.',true);stopSubscriptions();currentHospital=null;routeCurrentUser();return;}
     currentMember=updated;refreshRole();
   },e=>toast(helpfulError(e),true));
-  stopHospital=watchHospital(member.hospitalId,h=>{if(currentHospital?.id!==h.id)return;currentHospital=h;applyHospitalBrand(h);render();},e=>notice(helpfulError(e),true));
+  stopHospital=watchHospital(member.hospitalId,h=>{if(epoch!==workspaceEpoch||currentHospital?.id!==h.id)return;currentHospital=h;applyHospitalBrand(h);render();},e=>notice(helpfulError(e),true));
   // Subscribe first: patients and reception see updates without waiting on daily maintenance.
-  stopQueues=observeQueues(member.hospitalId,data=>{queues=data;render();},e=>notice(helpfulError(e),true));
-  stopTickets=observeTickets(member.hospitalId,data=>{tickets=data;render();},e=>notice(helpfulError(e),true),100);
-  stopDoctors=watchDoctors(member.hospitalId,data=>{doctors=data;refreshDoctorChoices();render();},e=>notice(helpfulError(e),true));
+  connectQueueStream(member.hospitalId,epoch);
+  stopTickets=observeTickets(member.hospitalId,data=>{if(epoch!==workspaceEpoch)return;tickets=data;render();},e=>notice(helpfulError(e),true),100);
+  stopDoctors=watchDoctors(member.hospitalId,data=>{if(epoch!==workspaceEpoch)return;doctors=data;refreshDoctorChoices();render();},e=>notice(helpfulError(e),true));
   // Maintenance happens asynchronously and is idempotent.
   (async()=>{if(canManageDepartments(member.role))await bootstrap(member.hospitalId);await rollOverAll(member.hospitalId);})().catch(e=>notice(helpfulError(e),true));
 }
 async function routeCurrentUser(){
   const seq=++authEpoch;
-  stopSubscriptions();show('v26-operations',false);currentHospital=null;currentMember=null;
+  stopSubscriptions();clearPrivateDesk();show('v26-operations',false);currentHospital=null;currentMember=null;
   const user=auth?.currentUser;
   if(!user){memberships=[];view('login-view');if(pendingSignOut){toast('You have been signed out successfully.');pendingSignOut=false;}return;}
   show('logout',true);
@@ -133,7 +167,7 @@ async function routeCurrentUser(){
       $('no-access-detail').textContent='You are not registered as authorized hospital staff. Ask your hospital administrator to add your work email.';
       view('no-access-view');pendingSignIn=false;return;
     }
-    const preferred=localStorage.getItem('turnahead-hospital');
+    const preferred=persistent.getItem('turnahead-hospital');
     const chosen=memberships.find(m=>m.hospitalId===preferred&&isStaffRole(m.role))||memberships.find(m=>isStaffRole(m.role));
     if(seq!==authEpoch)return;
     await openHospital(chosen);
@@ -153,11 +187,12 @@ $('verify-send').addEventListener('click',async()=>{try{await requestVerificatio
 $('verify-refresh').addEventListener('click',async()=>{try{if(await refreshVerification())await routeCurrentUser();else toast('Email is not verified yet. Please open the link in your inbox.',true);}catch(e){toast(helpfulError(e),true);}});
 $('access-signout').addEventListener('click',async()=>{try{await logout();}catch(e){toast(helpfulError(e),true);}});
 $('workspace-switch').addEventListener('change',e=>{
+  if(gate.busy)return;
   const m=memberships.find(x=>x.hospitalId===e.target.value);
   if(m&&isStaffRole(m.role))openHospital(m).catch(err=>toast(helpfulError(err),true));
 });
 $('logout').addEventListener('click',async()=>{
-  pendingSignOut=true;try{stopSubscriptions();await logout();}catch(e){pendingSignOut=false;toast(helpfulError(e),true);}
+  pendingSignOut=true;try{stopSubscriptions();clearPrivateDesk();show('dashboard',false);await logout();}catch(e){pendingSignOut=false;toast(helpfulError(e),true);}
 });
 function refreshDoctorChoices(){
   const selector=$('patient-doctor'),current=selector.value;
@@ -170,26 +205,29 @@ function refreshDoctorChoices(){
 }
 $('patient-doctor').addEventListener('change',()=>{const d=doctors.find(x=>x.id===$('patient-doctor').value);if(d?.roomNumber)$('patient-room').value=d.roomNumber;});
 $('issue-ticket').addEventListener('click',()=>{
-  if(!queues.some(x=>x.id===selectedQueue)||!currentHospital)return;
+  if(!queues.some(x=>x.id===selectedQueue)||!mutationAllowed())return;
   $('patient-name').value='';$('patient-room').value='';$('patient-gender').value='';refreshDoctorChoices();show('issue-modal',true);$('patient-name').focus();
 });
 $('issue-form').addEventListener('submit',async e=>{
   e.preventDefault();const q=queues.find(x=>x.id===selectedQueue);if(!q||!currentHospital)return;
+  const token=beginMutation();if(!token)return;const epoch=workspaceEpoch,hid=currentHospital.id,counter=selectedCounter;
   const b=e.target.querySelector('[type=submit]');b.disabled=true;b.classList.add('is-loading');
   try{
     if(selectedCounter>hospitalCustomization(currentHospital).counters)throw Error('Select a configured reception counter.');
-    currentTicket=await issueTicket(currentHospital.id,q.id,$('patient-name').value,{patientGender:$('patient-gender').value,doctorId:$('patient-doctor').value,roomNumber:$('patient-room').value,counterNumber:selectedCounter});
+    const issued=await issueTicket(hid,q.id,$('patient-name').value,{patientGender:$('patient-gender').value,doctorId:$('patient-doctor').value,roomNumber:$('patient-room').value,counterNumber:counter});
+    if(epoch!==workspaceEpoch)return;
+    currentTicket=issued;
     const custom=hospitalCustomization(currentHospital);$('receipt-custom-note').textContent=custom.receiptNote;$('receipt-custom-note').hidden=!custom.receiptNote;
     $('receipt-facility').textContent=currentHospital.name;$('receipt-code').textContent=currentTicket.code;
     $('receipt-patient').textContent=patientDisplayName(currentTicket);
     $('receipt-visit').textContent=`Dr. ${currentTicket.doctorName} · Room ${currentTicket.roomNumber}`;
     $('receipt-queue').textContent=currentTicket.queue;
-    $('receipt-counter').textContent=`Issued at Counter ${selectedCounter}`;
+    $('receipt-counter').textContent=`Issued at Counter ${counter}`;
     $('receipt-issued').textContent=`${new Date(currentTicket.createdAt).toLocaleString('en-PK',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Karachi'})} PKT`;
     $('receipt-qr').src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(window.turnaheadQR.svg(currentTicket.trackingUrl));
     $('receipt-link').textContent=currentTicket.trackingUrl;
     show('issue-modal',false);show('ticket-modal',true);
-  }catch(err){notice(helpfulError(err),true);}finally{b.disabled=false;b.classList.remove('is-loading');}
+  }catch(err){if(epoch===workspaceEpoch)notice(helpfulError(err),true);}finally{b.classList.remove('is-loading');endMutation(token);}
 });
 $('close-issue').addEventListener('click',()=>show('issue-modal',false));
 $('issue-modal').addEventListener('click',e=>{if(e.target===$('issue-modal'))show('issue-modal',false);});
@@ -197,12 +235,12 @@ $('close-ticket').addEventListener('click',()=>show('ticket-modal',false));
 $('ticket-modal').addEventListener('click',e=>{if(e.target===$('ticket-modal'))show('ticket-modal',false);});
 $('print-button').addEventListener('click',()=>window.print());
 $('copy-button').addEventListener('click',async()=>{if(!currentTicket)return;try{await navigator.clipboard.writeText(currentTicket.trackingUrl);$('copy-button').textContent='Copied ✓';setTimeout(()=>$('copy-button').textContent='Copy tracking link',1800);}catch{notice('Copy unavailable. Select the link shown on the receipt.',true);}});
-$('new-queue').addEventListener('click',()=>{if(canManageDepartments(currentMember?.role))show('queue-modal',true);});
+$('new-queue').addEventListener('click',()=>{if(mutationAllowed()&&canManageDepartments(currentMember?.role))show('queue-modal',true);});
 $('close-queue').addEventListener('click',()=>show('queue-modal',false));
 $('queue-modal').addEventListener('click',e=>{if(e.target===$('queue-modal'))show('queue-modal',false);});
 $('queue-form').addEventListener('submit',async e=>{
-  e.preventDefault();const b=e.target.querySelector('[type=submit]');b.disabled=true;
-  try{const q=await createQueue(currentHospital.id,$('queue-name').value);selectedQueue=q.id;$('queue-name').value='';show('queue-modal',false);notice(`${q.name} has been created.`);}catch(err){notice(helpfulError(err),true);}finally{b.disabled=false;}
+  e.preventDefault();const token=beginMutation();if(!token)return;const epoch=workspaceEpoch,hid=currentHospital.id,b=e.target.querySelector('[type=submit]');b.disabled=true;
+  try{const q=await createQueue(hid,$('queue-name').value);if(epoch!==workspaceEpoch)return;selectedQueue=q.id;$('queue-name').value='';show('queue-modal',false);notice(`${q.name} has been created.`);}catch(err){if(epoch===workspaceEpoch)notice(helpfulError(err),true);}finally{b.disabled=false;endMutation(token);}
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){show('ticket-modal',false);show('queue-modal',false);show('issue-modal',false);}});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentHospital)rollOverAll(currentHospital.id).catch(e=>notice(helpfulError(e),true));});
@@ -213,7 +251,7 @@ else observeAuth(()=>routeCurrentUser());
 
 $('staff-profile-file').addEventListener('change',async e=>{
  if(!currentHospital||!currentMember)return;const file=e.target.files?.[0];if(!file)return;
- e.target.disabled=true;try{const photo=await compressProfilePhoto(file);await updateOwnProfilePhoto(currentHospital.id,photo);notice('Profile photo saved.');}
+ const epoch=workspaceEpoch,hid=currentHospital.id;e.target.disabled=true;try{const photo=await compressProfilePhoto(file);if(epoch!==workspaceEpoch)return;await updateOwnProfilePhoto(hid,photo);notice('Profile photo saved.');}
  catch(err){notice(helpfulError(err),true);}finally{e.target.value='';e.target.disabled=false;}
 });
 $('staff-profile-remove').addEventListener('click',async()=>{

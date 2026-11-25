@@ -1,6 +1,6 @@
 /** Browser API for verified hospital owners, staff invitations and per-hospital roles. */
 import {
-  collection, doc, getDoc, getDocs, query, where, onSnapshot,
+  collection, doc, getDoc, getDocs, getDocsFromServer, query, where, onSnapshot,
   writeBatch, setDoc, updateDoc, serverTimestamp, Timestamp
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {
@@ -33,7 +33,7 @@ const inviteRef=(hospitalId,email)=>doc(db,'hospitals',hospitalId,'invites',norm
 
 export async function myMemberships(user=auth.currentUser) {
   if(!user || !user.emailVerified) return [];
-  const result=await getDocs(query(collection(db,'memberships'),where('uid','==',user.uid)));
+  const result=await getDocsFromServer(query(collection(db,'memberships'),where('uid','==',user.uid)));
   return result.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.active);
 }
 export async function getHospital(id) {
@@ -43,7 +43,7 @@ export async function getHospital(id) {
   return {id:snap.id,...snap.data()};
 }
 export function watchMembership(hospitalId,uid,callback,error) {
-  return onSnapshot(memberRef(hospitalId,uid),snap=>callback(snap.exists()?{id:snap.id,...snap.data()}:null),error);
+  return onSnapshot(memberRef(hospitalId,uid),{includeMetadataChanges:true},snap=>{if(!snap.metadata.fromCache)callback(snap.exists()?{id:snap.id,...snap.data()}:null);},error);
 }
 // Hospital owners are provisioned through an operator-controlled process, not public signup.
 // Hospital owners are provisioned through an operator-controlled process, not public signup.

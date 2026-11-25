@@ -1,4 +1,4 @@
-> **v3.1.0 release candidate:** v3.0 operational analytics and v3.1 hospital customization are implemented on the review branch. Publish the updated Firestore rules before enabling the new customization settings. See [v3.1 rollout and verification](docs/V31-DEPLOYMENT-AND-TESTING.md).
+> **v3.2.0 release candidate:** security emulator tests, connection-aware reception operations, private-session cleanup, and operator-only retention tooling. No new Firestore permissions or paid service. See [security and reliability guide](docs/V32-SECURITY-RELIABILITY.md).
 
 <div align="center">
 
@@ -10,15 +10,15 @@
 
 **A smarter walk-in queue for hospitals and clinics.** A printed QR ticket, a clear place in line, and live updates from reception. No patient account or app installation.
 
-[![Version](https://img.shields.io/badge/Preview-v3.1.0-0D8478?style=for-the-badge)](docs/SETUP-GITHUB-PAGES-FIREBASE.md)
-[![Tests](https://img.shields.io/badge/Tests-99%20passing-182D4C?style=for-the-badge)](test/)
+[![Version](https://img.shields.io/badge/Preview-v3.2.0-0D8478?style=for-the-badge)](docs/SETUP-GITHUB-PAGES-FIREBASE.md)
+[![Tests](https://img.shields.io/badge/Tests-unit%20and%20emulator-182D4C?style=for-the-badge)](test/)
 [![Firebase](https://img.shields.io/badge/Realtime-Firestore-182D4C?style=for-the-badge&logo=firebase&logoColor=FFCA28)](https://firebase.google.com/)
 [![GitHub Pages](https://img.shields.io/badge/Hosting-GitHub%20Pages-182D4C?style=for-the-badge&logo=githubpages&logoColor=54E0BB)](https://pages.github.com/)
 [![MIT](https://img.shields.io/badge/License-MIT-182D4C?style=for-the-badge)](LICENSE)
 
 [**View website ↗**](https://nittinchughani.github.io/TurnAhead/) · [**How it works**](#01--the-walk-in-experience) · [**What's new in v2.5**](#02--reception-built-for-real-teams) · [**Deploy safely**](docs/SETUP-GITHUB-PAGES-FIREBASE.md) · [**Security**](SECURITY.md)
 
-<sub>**Release note:** v2.6.3 is the previous deployed release. The v3.1.0 candidate includes analytics and hospital customization; see the rollout guide before deploying.</sub>
+<sub>**Release note:** v3.1.0 is the previous deployed release. v3.2.0 adds security/reliability safeguards; live authorization, privacy review, backup/restore and real-device acceptance remain separate gates.</sub>
 
 </div>
 
@@ -178,7 +178,8 @@ Node.js 22 is used only by developers running tests. Hospitals and patients use 
 - [x] **v2.6:** near-turn alerts, missed-turn recall, English-only experience, voice announcements and private patient feedback.
 - [x] **v3.0 candidate:** operational analytics, satisfaction trends, aggregate PDF/CSV reports.
 - [x] **v3.1 candidate:** hospital logo and accent, printed-ticket note, operating hours, counter preferences, board layout and setup checklist.
-- [ ] **v3.2:** emulator authorization, privacy, retention, backup and recovery, load and real-device validation.
+- [x] **v3.2 candidate:** security emulator suite, connection-aware operations, operator retention tool, backup/restore guide, synthetic queue tests and accessibility improvements.
+- [ ] **Production validation:** staging load, real-device checks, privacy audit and verified backup/restore.
 - [ ] **v3.3:** documentation refresh and validated pilot/launch.
 
 **TurnAhead is a queue-management pilot, not a medical record system or appointment-booking product.** Production use requires access/privacy audits, monitoring, backups, retention procedures, a real pilot, and independent security review.

@@ -2,28 +2,33 @@ import {configured,helpfulError} from './firebase.js';
 import {getHospital} from './org-store.js';
 import {applyHospitalBrand} from './hospital-custom.js?v=3.1.0';
 import {registerTurnPush} from './push-client.js';
-import {observeTicket,observeQueue,fetchTicketFromServer,submitFeedback} from './store.js?v=2.6.3';
+import {observeTicket,observeQueue,fetchTicketFromServer,submitFeedback} from './store.js?v=3.2.0';
 import {t as tfn,bindLanguage} from './locale.js?v=2.6.1';
 import {nearTurnMilestone,shouldApplyTicket} from './v26-engine.js?v=2.6.3';
 import {dayKey,waitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName,doctorQueueSummary,callHistoryLine} from './queue-engine.js?v=2.6.3';
+import {persistent,session} from './reliability.js?v=3.2.0';
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
 const ticketId=params.get('ticket'),hospitalId=params.get('hospital');
 const legacy=!hospitalId;
-let facility='Your hospital',currentTicket=null,currentQueue=null,stopQueue=null,subscribedQueueId=null,alerts=false,vibrationEnabled=false,hadLoaded=false,lastStatus='',lastAhead=null,lastConfirmed=0,refreshing=false,lastRefresh=0;
+let facility='Your hospital',currentTicket=null,currentQueue=null,stopQueue=null,subscribedQueueId=null,alerts=false,vibrationEnabled=false,hadLoaded=false,lastStatus='',lastAhead=null,lastConfirmed=0,refreshing=false,lastRefresh=0,missingConfirmed=false;
 const loader=$('track-loading');
 setTimeout(()=>{if(!loader.hidden)$('track-loading-note').textContent='Still connecting. Your queue will appear as soon as the live service responds.';},3200);
 const messages={waiting:'Your place updates as reception calls each patient.',called:"It's your turn. Please go to your service counter.",completed:'Your visit was marked completed. Thank you for coming.',skipped:'Reception marked this turn as missed. Please ask them for help.',syncing:'Checking the latest status with reception…',expired:'This ticket belongs to an earlier day. Please ask reception for a new one.'};
+function clearPrivateTicket(){currentTicket=null;currentQueue=null;stopQueue?.();stopQueue=null;subscribedQueueId=null;lastConfirmed=0;for(const id of ['track-code','track-patient','track-visit','track-queue','track-call-history'])$(id).textContent='';}
+function missingTicket(){missingConfirmed=true;clearPrivateTicket();for(const id of ['near-popup','feedback-popup','feedback-success','feedback-progress']){const node=$(id);if(node)node.hidden=true;}if($('feedback-note'))$('feedback-note').value='';fail('Ticket not found or no longer available. Ask reception for help.');}
 function fail(message){loader.hidden=true;$('track-error').textContent=message;$('track-error').hidden=false;$('track-content').hidden=true;}
 function setSyncStatus(){
   const element=$('sync-state');
   const seconds=lastConfirmed?Math.floor((Date.now()-lastConfirmed)/1000):Infinity;
+  if(missingConfirmed){element.textContent='TICKET UNAVAILABLE';return;}
   if(!navigator.onLine){element.textContent='OFFLINE · RECONNECTING';return;}
   element.textContent=refreshing?'CHECKING LIVE STATUS':seconds>35?'RECONNECTING…':lastConfirmed?'LIVE · SYNCED':'CONNECTING…';
 }
 /** Prevent an older cached snapshot from undoing a confirmed call or final state. */
 function applyTicket(ticket){
-  if(!ticket)return;
+  if(!ticket||missingConfirmed&&ticket._fromCache)return;
+  missingConfirmed=false;
   if(!shouldApplyTicket(currentTicket,ticket))return;
   currentTicket=ticket;
   if(!ticket._fromCache)lastConfirmed=Date.now();
@@ -43,7 +48,7 @@ async function syncTicket(force=false){
   refreshing=true;lastRefresh=Date.now();setSyncStatus();
   try{
     const t=await fetchTicketFromServer(hospitalId,ticketId);
-    if(t)applyTicket(t);
+    if(t)applyTicket(t);else missingTicket();
   }catch(err){console.warn('Queue status recheck failed:',helpfulError(err));}
   finally{refreshing=false;setSyncStatus();}
 }
@@ -79,8 +84,8 @@ function update(){
   }
   if(hadLoaded&&alerts&&'Notification' in window&&Notification.permission==='granted'){
     if(lastStatus!=='called'&&shownStatus==='called')notify('Your turn is ready',`${t.code} — please return to ${t.queueName}.`);
-    else if(validWait&&ahead>0&&ahead<=2&&(lastAhead===null||lastAhead>2)&&!sessionStorage.getItem('ta-near-'+ticketId+'-'+(t.recallCount||0))){
-      notify('Almost your turn',`${ahead} ahead of ${t.code}. Stay nearby.`);sessionStorage.setItem('ta-near-'+ticketId+'-'+(t.recallCount||0),'yes');
+    else if(validWait&&ahead>0&&ahead<=2&&(lastAhead===null||lastAhead>2)&&!session.getItem('ta-near-'+ticketId+'-'+(t.recallCount||0))){
+      notify('Almost your turn',`${ahead} ahead of ${t.code}. Stay nearby.`);session.setItem('ta-near-'+ticketId+'-'+(t.recallCount||0),'yes');
     }
   }
   showNearTurn(t,shownStatus,validWait?ahead:null);renderFeedback(status);
@@ -97,11 +102,11 @@ function showNearTurn(ticket,status,ahead){
   if(!kind)return;
   const phase=`turnahead-v26-near:${hospitalId}:${ticketId}:${ticket.recallCount||0}`;
   const key=`${phase}:${kind}`;
-  const previously=sessionStorage.getItem(key);
+  const previously=session.getItem(key);
   if(previously||currentlyShown&&milestonePriority[currentlyShown]>=milestonePriority[kind])return;
-  if(kind==='near'&&(sessionStorage.getItem(`${phase}:next`)||sessionStorage.getItem(`${phase}:called`)))return;
-  if(kind==='next'&&sessionStorage.getItem(`${phase}:called`))return;
-  sessionStorage.setItem(key,'1');currentlyShown=kind;
+  if(kind==='near'&&(session.getItem(`${phase}:next`)||session.getItem(`${phase}:called`)))return;
+  if(kind==='next'&&session.getItem(`${phase}:called`))return;
+  session.setItem(key,'1');currentlyShown=kind;
   $('near-popup-title').textContent=tfn('alert'+kind.charAt(0).toUpperCase()+kind.slice(1));
   $('near-popup-text').textContent=tfn('alert'+kind.charAt(0).toUpperCase()+kind.slice(1)+'Text',kind==='called'?{counter:ticket.calledCounter||'reception'}:{n:kind==='next'?1:Math.max(2,ahead)});
   nearModal.hidden=false;$('near-popup-close').focus({preventScroll:true});
@@ -122,7 +127,7 @@ let feedbackSending=false,feedbackSuccessTimer=null;
 function closeFeedback(){
   if(feedbackSending)return;
   feedbackModal.hidden=true;
-  localStorage.setItem(feedbackSeenKey,'yes');
+  persistent.setItem(feedbackSeenKey,'yes');
   $('feedback-close').blur();
 }
 function closeFeedbackSuccess(){
@@ -141,7 +146,7 @@ function showFeedbackSuccess(){
 }
 function renderFeedback(status){
   if(legacy||status!=='completed'||document.visibilityState!=='visible'||feedbackSending||!feedbackModal.hidden||!feedbackSuccess.hidden)return;
-  if(localStorage.getItem(feedbackSeenKey)==='yes'||localStorage.getItem(feedbackSubmittedKey)==='yes')return;
+  if(persistent.getItem(feedbackSeenKey)==='yes'||persistent.getItem(feedbackSubmittedKey)==='yes')return;
   // Completion takes priority over the near-turn alert.
   nearModal.hidden=true;currentlyShown=null;
   feedbackModal.hidden=false;
@@ -163,8 +168,8 @@ $('feedback-form').addEventListener('submit',async e=>{
   feedbackProgress.hidden=false;
   try{
     await submitFeedback(hospitalId,ticketId,Number(rating),$('feedback-note').value);
-    localStorage.setItem(feedbackSubmittedKey,'yes');
-    localStorage.setItem(feedbackSeenKey,'yes');
+    persistent.setItem(feedbackSubmittedKey,'yes');
+    persistent.setItem(feedbackSeenKey,'yes');
     showFeedbackSuccess();
   }catch(err){
     feedbackProgress.hidden=true;
@@ -192,8 +197,8 @@ else if(!ticketId||!/^[A-Za-z0-9]{20}$/.test(ticketId)||(hospitalId&&!/^[A-Za-z0
   fail('No valid ticket was supplied. Scan the QR code on your receipt to open your queue status.');
 else{
   if(!legacy)getHospital(hospitalId).then(h=>{facility=h.name;applyHospitalBrand(h);update();}).catch(err=>console.warn('Hospital name unavailable:',helpfulError(err)));
-  observeTicket(hospitalId,ticketId,t=>{
-    if(!t){fail('Ticket not found. Check your QR code or ask reception.');return;}
+  observeTicket(hospitalId,ticketId,(t,meta)=>{
+    if(!t){if(meta?.fromCache){syncTicket(true);return;}missingTicket();return;}
     applyTicket(t);
     if(t._fromCache)syncTicket(true);
   },err=>{console.warn(helpfulError(err));$('sync-state').textContent='RECONNECTING…';syncTicket(true);});
@@ -206,7 +211,7 @@ else{
   window.addEventListener('online',()=>syncTicket(true));
   window.addEventListener('offline',setSyncStatus);
   setInterval(()=>{setSyncStatus();if(document.visibilityState==='visible'){
-    if(!['completed','expired'].includes(currentTicket?.status))syncTicket();
+    if(!missingConfirmed&&!['completed','expired'].includes(currentTicket?.status))syncTicket();
     if(currentTicket)update();
   }},15000);
 }

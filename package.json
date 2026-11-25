@@ -1,12 +1,14 @@
 {
   "name": "turnahead-web",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "private": true,
   "type": "module",
-  "description": "TurnAhead v3.1.0: reliable walk-in status, independent doctor queues, multi-counter reception, and glass UI",
+  "description": "TurnAhead v3.2.0: security validation, reliable queue operations and privacy safeguards",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "for file in public/*.js; do node --check \"$file\" || exit 1; done"
+    "check": "for file in public/*.js; do node --check \"$file\" || exit 1; done",
+    "test:rules": "firebase emulators:exec --config firebase.emulator.json --only firestore --project demo-turnahead 'node --test security/firestore.test.mjs'",
+    "retention": "node scripts/retention.mjs"
   },
   "license": "MIT"
 }
