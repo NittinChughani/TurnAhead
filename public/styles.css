@@ -451,3 +451,9 @@
 .onboarding-step small{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.5}
 .onboarding-mark{color:var(--blue);font-size:22px;font-weight:800;width:28px;text-align:center}
 @media(max-width:720px){.analytics-panels,.customization-form{grid-template-columns:1fr}.analytics-controls label{flex:1 1 140px}.analytics-controls .btn{flex:1 1 auto}.customization-form>button{width:100%}.analytics-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* v3.2 — connection status and keyboard accessibility */
+.connection-strip{padding:11px 14px;border:1px solid var(--line);border-left:4px solid #b45309;border-radius:10px;font-size:13px;font-weight:700;overflow-wrap:anywhere}
+.connection-strip[data-state=live]{border-left-color:#0d8478}
+:where(button,a,input,select,textarea,summary):focus-visible{outline:3px solid #478cf0;outline-offset:3px}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
