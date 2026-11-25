@@ -1,6 +1,6 @@
 import {configured, auth, helpfulError} from './firebase.js';
 import {observeAuth, login, logout, requestVerification, refreshVerification,
-  myMemberships, getHospital, watchMembership,updateOwnProfilePhoto} from './org-store.js';
+  myMemberships, getHospital, watchMembership,updateOwnProfilePhoto,watchHospital} from './org-store.js?v=3.1.0';
 import {canManageStaff, canManageDepartments, boardLink, isStaffRole, staffGreeting} from './org-model.js';
 import {bootstrap, rollOverAll, observeQueues, observeTickets,
   issueTicket, createQueue, performAction,recallMissedTicket} from './store.js';
@@ -11,12 +11,13 @@ import {avatarContents,compressProfilePhoto} from './profile-photo.js';
 import {bindLanguage,t} from './locale.js?v=2.6.1';
 import {recallEligibility,graceMinutes} from './v26-engine.js?v=2.6.2';
 
+import {hospitalCustomization,counterOptions,applyHospitalBrand} from './hospital-custom.js?v=3.1.0';
 const {esc,fmt}=window.turnahead, $=id=>document.getElementById(id);
 const views=['login-view','verify-view','no-access-view','dashboard'];
 // Old v2.1 invitation URLs continue through the dedicated activation screen.
 if(new URLSearchParams(location.search).has('invite')) location.replace('./activate.html'+location.search);
 let currentHospital=null,currentMember=null,memberships=[],queues=[],tickets=[],selectedQueue=null,currentTicket=null;
-let doctors=[],stopDoctors=null,selectedDoctor=null,selectedCounter=1;
+let doctors=[],stopDoctors=null,stopHospital=null,selectedDoctor=null,selectedCounter=1;
 let stopQueues=null,stopTickets=null,stopMember=null,authEpoch=0,toastTimer,noticeTimer;
 let pendingSignIn=false,pendingSignOut=false;
 const loginButton=$('login-form').querySelector('[type=submit]');
@@ -26,11 +27,19 @@ const show=(id,visible)=>$(id).hidden=!visible;
 function view(name){if(name!=='login-view')loadingLogin(false);views.forEach(v=>show(v,v===name));show('logout',Boolean(auth?.currentUser));show('workspace-switch',name==='dashboard'&&memberships.filter(m=>isStaffRole(m.role)).length>1);show('public-board-link',name==='dashboard');show('staff-greeting',name==='dashboard'&&Boolean(currentMember));show('admin-link',name==='dashboard'&&canManageStaff(currentMember?.role));window.scrollTo(0,0);}
 function toast(message,error=false){const el=$('toast');el.textContent=message;el.classList.toggle('error',error);show('toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('toast',false),4600);}
 function notice(message,error=false){const el=$('notice');el.textContent=message;el.classList.toggle('error',error);show('notice',true);clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>show('notice',false),6000);}
-function stopSubscriptions(){stopQueues?.();stopTickets?.();stopMember?.();stopDoctors?.();stopQueues=stopTickets=stopMember=stopDoctors=null;doctors=[];
+function stopSubscriptions(){stopQueues?.();stopTickets?.();stopMember?.();stopDoctors?.();stopHospital?.();stopHospital=null;stopQueues=stopTickets=stopMember=stopDoctors=null;doctors=[];
   if(!currentHospital){tickets=[];$('recent-tickets').replaceChildren();}}
 function refreshRole(){show('new-queue',canManageDepartments(currentMember?.role));show('admin-link',canManageStaff(currentMember?.role));$('role-chip').textContent=(currentMember?.role||'receptionist').toUpperCase();$('staff-greeting-name').textContent=currentMember?staffGreeting(currentMember):'';if(currentMember){const photo=avatarContents(currentMember,esc);$('staff-nav-avatar').innerHTML=photo;$('staff-profile-avatar').innerHTML=photo;}}
+function syncCounters(){
+ const c=hospitalCustomization(currentHospital),allowed=counterOptions(c,queues);
+ if(!allowed.includes(selectedCounter))selectedCounter=allowed[0]||1;
+ const select=$('counter-select'),html=allowed.map(n=>'<option value="'+n+'">Counter '+n+(n>c.counters?' · finish only':'')+'</option>').join('');
+ if(select.innerHTML!==html)select.innerHTML=html;
+ select.value=String(selectedCounter);
+}
 function render(){
   if(!currentHospital)return;
+  syncCounters();
   $('facility-heading').textContent=`${currentHospital.name} · ${new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'})}`;
   $('stat-waiting').textContent=queues.reduce((n,q)=>n+q.waiting,0);
   $('stat-active').textContent=queues.reduce((n,q)=>n+(q.activeCount||0),0);
@@ -39,7 +48,7 @@ function render(){
   $('queue-tabs').innerHTML=queues.map(q=>`<button class="queue-tab ${selectedQueue===q.id?'active':''}" data-queue="${esc(q.id)}" type="button">${esc(q.name)}</button>`).join('');
   $('queue-tabs').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{selectedQueue=b.dataset.queue;selectedDoctor=null;render();}));
   const q=queues.find(q=>q.id===selectedQueue);
-  $('issue-ticket').disabled=!q||!!q?.paused;
+  $('issue-ticket').disabled=!q||!!q?.paused||selectedCounter>hospitalCustomization(currentHospital).counters;
   if(q){
     const available=doctors.filter(d=>d.departmentId===q.id);
     if(!selectedDoctor||!available.some(d=>d.id===selectedDoctor))selectedDoctor=available.find(d=>d.active)?.id||available[0]?.id||null;
@@ -50,7 +59,7 @@ function render(){
       const ln=getDoctorLane(q,doc.id);
       return `<button type="button" class="doctor-tab ${selectedDoctor===doc.id?'selected':''}" data-doctor-queue="${esc(doc.id)}"><span>${esc(doc.name)}</span><small>${ln.waitingNumbers.length} waiting · ${doc.active?'Available':'Inactive'}${ln.paused?' · On break':''}</small></button>`;
     }).join('');
-    const detail=d?`<div class="doctor-queue-heading"><div><span class="kicker">DOCTOR-SPECIFIC QUEUE</span><h3>Dr. ${esc(d.name)}</h3><small>${esc(d.roomNumber?'Room '+d.roomNumber:'Room assigned on each ticket')}</small></div><span class="state-pill ${paused?'paused':''}">${paused?'⏸ ON BREAK':d.active?'● ACCEPTING':'INACTIVE'}</span></div><div class="serving-box"><div><span>NOW SERVING</span><strong>${esc(lane.active?.code||'—')}</strong><small>${active?`Called from ${esc(lane.active.counter||'reception')}`:'No patient currently being served'}</small></div><span class="serving-symbol">↗</span></div><div class="queue-facts"><span><b>${lane.waitingNumbers.length}</b> waiting for this doctor</span><span><b>${lane.served||0}</b> completed</span><span><b>${lane.avgMinutes||8} min</b> average</span></div><div class="queue-buttons"><button class="btn btn-primary" data-action="next" ${paused||active||!lane.waitingNumbers.length||!d.active?'disabled':''}>Call next ↗</button><button class="btn btn-positive" data-action="complete" ${!belongsHere?'disabled':''}>✓ Complete</button><button class="btn btn-danger" data-action="skip" ${!belongsHere?'disabled':''}>Skip</button><button class="btn btn-outline" data-action="${lane.paused?'resume':'pause'}" ${q.paused?'disabled':''}>${lane.paused?'▶ Resume':'⏸ Doctor break'}</button></div><p class="queue-caption">${active&&!belongsHere?`This patient belongs to ${esc(lane.active.counter)}. Select that counter to finish the ticket.`:'Each doctor has an independent FIFO line. Actions are committed atomically across reception counters.'}</p></div>`:'<div class="empty-state">No doctors registered in this department. Ask the administrator to add a doctor.</div>';
+    const detail=d?`<div class="doctor-queue-heading"><div><span class="kicker">DOCTOR-SPECIFIC QUEUE</span><h3>Dr. ${esc(d.name)}</h3><small>${esc(d.roomNumber?'Room '+d.roomNumber:'Room assigned on each ticket')}</small></div><span class="state-pill ${paused?'paused':''}">${paused?'⏸ ON BREAK':d.active?'● ACCEPTING':'INACTIVE'}</span></div><div class="serving-box"><div><span>NOW SERVING</span><strong>${esc(lane.active?.code||'—')}</strong><small>${active?`Called from ${esc(lane.active.counter||'reception')}`:'No patient currently being served'}</small></div><span class="serving-symbol">↗</span></div><div class="queue-facts"><span><b>${lane.waitingNumbers.length}</b> waiting for this doctor</span><span><b>${lane.served||0}</b> completed</span><span><b>${lane.avgMinutes||8} min</b> average</span></div><div class="queue-buttons"><button class="btn btn-primary" data-action="next" ${paused||active||!lane.waitingNumbers.length||!d.active||selectedCounter>hospitalCustomization(currentHospital).counters?'disabled':''}>Call next ↗</button><button class="btn btn-positive" data-action="complete" ${!belongsHere?'disabled':''}>✓ Complete</button><button class="btn btn-danger" data-action="skip" ${!belongsHere?'disabled':''}>Skip</button><button class="btn btn-outline" data-action="${lane.paused?'resume':'pause'}" ${q.paused?'disabled':''}>${lane.paused?'▶ Resume':'⏸ Doctor break'}</button></div><p class="queue-caption">${active&&!belongsHere?`This patient belongs to ${esc(lane.active.counter)}. Select that counter to finish the ticket.`:'Each doctor has an independent FIFO line. Actions are committed atomically across reception counters.'}</p></div>`:'<div class="empty-state">No doctors registered in this department. Ask the administrator to add a doctor.</div>';
     $('queue-detail').innerHTML=`<div class="queue-view"><div class="queue-topline"><div><strong>${esc(q.name)}</strong><small>${esc(q.prefix)} · ${q.waiting} waiting across ${available.length} doctors</small></div><span class="state-pill ${q.paused?'paused':''}">${q.paused?'⏸ DEPARTMENT PAUSED':'● LIVE'}</span></div><button type="button" class="btn btn-small btn-outline" data-action="${q.paused?'resume-department':'pause-department'}">${q.paused?'▶ Resume department':'⏸ Pause department'}</button><div class="doctor-tabs" role="group" aria-label="Select doctor queue">${doctorList||'<p class="queue-caption">No doctors added yet.</p>'}</div>${detail}</div>`;
     $('queue-detail').querySelectorAll('[data-doctor-queue]').forEach(btn=>btn.addEventListener('click',()=>{selectedDoctor=btn.dataset.doctorQueue;render();}));
     $('queue-detail').querySelectorAll('[data-action]').forEach(btn=>btn.addEventListener('click',()=>action(q.id,selectedDoctor,btn.dataset.action,btn)));
@@ -77,7 +86,7 @@ bindLanguage(()=>render());
 async function action(id,doctorId,kind,button){
   const label=button.textContent;
   button.disabled=true;button.textContent='Updating…';
-  try{const r=await performAction(currentHospital.id,id,kind,doctorId,selectedCounter);
+  try{if(kind==='next'&&selectedCounter>hospitalCustomization(currentHospital).counters)throw Error('This counter is available for finishing active tickets only.');const r=await performAction(currentHospital.id,id,kind,doctorId,selectedCounter);
     notice(`${r.code?r.code+' · ':''}${{next:'Called from '+r.counter,complete:'Marked complete',skip:'Skipped',pause:'Doctor on break',resume:'Doctor resumed','pause-department':'Department paused','resume-department':'Department resumed'}[kind]}.`);
   }catch(e){notice(helpfulError(e),true);}finally{button.textContent=label;button.disabled=false;}
 }
@@ -96,11 +105,12 @@ async function openHospital(member){
   selectedCounter=Number(localStorage.getItem('turnahead-counter-'+member.hospitalId))||1;
   if(selectedCounter<1||selectedCounter>12)selectedCounter=1;
   $('counter-select').value=String(selectedCounter);
-  queues=[];tickets=[];selectedQueue=null;selectedDoctor=null;render();view('dashboard');show('v26-operations',true);
+  queues=[];tickets=[];selectedQueue=null;selectedDoctor=null;applyHospitalBrand(currentHospital);render();view('dashboard');show('v26-operations',true);
   stopMember=watchMembership(member.hospitalId,auth.currentUser.uid,updated=>{
     if(!updated?.active){toast('Your access to this hospital has been disabled.',true);stopSubscriptions();currentHospital=null;routeCurrentUser();return;}
     currentMember=updated;refreshRole();
   },e=>toast(helpfulError(e),true));
+  stopHospital=watchHospital(member.hospitalId,h=>{if(currentHospital?.id!==h.id)return;currentHospital=h;applyHospitalBrand(h);render();},e=>notice(helpfulError(e),true));
   // Subscribe first: patients and reception see updates without waiting on daily maintenance.
   stopQueues=observeQueues(member.hospitalId,data=>{queues=data;render();},e=>notice(helpfulError(e),true));
   stopTickets=observeTickets(member.hospitalId,data=>{tickets=data;render();},e=>notice(helpfulError(e),true),100);
@@ -167,7 +177,9 @@ $('issue-form').addEventListener('submit',async e=>{
   e.preventDefault();const q=queues.find(x=>x.id===selectedQueue);if(!q||!currentHospital)return;
   const b=e.target.querySelector('[type=submit]');b.disabled=true;b.classList.add('is-loading');
   try{
+    if(selectedCounter>hospitalCustomization(currentHospital).counters)throw Error('Select a configured reception counter.');
     currentTicket=await issueTicket(currentHospital.id,q.id,$('patient-name').value,{patientGender:$('patient-gender').value,doctorId:$('patient-doctor').value,roomNumber:$('patient-room').value,counterNumber:selectedCounter});
+    const custom=hospitalCustomization(currentHospital);$('receipt-custom-note').textContent=custom.receiptNote;$('receipt-custom-note').hidden=!custom.receiptNote;
     $('receipt-facility').textContent=currentHospital.name;$('receipt-code').textContent=currentTicket.code;
     $('receipt-patient').textContent=patientDisplayName(currentTicket);
     $('receipt-visit').textContent=`Dr. ${currentTicket.doctorName} · Room ${currentTicket.roomNumber}`;
