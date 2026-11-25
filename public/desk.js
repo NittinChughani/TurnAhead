@@ -1,9 +1,9 @@
 import {configured, auth, helpfulError} from './firebase.js';
 import {observeAuth, login, logout, requestVerification, refreshVerification,
-  myMemberships, getHospital, watchMembership,updateOwnProfilePhoto,watchHospital} from './org-store.js?v=3.1.0';
+  myMemberships, getHospital, watchMembership,updateOwnProfilePhoto,watchHospital} from './org-store.js?v=3.2.0';
 import {canManageStaff, canManageDepartments, boardLink, isStaffRole, staffGreeting} from './org-model.js';
 import {bootstrap, rollOverAll, observeQueues, observeTickets,
-  issueTicket, createQueue, performAction,recallMissedTicket} from './store.js';
+  issueTicket, createQueue, performAction,recallMissedTicket} from './store.js?v=3.2.0';
 import {dayKey,patientDisplayName,getDoctorLane,doctorActiveCodes,ticketStatusLabel} from './queue-engine.js?v=2.6.2';
 import {watchDoctors} from './doctors.js';
 import {doctorAvailable} from './doctor-model.js';
