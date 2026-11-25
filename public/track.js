@@ -2,7 +2,7 @@ import {configured,helpfulError} from './firebase.js';
 import {getHospital} from './org-store.js';
 import {applyHospitalBrand} from './hospital-custom.js?v=3.1.0';
 import {registerTurnPush} from './push-client.js';
-import {observeTicket,observeQueue,fetchTicketFromServer,submitFeedback} from './store.js?v=2.6.3';
+import {observeTicket,observeQueue,fetchTicketFromServer,submitFeedback} from './store.js?v=3.2.0';
 import {t as tfn,bindLanguage} from './locale.js?v=2.6.1';
 import {nearTurnMilestone,shouldApplyTicket} from './v26-engine.js?v=2.6.3';
 import {dayKey,waitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName,doctorQueueSummary,callHistoryLine} from './queue-engine.js?v=2.6.3';
