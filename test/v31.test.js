@@ -52,3 +52,29 @@ test('hospital custom settings are owner-writable only, existing documents compa
  assert.match(source('public/desk.js'),/selectedCounter>hospitalCustomization\(currentHospital\).counters/);
  assert.match(source('public/board.js'),/board-large-layout/);
 });
+
+
+test('Firestore rules contain one complete policy and intact customization validators',()=>{
+ const rules=source('firestore.rules');
+ for(const key of ['rules_version','service cloud.firestore','function validHospital(data)','function validCustomization(c)','function validAvatar(data)','match /hospitals/{hid}','match /{document=**}']){
+   assert.equal(rules.split(key).length,2,key+' must occur exactly once');
+ }
+ const validator=rules.slice(rules.indexOf('function validCustomization(c)'),rules.indexOf('function validHospital(data)'));
+ assert.match(validator,/c\.logo\.matches\('\^data:image\/\(webp\|jpeg\|png\);base64,\[A-Za-z0-9\+\/\]\+=\{0,2\}\$'\)/);
+ assert.match(validator,/c\.accent\.matches\('\^#\[0-9a-fA-F\]\{6\}\$'\)/);
+ assert.equal((validator.match(/\[0-5\]\[0-9\]\$'\)/g)||[]).length,2);
+ assert.match(validator,/c\.boardLayout in \['standard','large'\];\s*\}/);
+ // Catch duplicate rule blocks or accidentally unclosed strings/delimiters.
+ const stack=[];let quote=null,comment=false;
+ for(let i=0;i<rules.length;i++){
+   const c=rules[i];
+   if(comment){if(c==='\n')comment=false;continue;}
+   if(quote){if(c==='\\'){i++;continue;}assert.notEqual(c,'\n','unterminated string');if(c===quote)quote=null;continue;}
+   if(c==='/'&&rules[i+1]==='/'){comment=true;i++;continue;}
+   if(c==="'"||c==='"'){quote=c;continue;}
+   if('({['.includes(c))stack.push(c);
+   else if(')}]'.includes(c))assert.equal(stack.pop(),'({['[')}]'.indexOf(c)],'unbalanced delimiter');
+ }
+ assert.equal(quote,null);assert.deepEqual(stack,[]);
+ assert.match(rules,/match \/\{document=\*\*\} \{ allow read, write: if false; \}\s*\}\s*\}\s*$/);
+});
