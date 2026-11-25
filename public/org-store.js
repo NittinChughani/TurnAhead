@@ -122,3 +122,8 @@ export async function updateRecallGrace(hospitalId,minutes){
   if(!Number.isInteger(minutes)||minutes<1||minutes>120)throw Error('Choose a grace period between 1 and 120 minutes.');
   await updateDoc(hospitalRef(hospitalId),{recallGraceMinutes:minutes,updatedAt:serverTimestamp()});
 }
+
+export async function updateHospitalCustomization(hospitalId,customization){
+  await updateDoc(hospitalRef(hospitalId),{customization,updatedAt:serverTimestamp()});
+}
+export function watchHospital(id,next,error){return onSnapshot(hospitalRef(id),snap=>{if(snap.exists()&&snap.data().status==='active')next({id:snap.id,...snap.data()});},error);}
