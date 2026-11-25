@@ -1,7 +1,9 @@
 /** Hospital-scoped Firestore queues, atomic ticket transitions and private dated history. */
 import {
-  collection,doc,getDocs,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter,deleteField,setDoc,serverTimestamp
+  collection,doc,getDocs,getDocFromServer,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter,deleteField,setDoc,serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+import {mapLimited} from './reliability.js?v=3.2.0';
+import {hospitalCustomization} from './hospital-custom.js?v=3.1.0';
 import {db,auth} from './firebase.js';
 import {dayKey,departmentPrefix,initialQueue,initialControl,normalizedQueue,
   nextTicket,nextInLine,publicQueue,getDoctorLane,getDoctorControl,counterLabel,planDoctorCall,planDoctorFinish} from './queue-engine.js?v=2.6.2';
@@ -57,10 +59,10 @@ export async function rollOverQueue(hid,id){
 }
 export async function rollOverAll(hid){
   const list=await getDocs(collection(db,'hospitals',hid,'queues'));
-  await Promise.all(list.docs.map(q=>rollOverQueue(hid,q.id)));
+  await mapLimited(list.docs,4,q=>rollOverQueue(hid,q.id));
 }
 export function observeQueues(hid,next,error){
-  return onSnapshot(collection(db,'hospitals',hid,'queues'),snap=>next(snap.docs.map(d=>publicQueue(d.id,d.data())).sort((a,b)=>a.name.localeCompare(b.name))),error);
+  return onSnapshot(collection(db,'hospitals',hid,'queues'),{includeMetadataChanges:true},snap=>next(snap.docs.map(d=>publicQueue(d.id,d.data())).sort((a,b)=>a.name.localeCompare(b.name)),{confirmed:!snap.metadata.fromCache&&!snap.metadata.hasPendingWrites}),error);
 }
 export function observeTickets(hid,next,error,maxItems=25){
   return onSnapshot(query(collection(db,'hospitals',hid,'tickets'),orderBy('createdAt','desc'),limit(Math.max(1,Math.min(100,maxItems)))),
@@ -68,11 +70,10 @@ export function observeTickets(hid,next,error,maxItems=25){
 }
 export function observeTicket(hid,id,next,error){
   return onSnapshot(hid?ticketDoc(hid,id):doc(db,'tickets',id),{includeMetadataChanges:true},
-    snap=>next(snap.exists()?{id:snap.id,...snap.data(),_fromCache:snap.metadata.fromCache}:null),error);
+    snap=>next(snap.exists()?{id:snap.id,...snap.data(),_fromCache:snap.metadata.fromCache}:null,{fromCache:snap.metadata.fromCache}),error);
 }
 /** Force a network read on Safari resume/foreground; never mistake stale cache for live status. */
 export async function fetchTicketFromServer(hid,id){
-  const {getDocFromServer}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js');
   const snap=await getDocFromServer(hid?ticketDoc(hid,id):doc(db,'tickets',id));
   return snap.exists()?{id:snap.id,...snap.data(),_fromCache:false}:null;
 }
@@ -109,7 +110,8 @@ export async function issueTicket(hid,id,patientName,details={}){
   const ticket=await runTransaction(db,async tx=>{
     const qr=qDoc(hid,id),cr=controlDoc(hid,id),dr=dayDoc(hid,today);
     if(!/^[A-Za-z0-9]{20}$/.test(details.doctorId||''))throw Error('Select a registered doctor.');
-    const [qs,cs,ds,doctorSnap]=await Promise.all([tx.get(qr),tx.get(cr),tx.get(dr),tx.get(doctorDoc(hid,details.doctorId))]);
+    const [qs,cs,ds,doctorSnap,hs]=await Promise.all([tx.get(qr),tx.get(cr),tx.get(dr),tx.get(doctorDoc(hid,details.doctorId)),tx.get(doc(db,'hospitals',hid))]);
+    if(!hs.exists()||hs.data().status!=='active'||Number(details.counterNumber||1)>hospitalCustomization(hs.data()).counters)throw Error('Select a configured reception counter.');
     if(!doctorSnap.exists()||!doctorAvailable(doctorSnap.data(),id))throw Error('Doctor is not available in the selected department. Refresh the doctor list.');
     const doctor=doctorSnap.data();
     const finalDetails={patientGender:details.patientGender,roomNumber:cleanRoomNumber(details.roomNumber,{required:true}),doctorId:details.doctorId,doctorName:doctor.name};
@@ -141,7 +143,9 @@ export async function performAction(hid,id,action,doctorId,counterNumber=1){
   const now=Date.now();
   return runTransaction(db,async tx=>{
     const qr=qDoc(hid,id),cr=controlDoc(hid,id);
-    const [qs,cs,doctorSnap]=await Promise.all([tx.get(qr),tx.get(cr),tx.get(doctorDoc(hid,doctorId))]);
+    const [qs,cs,doctorSnap,hs]=await Promise.all([tx.get(qr),tx.get(cr),tx.get(doctorDoc(hid,doctorId)),tx.get(doc(db,'hospitals',hid))]);
+    if(!hs.exists()||hs.data().status!=='active')throw Error('Hospital workspace unavailable.');
+    if(action==='next'&&Number(counterNumber)>hospitalCustomization(hs.data()).counters)throw Error('Select a configured reception counter.');
     if(!qs.exists()||!cs.exists()||!doctorSnap.exists()||doctorSnap.data().departmentId!==id)
       throw Error('The selected doctor queue is unavailable.');
     const q=qs.data(),c=cs.data();
