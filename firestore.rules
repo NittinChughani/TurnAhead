@@ -28,12 +28,29 @@ service cloud.firestore {
     function manager(hid) { return isMember(hid) && role(hid) in ['owner','supervisor']; }
     function admin(hid) { return owner(hid); }
     function owner(hid) { return isMember(hid) && role(hid) == 'owner' && get(hospitalPath(hid)).data.ownerUid == request.auth.uid; }
+    // Public hospital branding; only the verified owner may update it.
+    function validCustomization(c) {
+      return c is map &&
+        c.keys().hasAll(['logo','accent','receiptNote','opens','closes','hoursEnabled','counters','boardLayout','boardMessage']) &&
+        c.keys().hasOnly(['logo','accent','receiptNote','opens','closes','hoursEnabled','counters','boardLayout','boardMessage']) &&
+        c.logo is string && c.logo.size() <= 65000 &&
+        (c.logo == '' || c.logo.matches('^data:image/(webp|jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$')) &&
+        c.accent is string && c.accent.matches('^#[0-9a-fA-F]{6}$') &&
+        c.receiptNote is string && c.receiptNote.size() <= 120 &&
+        c.boardMessage is string && c.boardMessage.size() <= 120 &&
+        c.opens is string && c.opens.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$') &&
+        c.closes is string && c.closes.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$') &&
+        c.hoursEnabled is bool && (!c.hoursEnabled || c.opens != c.closes) &&
+        c.counters is int && c.counters >= 1 && c.counters <= 12 &&
+        c.boardLayout in ['standard','large'];
+    }
     function validHospital(data) {
-      return data.keys().hasOnly(['name','ownerUid','status','createdAt','updatedAt','recallGraceMinutes']) &&
+      return data.keys().hasOnly(['name','ownerUid','status','createdAt','updatedAt','recallGraceMinutes','customization']) &&
         data.name is string && data.name.size() >= 3 && data.name.size() <= 70 &&
         data.ownerUid is string && data.status == 'active' &&
         data.createdAt is timestamp && data.updatedAt is timestamp &&
-        data.get('recallGraceMinutes',10) is int && data.get('recallGraceMinutes',10) >= 1 && data.get('recallGraceMinutes',10) <= 120;
+        data.get('recallGraceMinutes',10) is int && data.get('recallGraceMinutes',10) >= 1 && data.get('recallGraceMinutes',10) <= 120 &&
+        (!('customization' in data) || validCustomization(data.customization));
     }
     function validAvatar(data) {
       return !('profilePhoto' in data) || (data.profilePhoto is string &&
@@ -154,7 +171,7 @@ service cloud.firestore {
       // Operator-provisioned only; browser users cannot register a hospital or an owner.
       allow create: if false;
       allow update: if admin(hid) &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','updatedAt','recallGraceMinutes']) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','updatedAt','recallGraceMinutes','customization']) &&
         validHospital(request.resource.data) && request.resource.data.updatedAt == request.time;
 
       match /invites/{mail} {

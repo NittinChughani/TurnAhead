@@ -8,6 +8,7 @@ import {watchDoctors,addDoctor,changeDoctor} from './doctors.js';
 import {avatarHTML,avatarContents,compressProfilePhoto} from './profile-photo.js';
 import {patientReportRows,downloadPatientReport} from './patient-report.js';
 import {bindLanguage,t} from './locale.js?v=2.6.1';
+import {bindV3,resetV3,renderCustomization,renderOnboarding} from './admin-v3.js?v=3.1.0';
 const $=id=>document.getElementById(id),esc=window.turnahead.esc,fmt=window.turnahead.fmt;
 let hospital=null,me=null,members=[],invites=[],departments=[],tickets=[],unsubs=[],toastTimer,authEpoch=0,pendingLogin=false,pendingLogout=false;
 let feedbackRecords=[],currentHistoryTicket=null,editingMember=null,editingDoctor=null,doctors=[],historyDays=[],archiveCursors=new Map(),historyRecords=new Map();
@@ -15,13 +16,13 @@ const loginButton=$('admin-login-form').querySelector('[type=submit]'),loginLabe
 function loadingLogin(busy){loginButton.disabled=busy;loginButton.classList.toggle('is-loading',busy);loginButton.textContent=busy?'Checking access…':loginLabel;}
 const show=(id,value)=>$(id).hidden=!value;
 function toast(message,error=false){const el=$('admin-toast');el.textContent=message;el.classList.toggle('error',error);show('admin-toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('admin-toast',false),4800);}
-function stop(){unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;doctors=[];historyRecords.clear();
+function stop(){resetV3();unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;doctors=[];historyRecords.clear();
   feedbackRecords=[];['history-detail-modal','doctor-edit-modal','staff-edit-modal'].forEach(id=>show(id,false));
   $('patient-ticket-list').replaceChildren();$('history-days').replaceChildren();$('doctor-list').replaceChildren();}
 /** Keep the signed-in landing view focused: only overview cards and the profile. */
 const adminNavigation=document.querySelector('.admin-section-nav');
 function showAdminSection(section,scroll=false){
-  const available=new Set(['overview','team','invites','departments','doctors','patients','history','feedback','settings']);
+  const available=new Set(['overview','team','invites','departments','doctors','patients','history','feedback','settings','analytics','customization','onboarding']);
   const selected=available.has(section)?section:'overview';
   $('admin-overview').hidden=selected!=='overview';
   document.querySelectorAll('[data-admin-section]').forEach(panel=>{panel.hidden=panel.dataset.adminSection!==selected;});
@@ -30,6 +31,7 @@ function showAdminSection(section,scroll=false){
     button.classList.toggle('is-active',active);
     if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
   });
+  if(selected==='onboarding')renderOnboarding({hospital,departments,doctors,members});
   if(scroll)adminNavigation.scrollIntoView({behavior:'smooth',block:'start'});
 }
 adminNavigation.addEventListener('click',event=>{
@@ -257,7 +259,7 @@ async function initialize(){
     localStorage.setItem('turnahead-hospital',hospital.id);
     show('admin-guard',false);show('admin-content',true);show('admin-sign-out',true);loadingLogin(false);
     $('admin-hospital-name').textContent=`${hospital.name} · Live hospital operations`;
-    $('admin-role').textContent='ADMINISTRATOR';$('settings-name').value=hospital.name;showGraceValue(hospital.recallGraceMinutes||10);renderOwnAvatar();showAdminSection('overview');
+    $('admin-role').textContent='ADMINISTRATOR';$('settings-name').value=hospital.name;showGraceValue(hospital.recallGraceMinutes||10);renderOwnAvatar();renderCustomization(hospital);showAdminSection('overview');
     $('open-reception').href=boardLink(hospital.id,location.href);
     if(pendingLogin){toast('Administrator logged in successfully.');pendingLogin=false;}
     // Start all four streams at once for a responsive admin dashboard.
@@ -293,6 +295,7 @@ $('grace-form').addEventListener('submit',async e=>{e.preventDefault();const b=e
 $('settings-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('[type=submit]');btn.disabled=true;
 try{await renameHospital(hospital.id,$('settings-name').value);hospital=await getHospital(hospital.id);$('admin-hospital-name').textContent=`${hospital.name} · Live hospital operations`;toast('Hospital name saved.');}catch(e){toast(helpfulError(e),true);}finally{btn.disabled=false;}});
 $('admin-sign-out').addEventListener('click',async()=>{pendingLogout=true;try{await logout();}catch(e){pendingLogout=false;toast(helpfulError(e),true);}});
+bindV3(()=>({hospital,departments,doctors,members}),toast);
 if(configured)observeAuth(()=>initialize());else initialize();
 
 $('admin-profile-file').addEventListener('change',async e=>{

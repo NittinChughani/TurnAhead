@@ -1,5 +1,6 @@
 import {configured,helpfulError} from './firebase.js';
-import {getHospital} from './org-store.js';
+import {watchHospital} from './org-store.js?v=3.1.0';
+import {hospitalCustomization,applyHospitalBrand} from './hospital-custom.js?v=3.1.0';
 import {observeQueues} from './store.js';
 import {dayKey,displayClock,doctorActiveCodes} from './queue-engine.js';
 import {t,bindLanguage} from './locale.js?v=2.6.1';
@@ -113,9 +114,11 @@ function startBoard(){
     document.getElementById('board-facility').textContent='Every hospital has its own public board link.';
     el.innerHTML='<div class="empty-state">Ask reception for its hospital-specific board URL.</div>';return;
   }
-  getHospital(hospitalId).then(h=>{
+  watchHospital(hospitalId,h=>{
+    const c=hospitalCustomization(h);applyHospitalBrand(h);document.body.classList.toggle('board-large-layout',c.boardLayout==='large');
+    const message=document.getElementById('board-custom-message');message.textContent=c.boardMessage;message.hidden=!c.boardMessage;
     document.getElementById('board-facility').textContent=`${h.name} · Live queue overview`;
-  }).catch(e=>{document.getElementById('board-facility').textContent=helpfulError(e);});
+  },e=>{document.getElementById('board-facility').textContent=helpfulError(e);});
   observeQueues(hospitalId,queues=>{checkCalls(queues);displayedQueues=queues;displayedDate=dayKey();renderBoard(queues);
   },err=>{el.innerHTML=`<div class="empty-state">Unable to load the queue. ${esc(helpfulError(err))}</div>`;});
 }

@@ -1,5 +1,6 @@
 import {configured,helpfulError} from './firebase.js';
 import {getHospital} from './org-store.js';
+import {applyHospitalBrand} from './hospital-custom.js?v=3.1.0';
 import {registerTurnPush} from './push-client.js';
 import {observeTicket,observeQueue,fetchTicketFromServer,submitFeedback} from './store.js?v=2.6.3';
 import {t as tfn,bindLanguage} from './locale.js?v=2.6.1';
@@ -190,7 +191,7 @@ if(!configured)fail('This website is not connected to Firebase yet. Please conta
 else if(!ticketId||!/^[A-Za-z0-9]{20}$/.test(ticketId)||(hospitalId&&!/^[A-Za-z0-9]{20}$/.test(hospitalId)))
   fail('No valid ticket was supplied. Scan the QR code on your receipt to open your queue status.');
 else{
-  if(!legacy)getHospital(hospitalId).then(h=>{facility=h.name;update();}).catch(err=>console.warn('Hospital name unavailable:',helpfulError(err)));
+  if(!legacy)getHospital(hospitalId).then(h=>{facility=h.name;applyHospitalBrand(h);update();}).catch(err=>console.warn('Hospital name unavailable:',helpfulError(err)));
   observeTicket(hospitalId,ticketId,t=>{
     if(!t){fail('Ticket not found. Check your QR code or ask reception.');return;}
     applyTicket(t);
