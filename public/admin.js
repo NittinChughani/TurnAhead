@@ -1,6 +1,6 @@
 import {configured,auth,helpfulError} from './firebase.js';
 import {observeAuth,login,logout,refreshVerification,requestVerification,myMemberships,getHospital,
-  watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,updateRecallGrace,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js?v=2.6.2';
+  watchMembership,watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,updateRecallGrace,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js?v=2.6.2';
 import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory,observeFeedback} from './store.js';
 import {canChangeRole,normalizeEmail,invitationLink,boardLink,staffGreeting} from './org-model.js';
 import {dayKey,patientDisplayName,ticketStatusLabel} from './queue-engine.js?v=2.6.2';
@@ -8,6 +8,7 @@ import {watchDoctors,addDoctor,changeDoctor} from './doctors.js';
 import {avatarHTML,avatarContents,compressProfilePhoto} from './profile-photo.js';
 import {patientReportRows,downloadPatientReport} from './patient-report.js';
 import {bindLanguage,t} from './locale.js?v=2.6.1';
+import {persistent} from './reliability.js?v=3.2.0';
 import {bindV3,resetV3,renderCustomization,renderOnboarding} from './admin-v3.js?v=3.1.0';
 const $=id=>document.getElementById(id),esc=window.turnahead.esc,fmt=window.turnahead.fmt;
 let hospital=null,me=null,members=[],invites=[],departments=[],tickets=[],unsubs=[],toastTimer,authEpoch=0,pendingLogin=false,pendingLogout=false;
@@ -16,9 +17,11 @@ const loginButton=$('admin-login-form').querySelector('[type=submit]'),loginLabe
 function loadingLogin(busy){loginButton.disabled=busy;loginButton.classList.toggle('is-loading',busy);loginButton.textContent=busy?'Checking access…':loginLabel;}
 const show=(id,value)=>$(id).hidden=!value;
 function toast(message,error=false){const el=$('admin-toast');el.textContent=message;el.classList.toggle('error',error);show('admin-toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('admin-toast',false),4800);}
-function stop(){resetV3();unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;doctors=[];historyRecords.clear();
+function stop(){resetV3();unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;editingMember=null;editingDoctor=null;doctors=[];members=[];invites=[];departments=[];tickets=[];historyDays=[];archiveCursors.clear();historyRecords.clear();
   feedbackRecords=[];['history-detail-modal','doctor-edit-modal','staff-edit-modal'].forEach(id=>show(id,false));
-  $('patient-ticket-list').replaceChildren();$('history-days').replaceChildren();$('doctor-list').replaceChildren();}
+  for(const id of ['patient-ticket-list','history-days','doctor-list','staff-list','invite-list','department-list','feedback-list','history-detail-body','history-detail-title','onboarding-list','admin-profile-avatar'])$(id)?.replaceChildren();
+  for(const id of ['invitation-url','invite-email','invite-name','staff-edit-name','staff-edit-email','doctor-edit-name']){const el=$(id);if(el){if('value' in el)el.value='';else el.textContent='';}}
+  show('invitation-link',false);}
 /** Keep the signed-in landing view focused: only overview cards and the profile. */
 const adminNavigation=document.querySelector('.admin-section-nav');
 function showAdminSection(section,scroll=false){
@@ -165,9 +168,9 @@ function closeHistoryDetail(){show('history-detail-modal',false);currentHistoryT
 $('history-download-pdf').addEventListener('click',async()=>{
  if(!me||!hospital||!currentHistoryTicket)return;
  const btn=$('history-download-pdf');btn.disabled=true;btn.textContent='Preparing PDF…';
- try{const t=currentHistoryTicket;const person=uid=>uid?issuingReceptionist({issuedBy:uid}):'Not recorded';
+ try{const t=currentHistoryTicket,epoch=authEpoch,hid=hospital.id;const person=uid=>uid?issuingReceptionist({issuedBy:uid}):'Not recorded';
    const rows=patientReportRows(t,{issuedBy:person(t.issuedBy),calledBy:person(t.calledBy),finishedBy:person(t.finishedBy)});
-   await downloadPatientReport(t,rows,hospital.name);toast('Private PDF downloaded. Store it securely.');
+   await downloadPatientReport(t,rows,hospital.name,()=>epoch===authEpoch&&hospital?.id===hid&&me?.role==='owner');toast('Private PDF downloaded. Store it securely.');
  }catch(err){toast('PDF download unavailable: '+helpfulError(err),true);}finally{btn.disabled=false;btn.textContent='↓ Download PDF';}
 });
 $('history-detail-close').addEventListener('click',closeHistoryDetail);
@@ -196,10 +199,11 @@ async function loadHistory(date,mode='recent'){
   const key=`${date}:${id}`,code=mode==='search'?raw:'';
   if(mode==='search'&&!code){toast('Enter a ticket number like CAR-001.',true);return;}
   const result=parent.querySelector('[data-history-results]'),more=parent.querySelector('[data-history-more]');
-  const cursor=mode==='more'?archiveCursors.get(key):null;
+  const cursor=mode==='more'?archiveCursors.get(key):null,epoch=authEpoch,hid=hospital.id;
   result.setAttribute('aria-busy','true');if(mode!=='more')result.textContent='Loading patient records…';
   try{
-    const page=await readHistory(hospital.id,date,id,code,cursor||null);
+    const page=await readHistory(hid,date,id,code,cursor||null);
+    if(epoch!==authEpoch||hospital?.id!==hid||!result.isConnected||parent.querySelector('[data-history-dept]').value!==id)return;
     archiveCursors.set(key,page.cursor);
     const html=page.records.length?page.records.map(t=>historyRecordHtml(t,date,id)).join(''):'<div class="empty-state">No matching ticket records for this department and date.</div>';
     if(mode==='more')result.insertAdjacentHTML('beforeend',html);else result.innerHTML=html;
@@ -209,7 +213,8 @@ async function loadHistory(date,mode='recent'){
 }
 async function refreshHistory(){
   if(!hospital)return;
-  try{historyDays=await listHistoryDays(hospital.id);archiveCursors.clear();historyRecords.clear();renderHistory();}
+  const epoch=authEpoch,hid=hospital.id;
+  try{const dates=await listHistoryDays(hid);if(epoch!==authEpoch||hospital?.id!==hid)return;historyDays=dates;archiveCursors.clear();historyRecords.clear();renderHistory();}
   catch(e){$('history-days').textContent=helpfulError(e);}
 }
 $('history-days').addEventListener('click',e=>{
@@ -252,23 +257,27 @@ async function initialize(){
   if(!user.emailVerified){$('guard-message').textContent='Please verify your administrator email before proceeding.';loadingLogin(false);return;}
   try{
     const accounts=await myMemberships(user);if(seq!==authEpoch)return;
-    const preferred=new URLSearchParams(location.search).get('hospital')||localStorage.getItem('turnahead-hospital');
+    const preferred=new URLSearchParams(location.search).get('hospital')||persistent.getItem('turnahead-hospital');
     me=accounts.find(m=>m.hospitalId===preferred&&m.role==='owner')||accounts.find(m=>m.role==='owner');
     if(!me){$('guard-message').textContent='Access denied. This email is not registered as the designated hospital administrator. Contact your organization owner.';pendingLogin=false;loadingLogin(false);return;}
-    hospital=await getHospital(me.hospitalId);if(seq!==authEpoch)return;
-    localStorage.setItem('turnahead-hospital',hospital.id);
+    const resolved=await getHospital(me.hospitalId);if(seq!==authEpoch)return;
+    if(resolved.ownerUid!==user.uid)throw Error('Access denied. Only the designated owner may use administration.');
+    hospital=resolved;
+    persistent.setItem('turnahead-hospital',hospital.id);
     show('admin-guard',false);show('admin-content',true);show('admin-sign-out',true);loadingLogin(false);
     $('admin-hospital-name').textContent=`${hospital.name} · Live hospital operations`;
     $('admin-role').textContent='ADMINISTRATOR';$('settings-name').value=hospital.name;showGraceValue(hospital.recallGraceMinutes||10);renderOwnAvatar();renderCustomization(hospital);showAdminSection('overview');
     $('open-reception').href=boardLink(hospital.id,location.href);
     if(pendingLogin){toast('Administrator logged in successfully.');pendingLogin=false;}
+    const revoke=()=>{if(seq!==authEpoch)return;authEpoch++;stop();show('admin-content',false);show('admin-guard',true);$('guard-message').textContent='Administrator access changed. Sign in again or contact the hospital operator.';};
+    unsubs.push(watchMembership(hospital.id,user.uid,m=>{if(seq!==authEpoch)return;if(!m?.active||m.role!=='owner')revoke();},revoke));
     // Start all four streams at once for a responsive admin dashboard.
-    unsubs.push(watchHospitalMembers(hospital.id,data=>{members=data;me=data.find(m=>m.uid===auth.currentUser?.uid)||me;renderOwnAvatar();renderMembers();renderTickets();displayMetrics();},e=>toast(helpfulError(e),true)));
-    unsubs.push(watchInvitations(hospital.id,data=>{invites=data;renderInvites();displayMetrics();},e=>toast(helpfulError(e),true)));
-    unsubs.push(watchDoctors(hospital.id,data=>{doctors=data;renderDoctors();},e=>toast(helpfulError(e),true)));
-    unsubs.push(observeQueues(hospital.id,data=>{departments=data;renderDepartments();renderDoctors();displayMetrics();if(historyDays.length&&!$('history-days').querySelector('[data-history-dept]'))renderHistory();},e=>toast(helpfulError(e),true)));
-    unsubs.push(observeTickets(hospital.id,data=>{tickets=data;renderTickets();},e=>toast(helpfulError(e),true),100));
-    unsubs.push(observeFeedback(hospital.id,data=>{feedbackRecords=data;renderFeedback();},e=>toast(helpfulError(e),true)));
+    unsubs.push(watchHospitalMembers(hospital.id,data=>{if(seq!==authEpoch)return;members=data;me=data.find(m=>m.uid===auth.currentUser?.uid)||me;renderOwnAvatar();renderMembers();renderTickets();displayMetrics();},e=>toast(helpfulError(e),true)));
+    unsubs.push(watchInvitations(hospital.id,data=>{if(seq!==authEpoch)return;invites=data;renderInvites();displayMetrics();},e=>toast(helpfulError(e),true)));
+    unsubs.push(watchDoctors(hospital.id,data=>{if(seq!==authEpoch)return;doctors=data;renderDoctors();},e=>toast(helpfulError(e),true)));
+    unsubs.push(observeQueues(hospital.id,data=>{if(seq!==authEpoch)return;departments=data;renderDepartments();renderDoctors();displayMetrics();if(historyDays.length&&!$('history-days').querySelector('[data-history-dept]'))renderHistory();},e=>toast(helpfulError(e),true)));
+    unsubs.push(observeTickets(hospital.id,data=>{if(seq!==authEpoch)return;tickets=data;renderTickets();},e=>toast(helpfulError(e),true),100));
+    unsubs.push(observeFeedback(hospital.id,data=>{if(seq!==authEpoch)return;feedbackRecords=data;renderFeedback();},e=>toast(helpfulError(e),true)));
     refreshHistory();
   }catch(e){if(seq===authEpoch){$('guard-message').textContent=helpfulError(e);pendingLogin=false;loadingLogin(false);}}
 }
@@ -294,13 +303,13 @@ try{const queue=await createQueue(hospital.id,$('admin-department-name').value);
 $('grace-form').addEventListener('submit',async e=>{e.preventDefault();const b=e.target.querySelector('[type=submit]');b.disabled=true;try{const minutes=$('recall-grace').value==='custom'?Number($('recall-grace-custom').value):Number($('recall-grace').value);await updateRecallGrace(hospital.id,minutes);hospital=await getHospital(hospital.id);showGraceValue(hospital.recallGraceMinutes);toast('Recall grace period saved.');}catch(err){toast(helpfulError(err),true);}finally{b.disabled=false;}});
 $('settings-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('[type=submit]');btn.disabled=true;
 try{await renameHospital(hospital.id,$('settings-name').value);hospital=await getHospital(hospital.id);$('admin-hospital-name').textContent=`${hospital.name} · Live hospital operations`;toast('Hospital name saved.');}catch(e){toast(helpfulError(e),true);}finally{btn.disabled=false;}});
-$('admin-sign-out').addEventListener('click',async()=>{pendingLogout=true;try{await logout();}catch(e){pendingLogout=false;toast(helpfulError(e),true);}});
+$('admin-sign-out').addEventListener('click',async()=>{pendingLogout=true;authEpoch++;stop();show('admin-content',false);show('admin-guard',true);try{await logout();}catch(e){pendingLogout=false;toast(helpfulError(e),true);}});
 bindV3(()=>({hospital,departments,doctors,members}),toast);
 if(configured)observeAuth(()=>initialize());else initialize();
 
 $('admin-profile-file').addEventListener('change',async e=>{
  if(!hospital||!me)return;const file=e.target.files?.[0];if(!file)return;
- e.target.disabled=true;try{const photo=await compressProfilePhoto(file);await updateOwnProfilePhoto(hospital.id,photo);toast('Profile photo saved.');}
+ const epoch=authEpoch,hid=hospital.id;e.target.disabled=true;try{const photo=await compressProfilePhoto(file);if(epoch!==authEpoch||hospital?.id!==hid)return;await updateOwnProfilePhoto(hid,photo);toast('Profile photo saved.');}
  catch(err){toast(helpfulError(err),true);}finally{e.target.value='';e.target.disabled=false;}
 });
 $('admin-profile-remove').addEventListener('click',async()=>{
