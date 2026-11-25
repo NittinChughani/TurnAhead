@@ -1,6 +1,6 @@
 'use strict';
 (function () {
-  const stored = localStorage.getItem('turnahead-theme');
+  let stored=null;try{stored=localStorage.getItem('turnahead-theme');}catch{}
   const theme = stored === 'dark' || stored === 'light' ? stored : (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
   document.documentElement.dataset.theme=theme;
   document.querySelectorAll('[data-theme-toggle]').forEach(btn=>{
@@ -8,7 +8,7 @@
     btn.addEventListener('click',()=>{
       const next=document.documentElement.dataset.theme==='dark'?'light':'dark';
       document.documentElement.dataset.theme=next;
-      localStorage.setItem('turnahead-theme',next);
+      try{localStorage.setItem('turnahead-theme',next);}catch{}
       document.querySelectorAll('[data-theme-toggle]').forEach(b=>b.setAttribute('aria-pressed',String(next==='dark')));
     });
   });
