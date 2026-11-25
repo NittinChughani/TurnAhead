@@ -38,7 +38,7 @@ test('patient experience has foreground feedback but no arrival confirmation',()
   assert.match(html,/role="dialog" aria-modal="true" aria-labelledby="feedback-title"/);
   assert.doesNotMatch(html,/id="feedback-panel"|id="arrival-panel"|id="arrival-button"/);
   assert.match(content('public/track.js'),/turnahead-v262-feedback-seen/);
-  assert.match(content('public/track.js'),/localStorage\.setItem\(feedbackSeenKey,'yes'\)/);
+  assert.match(content('public/track.js'),/persistent\.setItem\(feedbackSeenKey,'yes'\)/);
   assert.match(content('public/track.js'),/document\.visibilityState!=='visible'/);
 });
 test('public-board speech queues background calls and plays them on visibility restoration',()=>{
