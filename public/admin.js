@@ -9,7 +9,7 @@ import {avatarHTML,avatarContents,compressProfilePhoto} from './profile-photo.js
 import {patientReportRows,downloadPatientReport} from './patient-report.js?v=3.2.0';
 import {bindLanguage,t} from './locale.js?v=2.6.1';
 import {persistent} from './reliability.js?v=3.2.0';
-import {bindV3,resetV3,renderCustomization,renderOnboarding} from './admin-v3.js?v=3.2.0';
+import {bindV3,resetV3,renderCustomization,renderOnboarding} from './admin-v3.js?v=3.3.0';
 const $=id=>document.getElementById(id),esc=window.turnahead.esc,fmt=window.turnahead.fmt;
 let hospital=null,me=null,members=[],invites=[],departments=[],tickets=[],unsubs=[],toastTimer,authEpoch=0,pendingLogin=false,pendingLogout=false;
 let feedbackRecords=[],currentHistoryTicket=null,editingMember=null,editingDoctor=null,doctors=[],historyDays=[],archiveCursors=new Map(),historyRecords=new Map();

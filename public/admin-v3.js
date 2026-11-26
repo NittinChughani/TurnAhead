@@ -11,8 +11,16 @@ export function resetV3(){generation++;customGeneration++;report=null;reportInfo
 function bars(items){const max=Math.max(1,...items.map(x=>x.value));return '<div class="analytics-bars">'+items.map(x=>'<div class="analytics-bar"><span>'+esc(x.label)+'</span><div><i style="width:'+Math.max(0,x.value/max*100)+'%"></i></div><b>'+esc(num(x.value))+'</b></div>').join('')+'</div>';}
 function groupTable(rows){return '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Group</th><th>Issued</th><th>Completed</th><th>Missed</th><th>Recalled</th><th>Avg wait</th><th>Avg service</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+esc(r.label||r.date)+'</td>'+[r.issued,r.completed,r.missed,r.recalled,r.wait,r.service].map(v=>'<td>'+esc(num(v))+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';}
 function renderAnalytics(r){
- const t=r.total,stats=[['Issued',t.issued],['Completed',t.completed],['Missed · final',t.missed],['Recalled',t.recalled],['Recalled & completed',t.recalledCompleted],['Unresolved',t.unresolved],['Average wait · min',t.wait],['Average service · min',t.service],['Satisfaction / 5',r.ratings.average],['Feedback responses',r.ratings.count]];
- $('analytics-output').innerHTML='<div class="analytics-kpis">'+stats.map(([label,value])=>'<article class="analytics-kpi"><span>'+esc(label)+'</span><strong>'+esc(num(value))+'</strong></article>').join('')+'</div><div class="analytics-panels"><article><h3>Daily ticket volume</h3>'+bars(r.days.map(x=>({label:x.date.slice(5),value:x.issued})))+'</article><article><h3>Peak issue hours · PKT</h3>'+bars(r.hours.map((value,i)=>({label:String(i).padStart(2,'0')+':00',value})))+'</article><article><h3>Rating distribution</h3>'+bars(r.ratings.distribution.map((value,i)=>({label:String(i+1)+' / 5',value})))+'</article><article><h3>Satisfaction by date</h3><div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Date</th><th>Responses</th><th>Average / 5</th></tr></thead><tbody>'+r.ratings.trend.map(x=>'<tr><td>'+esc(x.date)+'</td><td>'+x.count+'</td><td>'+num(x.average)+'</td></tr>').join('')+'</tbody></table></div></article></div><h3>Department performance</h3>'+groupTable(r.departments)+'<h3>Doctor performance</h3>'+groupTable(r.doctors)+'<p class="admin-section-note">Wait time: issue to first call, excluding recalls because the original call timestamp is overwritten. Service time: call to completion. Missing or invalid timestamps excluded. Missed counts are final missed states; recalled counts can overlap completed. Unresolved includes waiting/called tickets. Feedback is grouped by submission date. Wait samples: '+t.waitN+'; service samples: '+t.serviceN+'. Operational timestamps are not clinical care-quality measures.</p>';
+ const t=r.total;
+ const cards=items=>'<div class="report-kpis">'+items.map(([label,value,unit])=>'<article class="report-kpi"><span>'+esc(label)+'</span><strong>'+esc(num(value))+' <small>'+esc(unit||'')+'</small></strong></article>').join('')+'</div>';
+ const section=(n,title,body)=>'<section class="report-section"><header><span class="report-index">'+n+'</span><h3>'+title+'</h3></header>'+body+'</section>';
+ $('analytics-output').innerHTML='<div class="report-heading"><span class="kicker">TURNAHEAD / OPERATIONS</span><h2>Operational overview</h2><p>'+esc(reportInfo.start+' — '+reportInfo.end+' · '+reportInfo.name)+'</p></div>'+
+ section('01','Queue outcomes',cards([['Issued',t.issued],['Completed',t.completed],['Missed · final',t.missed],['Unresolved',t.unresolved],['Recalled',t.recalled],['Recalled & completed',t.recalledCompleted]]))+
+ section('02','Waiting & service',cards([['Average wait',t.wait,'min'],['Average service',t.service,'min'],['Wait samples',t.waitN],['Service samples',t.serviceN]])+
+ '<div class="report-charts"><article><h4>Daily ticket volume</h4>'+bars(r.days.map(x=>({label:x.date.slice(5),value:x.issued})))+'</article><article><h4>Peak issue hours · PKT</h4>'+bars(r.hours.map((value,i)=>({label:String(i).padStart(2,'0')+':00',value})))+'</article></div>')+
+ section('03','Department & doctor comparison','<h4>Department performance</h4>'+groupTable(r.departments)+'<h4>Doctor performance</h4>'+groupTable(r.doctors))+
+ section('04','Patient experience',cards([['Satisfaction',r.ratings.average,'/ 5'],['Feedback responses',r.ratings.count]])+'<div class="report-charts"><article><h4>Rating distribution</h4>'+bars(r.ratings.distribution.map((value,i)=>({label:String(i+1)+' / 5',value})))+'</article><article><h4>Satisfaction by date</h4><div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Date</th><th>Responses</th><th>Average / 5</th></tr></thead><tbody>'+r.ratings.trend.map(x=>'<tr><td>'+esc(x.date)+'</td><td>'+x.count+'</td><td>'+num(x.average)+'</td></tr>').join('')+'</tbody></table></div></article></div>')+
+ section('05','How to read this report','<p class="admin-section-note">Wait: issue to first call, excluding recalls. Service: call to completion. Missing or invalid timestamps excluded. Missed counts are final; recalled counts can overlap completed. Unresolved includes waiting/called tickets. Feedback is grouped by submission date. Operational timestamps are not clinical care-quality measures.</p>');
 }
 function download(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 async function pdfExport(){
@@ -22,22 +30,35 @@ async function pdfExport(){
  const {jsPDF}=await import('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm');
  if(reportInfo?.token!==info.token)return;
  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
- const rows=reportRows(r);let y=17;
- function page(){doc.setFontSize(17);doc.text('TurnAhead | Operational analytics',12,12);doc.setFontSize(10);doc.text(doc.splitTextToSize(info.name+' | '+info.start+' to '+info.end,270),12,19);y=28;}
- page();
- const headers=['Section / group','Issued','Done','Missed','Recall','Recall done','Unresolved','Wait min','Svc min','Wait n','Svc n','Feedback','Avg rating'];
- function row(values,heading=false){
-  const widths=[72,15,15,15,15,20,21,18,18,15,15,19,19];
-  const strings=values.map((v,i)=>doc.splitTextToSize(String(v??''),widths[i]-2));
-  const height=Math.max(...strings.map(s=>s.length))*4+3;
-  if(y+height>195){doc.addPage();page();row(headers,true);}
-  doc.setFontSize(8);doc.setFont('helvetica',heading?'bold':'normal');let x=12;
-  strings.forEach((s,i)=>{doc.text(s,x,y);x+=widths[i];});y+=height;
- }
- row(headers,true);
- for(const line of rows.slice(1))row([line[0]+' | '+line[1],...line.slice(2)]);
- if(y>180){doc.addPage();page();}
- doc.setFontSize(9);doc.text(doc.splitTextToSize('Aggregate report only. Wait excludes recalled tickets; service includes valid completed visits. Feedback grouped by submission date. No patient names or comments. Dates in PKT.',270),12,y+5);
+ const navy=[16,35,68],blue=[34,104,235],teal=[6,160,135],muted=[88,106,132],pale=[240,245,252];let y=0;
+ const header=(title)=>{doc.setFillColor(...navy);doc.rect(0,0,297,27,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(16);doc.text('TurnAhead  /  '+title,12,12);doc.setFont('helvetica','normal');doc.setFontSize(9);doc.text(doc.splitTextToSize(info.name+' | '+info.start+' to '+info.end,270),12,19);doc.setFillColor(...teal);doc.rect(0,27,297,2,'F');y=38;};
+ const next=title=>{doc.addPage();header(title);};
+ const note=(s)=>{doc.setFontSize(10);doc.setTextColor(...muted);doc.text(doc.splitTextToSize(s,270),12,y);};
+ header('Operational overview');
+ const metrics=[['Issued',r.total.issued],['Completed',r.total.completed],['Missed (final)',r.total.missed],['Unresolved',r.total.unresolved],['Recalled',r.total.recalled],['Recall completed',r.total.recalledCompleted],['Avg wait (min)',r.total.wait],['Avg service (min)',r.total.service],['Rating / 5',r.ratings.average],['Feedback',r.ratings.count],['Wait samples',r.total.waitN],['Service samples',r.total.serviceN]];
+ metrics.forEach(([label,value],i)=>{const x=12+(i%4)*69,top=38+Math.floor(i/4)*29;doc.setFillColor(...pale);doc.roundedRect(x,top,65,25,2,2,'F');doc.setTextColor(...muted);doc.setFontSize(10);doc.text(label,x+4,top+7);doc.setTextColor(...blue);doc.setFont('helvetica','bold');doc.setFontSize(19);doc.text(String(value??'—'),x+4,top+18);doc.setFont('helvetica','normal');});
+ y=135;note('Aggregate operational data only. Wait excludes recalled tickets; service includes valid completed visits. Missing timestamps are excluded. Feedback is grouped by submission date. No patient names or comments. Dates in PKT.');
+ const table=(title,headers,rows,widths)=>{
+  next(title);let index=0;
+  const draw=(values,heading=false)=>{
+   doc.setFont('helvetica',heading?'bold':'normal');doc.setFontSize(9);
+   const strings=values.map((v,i)=>doc.splitTextToSize(String(v??'—'),widths[i]-4));
+   const h=Math.max(...strings.map(s=>s.length))*4+5;
+   if(!heading&&y+h>190){next(title+' (continued)');draw(headers,true);}
+   doc.setFillColor(...(heading?navy:index++%2?pale:[255,255,255]));doc.rect(12,y, widths.reduce((s,v)=>s+v,0),h,'F');doc.setTextColor(...(heading?[255,255,255]:navy));let x=12;
+   strings.forEach((s,i)=>{doc.text(s,x+2,y+5);x+=widths[i];});y+=h;
+  };
+  draw(headers,true);rows.forEach(r=>draw(r));
+ };
+ const groupHeaders=['Group','Issued','Done','Missed','Recall','Recall done','Unresolved','Wait min','Svc min','Wait n','Svc n'];
+ const widths=[73,19,19,19,19,23,23,20,20,19,19];
+ const row=g=>[g.date||g.label,g.issued,g.completed,g.missed,g.recalled,g.recalledCompleted,g.unresolved,g.wait,g.service,g.waitN,g.serviceN];
+ table('Daily activity',groupHeaders,r.days.map(row),widths);
+ table('Department comparison',groupHeaders,r.departments.map(row),widths);
+ table('Doctor comparison',groupHeaders,r.doctors.map(row),widths);
+ table('Peak issue hours (PKT)',['Hour','Tickets issued'],r.hours.map((n,i)=>[String(i).padStart(2,'0')+':00',n]),[135,138]);
+ table('Patient satisfaction',['Date / rating','Responses','Average / 5'],[...r.ratings.trend.map(x=>[x.date,x.count,x.average]),...r.ratings.distribution.map((n,i)=>[(i+1)+' / 5',n,'—'])],[123,75,75]);
+ for(let p=1;p<=doc.getNumberOfPages();p++){doc.setPage(p);doc.setFontSize(8);doc.setTextColor(...muted);doc.text('TurnAhead · Confidential aggregate report',12,202);doc.text(p+' / '+doc.getNumberOfPages(),285,202,{align:'right'});}
  doc.save('turnahead-analytics-'+info.end+'.pdf');
  }catch(e){notify('PDF export failed: '+e.message,true);}finally{button.disabled=!report;}
 }
