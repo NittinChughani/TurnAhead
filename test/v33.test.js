@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {initialQueue,initialControl,nextTicket,getDoctorControl,refinedWaitingEstimate} from '../public/queue-engine.js';
-import {planTicketChange} from '../public/ticket-change.js';
+import {planTicketChange,planDepartmentTransfer} from '../public/ticket-change.js';
 const doc='D'.repeat(20),target='E'.repeat(20),id='T'.repeat(20),today='2026-11-26',now=2000000;
 const x=nextTicket(initialQueue('General OPD','GEN',today,now),id,today,now,'Fictional Patient',{doctorId:doc,doctorName:'Old Doctor',patientGender:'male',roomNumber:'1'});
 const q=x.queue,t={...x.ticket,queueId:'general-opd'},c={...initialControl(),lanes:{[doc]:{...getDoctorControl({},doc),pending:[{id,number:t.number}]}}};
@@ -28,4 +28,12 @@ test('demo avoids Firebase and service worker does not cache private data',()=>{
  assert.doesNotMatch(src('public/demo.js'),/firebase|fetch\(|localStorage/);
  assert.doesNotMatch(src('public/sw.js'),/caches\.|respondWith/);
  assert.match(src('public/admin-v3.js'),/Department comparison/);
+});
+
+test('department transfer allocates next destination code without duplicating the archive',()=>{
+ const dest=initialQueue('Radiology','RAD',today,now);dest.lastNumber=8;
+ const plan=planDepartmentTransfer(q,c,dest,initialControl(),t,id,{...d,departmentId:'radiology'},target,'radiology',details,now+1,today);
+ assert.equal(plan.patch.originQueueId,t.queueId);assert.equal(plan.patch.code,'RAD-009');assert.equal(plan.archivePatch.serviceCode,'RAD-009');
+ assert.deepEqual(plan.queuePatch.waitingNumbers,[]);assert.deepEqual(plan.destinationQueuePatch.waitingNumbers,[9]);
+ assert.throws(()=>planDepartmentTransfer(q,c,{...dest,paused:true},initialControl(),t,id,{...d,departmentId:'radiology'},target,'radiology',details,now,today));
 });

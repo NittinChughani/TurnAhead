@@ -1,6 +1,6 @@
 /** Hospital-scoped Firestore queues, atomic ticket transitions and private dated history. */
 import {
-  collection,doc,getDocs,getDocFromServer,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter,deleteField,setDoc,serverTimestamp
+  collection,doc,getDocs,getDocsFromServer,getDocFromServer,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter,deleteField,setDoc,serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {planTicketChange,planDepartmentTransfer} from './ticket-change.js?v=3.3.0';
 import {mapLimited} from './reliability.js?v=3.2.0';
@@ -266,4 +266,32 @@ export async function changeWaitingTicket(hid,qid,ticketId,doctorId,details){
 export async function readTicketChanges(hid){
  const snap=await getDocs(query(collection(db,'hospitals',hid,'ticketChanges'),orderBy('createdAt','desc'),limit(100)));
  return snap.docs.map(d=>d.data());
+}
+
+/** Explicit owner search over a whole selected date, with bounded reads and no silent truncation.
+ * Archive paths are immutable issue departments, so search every path for current service department.
+ */
+export async function searchHistoryDate(hid,date,departmentIds,filters={},cancelled=()=>false,progress=()=>{}){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw Error('Invalid archive date.');
+ const matches=[];let scanned=0,requests=0;
+ for(const qid of [...new Set(departmentIds)]){
+  let cursor=null;
+  do{
+   if(cancelled())throw Error('Search cancelled.');
+   if(++requests>200)throw Error('Search limit reached. Narrow the date or use the original department.');
+   const snap=await getDocsFromServer(query(historyCollection(hid,date,qid),orderBy('issuedAt','desc'),...(cursor?[startAfter(cursor)]:[]),limit(100)));
+   if(cancelled())throw Error('Search cancelled.');
+   for(const d of snap.docs){
+    if(++scanned>10000)throw Error('Search exceeds 10,000 records. Use a narrower original-department search.');
+    const t=d.data();
+    if(filters.department&&filters.department!==(t.serviceQueueId||t.queueId))continue;
+    if(filters.code&&![t.code,t.serviceCode].includes(filters.code))continue;
+    if(filters.doctor&&t.doctorId!==filters.doctor||filters.counter&&t.issuedCounter!==filters.counter||filters.staff&&t.issuedBy!==filters.staff||filters.status&&t.status!==filters.status)continue;
+    matches.push({id:d.id,...t});
+   }
+   cursor=snap.size===100?snap.docs.at(-1):null;
+   progress(scanned);
+  }while(cursor);
+ }
+ return {records:matches.sort((a,b)=>b.issuedAt-a.issuedAt),scanned};
 }
