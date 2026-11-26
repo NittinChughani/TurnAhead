@@ -1259,5 +1259,6 @@ module.exports = QRCode;
 };
 const cache={}; function load(name){const key=name.replace(/^\.\//,'');if(!cache[key]){const factory=factories[key];if(!factory)throw Error('Missing QR module: '+key);const mod={exports:{}};cache[key]=mod;factory(mod,load);}return cache[key].exports;}
 const QRCode=load('index'), level=load('QRErrorCorrectLevel');
-window.turnaheadQR={svg(value){const qr=new QRCode(0,level.M);qr.addData(value);qr.make();const size=qr.getModuleCount(),quiet=4;const paths=[];for(let y=0;y<size;y++)for(let x=0;x<size;x++)if(qr.isDark(y,x))paths.push(`M${x+quiet} ${y+quiet}h1v1h-1z`);return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size+quiet*2} ${size+quiet*2}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="white"/><path d="${paths.join('')}" fill="#142443"/></svg>`;}};
+function matrix(value){const qr=new QRCode(0,level.M);qr.addData(value);qr.make();const size=qr.getModuleCount();return Array.from({length:size},(_,y)=>Array.from({length:size},(_,x)=>qr.isDark(y,x)));}
+window.turnaheadQR={matrix,svg(value){const modules=matrix(value),size=modules.length,quiet=4;const paths=[];for(let y=0;y<size;y++)for(let x=0;x<size;x++)if(modules[y][x])paths.push(`M${x+quiet} ${y+quiet}h1v1h-1z`);return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size+quiet*2} ${size+quiet*2}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="white"/><path d="${paths.join('')}" fill="#142443"/></svg>`;}};
 })();

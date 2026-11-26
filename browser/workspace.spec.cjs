@@ -1,6 +1,9 @@
 const {test,expect}=require('@playwright/test');
 const {mockWorkspace}=require('./fixtures.cjs');
 const {readFileSync}=require('node:fs');
+const {execFileSync}=require('node:child_process');
+const {PNG}=require('pngjs');
+const jsQR=require('jsqr');
 test('owner workspace renders analytics, exports a real PDF, navigates setup and activity',async({page})=>{
  await mockWorkspace(page,'owner');
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -53,8 +56,32 @@ test('reception workspace edits waiting ticket, selects another department and u
  const menu=await page.locator('#staff-account-panel').boundingBox();expect(menu.x).toBeGreaterThanOrEqual(0);expect(menu.x+menu.width).toBeLessThanOrEqual(391);
  expect(errors).toEqual([]);
 });
-test('patient workspace shows live position and private print option',async({page})=>{
- await mockWorkspace(page,'receptionist');await page.goto('/track.html?hospital='+'H'.repeat(20)+'&ticket='+'T'.repeat(20));
+function checkTicketPDF(path,expectedURL){
+ const text=execFileSync('pdftotext',[path,'-'],{encoding:'utf8'});
+ for(const value of ['TurnAhead','GEN-001','Fictional Patient','General OPD','Demo Doctor','Room','Scan to follow your turn live'])expect(text).toContain(value);
+ const info=execFileSync('pdfinfo',[path],{encoding:'utf8'});expect(info).toMatch(/Pages:\s+1\b/);
+ const raster=execFileSync('pdftoppm',['-f','1','-l','1','-r','130','-png',path],{maxBuffer:20*1024*1024});
+ const png=PNG.sync.read(raster);const decoded=jsQR(new Uint8ClampedArray(png.data),png.width,png.height);
+ expect(decoded?.data).toBe(expectedURL);
+}
+test('patient downloads and prints a nonblank private ticket with the original scannable QR',async({page},testInfo)=>{
+ await mockWorkspace(page,'receptionist');const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('/track.html?hospital='+'H'.repeat(20)+'&ticket='+'T'.repeat(20));
  await expect(page.locator('#track-code')).toHaveText('GEN-001');await expect(page.locator('#track-content')).toBeVisible();
+ if(await page.locator('#near-popup').isVisible())await page.locator('#near-popup-close').click();
  await expect(page.locator('#save-ticket')).toBeVisible();await expect(page.locator('[role=progressbar]')).toBeVisible();
+ const canonical=new URL(page.url());canonical.search='';canonical.searchParams.set('ticket','T'.repeat(20));canonical.searchParams.set('hospital','H'.repeat(20));
+ const waiting=page.waitForEvent('download');await page.locator('#save-ticket').click();const download=await waiting;
+ expect(download.suggestedFilename()).toBe('TurnAhead-GEN-001.pdf');
+ checkTicketPDF(await download.path(),canonical.href);
+ // Stub only the browser print dialog; the real print layout is rendered to a PDF by Chromium.
+ await page.evaluate(()=>{window.print=()=>{window.__printInvoked=true;}});
+ await page.locator('#print-patient-ticket').click();expect(await page.evaluate(()=>window.__printInvoked)).toBe(true);
+ await page.emulateMedia({media:'print'});
+ await expect(page.locator('#patient-print-ticket')).toBeVisible();await expect(page.locator('#patient-print-code')).toHaveText('GEN-001');
+ await expect(page.locator('.track-main')).toBeHidden();
+ const path=testInfo.outputPath('patient-print.pdf');await page.pdf({path,preferCSSPageSize:true,printBackground:true});
+ checkTicketPDF(path,canonical.href);
+ await page.emulateMedia({media:'screen'});await expect(page.locator('#patient-print-ticket')).toBeHidden();
+ expect(errors).toEqual([]);
 });

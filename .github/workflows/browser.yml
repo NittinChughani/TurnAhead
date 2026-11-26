@@ -13,7 +13,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install --no-save --package-lock=false @playwright/test@1.56.1 jspdf@2.5.1 esbuild@0.25.12
+      - run: npm install --no-save --package-lock=false @playwright/test@1.56.1 jspdf@2.5.1 esbuild@0.25.12 jsqr@1.4.0 pngjs@7.0.0
       - run: npx playwright install --with-deps chromium
       - run: mkdir -p browser/.generated && npx esbuild node_modules/jspdf/dist/jspdf.es.min.js --bundle --platform=browser --format=esm --outfile=browser/.generated/jspdf.mjs
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - run: npx playwright test
