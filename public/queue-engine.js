@@ -167,3 +167,10 @@ export function patientDisplayName(patient){
 export function displayClock(date=new Date(),timezone=TIME_ZONE){
   return new Intl.DateTimeFormat('en-US',{timeZone:timezone,hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true}).format(date);
 }
+
+export function refinedWaitingEstimate(queue,number){
+ const result=waitingEstimate(queue,number);if(!result)return null;
+ const avg=Math.max(3,Math.min(40,Number(queue.avgMinutes)||8)),count=result.peopleAhead;
+ const uncertainty=Number(queue.served||0)>=5?.2:.35;
+ return {...result,range:[Math.max(0,Math.round(count*avg*(1-uncertainty))),Math.round(count*avg*(1+uncertainty)+avg)]};
+}

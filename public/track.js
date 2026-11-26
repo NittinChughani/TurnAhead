@@ -5,12 +5,13 @@ import {registerTurnPush} from './push-client.js';
 import {observeTicket,observeQueue,fetchTicketFromServer,submitFeedback} from './store.js?v=3.2.0';
 import {t as tfn,bindLanguage} from './locale.js?v=2.6.1';
 import {nearTurnMilestone,shouldApplyTicket} from './v26-engine.js?v=2.6.3';
-import {dayKey,waitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName,doctorQueueSummary,callHistoryLine} from './queue-engine.js?v=2.6.3';
+import {dayKey,refinedWaitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName,doctorQueueSummary,callHistoryLine} from './queue-engine.js?v=3.3.0';
 import {persistent,session} from './reliability.js?v=3.2.0';
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
 const ticketId=params.get('ticket'),hospitalId=params.get('hospital');
 const legacy=!hospitalId;
+let queueConfirmedAt=0, lastQueueChange=0;
 let facility='Your hospital',currentTicket=null,currentQueue=null,stopQueue=null,subscribedQueueId=null,alerts=false,vibrationEnabled=false,hadLoaded=false,lastStatus='',lastAhead=null,lastConfirmed=0,refreshing=false,lastRefresh=0,missingConfirmed=false;
 const loader=$('track-loading');
 setTimeout(()=>{if(!loader.hidden)$('track-loading-note').textContent='Still connecting. Your queue will appear as soon as the live service responds.';},3200);
@@ -23,7 +24,7 @@ function setSyncStatus(){
   const seconds=lastConfirmed?Math.floor((Date.now()-lastConfirmed)/1000):Infinity;
   if(missingConfirmed){element.textContent='TICKET UNAVAILABLE';return;}
   if(!navigator.onLine){element.textContent='OFFLINE · RECONNECTING';return;}
-  element.textContent=refreshing?'CHECKING LIVE STATUS':seconds>35?'RECONNECTING…':lastConfirmed?'LIVE · SYNCED':'CONNECTING…';
+  element.textContent=refreshing?'CHECKING LIVE STATUS':seconds>95?'RECONNECTING…':lastConfirmed?'LIVE · SYNCED':'CONNECTING…';
 }
 /** Prevent an older cached snapshot from undoing a confirmed call or final state. */
 function applyTicket(ticket){
@@ -35,7 +36,7 @@ function applyTicket(ticket){
   if(subscribedQueueId!==ticket.queueId){
     stopQueue?.();subscribedQueueId=ticket.queueId;currentQueue=null;
     stopQueue=observeQueue(hospitalId,ticket.queueId,q=>{
-      if(q)currentQueue=q;
+      if(q){currentQueue=q;lastQueueChange=Date.now();}
       else if(!['completed','skipped'].includes(currentTicket?.status))$('sync-state').textContent='DEPARTMENT UNAVAILABLE';
       update();
     },err=>{$('sync-state').textContent='RECONNECTING…';console.warn(helpfulError(err));});
@@ -44,7 +45,7 @@ function applyTicket(ticket){
 }
 async function syncTicket(force=false){
   if(refreshing||!navigator.onLine||!ticketId||!configured)return;
-  if(!force&&Date.now()-lastRefresh<12000)return;
+  if(Date.now()-lastRefresh<(force?5000:60000))return;
   refreshing=true;lastRefresh=Date.now();setSyncStatus();
   try{
     const t=await fetchTicketFromServer(hospitalId,ticketId);
@@ -57,7 +58,7 @@ function update(){
   if(!t)return;
   const status=effectiveTicketStatus(t,q,dayKey());
   const doctorQueue=q&&t.doctorId&&q.lanes?.[t.doctorId]?doctorQueueSummary(q,t.doctorId):q;
-  const waiting=status==='waiting',estimate=waiting&&doctorQueue?waitingEstimate(doctorQueue,t.number):null;
+  const waiting=status==='waiting',estimate=waiting&&doctorQueue?refinedWaitingEstimate(doctorQueue,t.number):null;
   const validWait=Boolean(waiting&&estimate);
   const shownStatus=waiting&&!validWait&&q?'syncing':status;
   const ahead=validWait?estimate.peopleAhead:null;
@@ -76,7 +77,10 @@ function update(){
   $('track-eta-clock').textContent=eta?`Around ${eta.clock} (PKT) · estimate only`:'';
   $('track-serving').textContent=doctorQueue?.active?.code||'—';
   $('track-message').textContent=shownStatus==='called'?tfn('turnMessage',{counter:t.calledCounter||'reception'}):shownStatus==='waiting'&&t.recallCount?'Your ticket has been recalled. You are back in the queue for your doctor.':shownStatus==='completed'&&t.recallCount?'Your recalled turn was completed. Thank you for visiting.':shownStatus==='skipped'&&t.recallCount?'Your recalled turn was marked missed again. Please ask reception for help.':legacy?'This uses the older queue system. Please request a new QR ticket.':doctorQueue?.paused&&validWait?tfn('paused'):tfn(({waiting:'pleaseWait',completed:'completedMessage',skipped:'missedMessage'}[shownStatus]||shownStatus));
-  const pct=validWait?Math.max(10,Math.min(92,Math.round(100/(ahead+1)))):shownStatus==='syncing'?65:100;
+  const pct=validWait?Math.max(10,Math.min(95,Math.round(100/(ahead+1)))):shownStatus==='called'||shownStatus==='completed'?100:0;
+  const progress=$('track-progress-bar').parentElement;progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Approximate queue progress');progress.setAttribute('aria-valuemin','0');progress.setAttribute('aria-valuemax','100');progress.setAttribute('aria-valuenow',String(pct));progress.setAttribute('aria-valuetext',validWait?ahead+' ahead':shownStatus);
+  const delay=$('track-delay');delay.hidden=!validWait||(!doctorQueue.paused&&!doctorQueue.pauseReason);delay.textContent=doctorQueue?.paused?'Queue paused. Please wait for reception to resume.':({'running-late':'Doctor is running behind schedule.','unexpected-delay':'Unexpected delay. Please remain near reception.','extended-service':'Current appointment is taking longer than expected.'}[doctorQueue?.pauseReason]||'');
+  if(!delay.textContent)delay.hidden=true;
   $('track-progress-bar').style.width=`${pct}%`;
   $('progress-description').textContent=validWait?`${ahead===0?'You are next in line.':`${ahead} ${ahead===1?'person':'people'} ahead of you.`} Times can change; stay near reception.`:messages[shownStatus]||'';
   if(hadLoaded&&lastStatus!=='called'&&shownStatus==='called'&&vibrationEnabled&&typeof navigator.vibrate==='function'&&document.visibilityState==='visible'){
@@ -142,7 +146,7 @@ function showFeedbackSuccess(){
   feedbackSuccess.hidden=false;
   $('feedback-success-close').focus({preventScroll:true});
   clearTimeout(feedbackSuccessTimer);
-  feedbackSuccessTimer=setTimeout(closeFeedbackSuccess,2200);
+  feedbackSuccessTimer=setTimeout(closeFeedbackSuccess,5000);
 }
 function renderFeedback(status){
   if(legacy||status!=='completed'||document.visibilityState!=='visible'||feedbackSending||!feedbackModal.hidden||!feedbackSuccess.hidden)return;
@@ -151,13 +155,14 @@ function renderFeedback(status){
   nearModal.hidden=true;currentlyShown=null;
   feedbackModal.hidden=false;
   $('feedback-state').textContent='';
-  $('feedback-close').focus({preventScroll:true});
+  feedbackModal.querySelector('input[name=rating]')?.focus({preventScroll:true});
 }
 $('feedback-close').addEventListener('click',closeFeedback);
 $('feedback-success-close').addEventListener('click',closeFeedbackSuccess);
 $('feedback-form').addEventListener('submit',async e=>{
   e.preventDefault();
   if(feedbackSending)return;
+  if(!navigator.onLine){$('feedback-state').textContent='You are offline. Reconnect before sending feedback.';return;}
   const form=e.currentTarget,b=form.querySelector('[type=submit]');
   const rating=form.querySelector('input[name=rating]:checked')?.value;
   feedbackSending=true;
@@ -204,14 +209,16 @@ else{
   },err=>{console.warn(helpfulError(err));$('sync-state').textContent='RECONNECTING…';syncTicket(true);});
   // Safari can suspend listeners while the device is locked. Recheck from the server
   // when the page resumes, and periodically while visible. These are bounded reads.
-  const resume=()=>{if(document.visibilityState==='visible'){lastRefresh=0;syncTicket(true);update();}};
+  const resume=()=>{if(document.visibilityState==='visible'){syncTicket(true);update();}};
   document.addEventListener('visibilitychange',resume);
   window.addEventListener('pageshow',resume);
   window.addEventListener('focus',resume);
   window.addEventListener('online',()=>syncTicket(true));
   window.addEventListener('offline',setSyncStatus);
   setInterval(()=>{setSyncStatus();if(document.visibilityState==='visible'){
-    if(!missingConfirmed&&!['completed','expired'].includes(currentTicket?.status))syncTicket();
+    if(!missingConfirmed&&!['completed','expired'].includes(currentTicket?.status)&&Date.now()-lastConfirmed>60000)syncTicket();
     if(currentTicket)update();
   }},15000);
 }
+
+$('save-ticket').addEventListener('click',()=>{if(!currentTicket||missingConfirmed)return;window.print();});

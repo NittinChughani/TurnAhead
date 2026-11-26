@@ -227,3 +227,14 @@ export async function recallMissedTicket(hid,queueId,ticketId){
     return {code:old.code,minutes};
   });
 }
+
+export async function setDoctorDelay(hid,qid,doctorId,reason){
+ if(!['','running-late','unexpected-delay','extended-service'].includes(reason))throw Error('Choose a standard delay message.');
+ if(!auth.currentUser)throw Error('Sign in first.');
+ return runTransaction(db,async tx=>{
+  const qr=qDoc(hid,qid),[qs,ds]=await Promise.all([tx.get(qr),tx.get(doctorDoc(hid,doctorId))]);
+  if(!qs.exists()||!ds.exists()||ds.data().departmentId!==qid||qs.data().dayKey!==dayKey())throw Error('Refresh the selected doctor queue.');
+  const q=qs.data(),lane=getDoctorLane(q,doctorId),now=Date.now();
+  tx.update(qr,{lanes:{...q.lanes,[doctorId]:{...lane,pauseReason:reason,updatedAt:now}},updatedAt:now});
+ });
+}
