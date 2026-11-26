@@ -14,6 +14,14 @@ test('owner workspace renders analytics, exports a real PDF, navigates setup and
  const download=page.waitForEvent('download');await page.locator('#analytics-pdf').click();const pdf=await download;
  expect(pdf.suggestedFilename()).toMatch(/^turnahead-analytics-.*\.pdf$/);
  const bytes=readFileSync(await pdf.path());expect(bytes.subarray(0,5).toString()).toBe('%PDF-');expect(bytes.length).toBeGreaterThan(1000);
+ const raw=bytes.toString('latin1'),boxes=[...raw.matchAll(/\/MediaBox\s*\[\s*0(?:\.0+)?\s+0(?:\.0+)?\s+([\d.]+)\s+([\d.]+)\s*\]/g)];
+ expect(boxes.length).toBeGreaterThanOrEqual(6);
+ for(const box of boxes){expect(Number(box[1])).toBeCloseTo(595.28,0);expect(Number(box[2])).toBeCloseTo(841.89,0);}
+ await expect(page.locator('#admin-account-panel')).toBeHidden();
+ await page.locator('#admin-greeting').click();await expect(page.locator('#admin-profile-choose')).toBeVisible();
+ const chooser=page.waitForEvent('filechooser');await page.locator('#admin-profile-choose').click();await chooser;
+ await page.locator('#admin-profile-remove').click();await expect(page.locator('#admin-toast')).toContainText('Profile photo removed');
+ await page.keyboard.press('Escape');await expect(page.locator('#admin-account-panel')).toBeHidden();
  await page.locator('[data-admin-tab=onboarding]').click();await expect(page.locator('#onboarding-list')).toContainText('STEP 1 OF 6');
  await page.locator('#onboarding-list').getByRole('button',{name:'Next',exact:true}).click();await expect(page.locator('#onboarding-list')).toContainText('STEP 2 OF 6');
  await page.locator('[data-admin-tab=activity]').click();await expect(page.locator('#activity-list')).toContainText('Ticket issued');
@@ -24,12 +32,25 @@ test('owner workspace renders analytics, exports a real PDF, navigates setup and
 test('reception workspace edits waiting ticket, selects another department and uses guide',async({page})=>{
  await mockWorkspace(page,'receptionist');const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('/desk.html');await expect(page.locator('#dashboard')).toBeVisible();
+ await expect(page.locator('[data-staff-section=overview]')).toBeVisible();
+ await expect(page.locator('[data-staff-section=queues]')).toBeHidden();
+ await expect(page.locator('#staff-account-panel')).toBeHidden();
+ await page.locator('#staff-greeting').click();await expect(page.locator('#staff-profile-remove')).toBeVisible();
+ await page.locator('#staff-profile-remove').click();await expect(page.locator('#notice')).toContainText('Profile photo removed');
+ await page.keyboard.press('Escape');await expect(page.locator('#staff-account-panel')).toBeHidden();
+ await page.locator('[data-staff-tab=queues]').click();
+ await expect(page.locator('.delay-notice-panel')).toBeVisible();await expect(page.locator('[data-staff-section=overview]')).toBeHidden();
+ await page.locator('[data-delay-select]').selectOption('running-late');await page.locator('[data-delay-save]').click();await expect(page.locator('#notice')).toContainText('Delay notice updated');
+ await page.locator('[data-staff-tab=tickets]').click();
  await expect(page.locator('[data-change-ticket]').first()).toBeEnabled();
  await page.locator('[data-change-ticket]').first().click();await expect(page.locator('#ticket-change-dialog')).toBeVisible();
  await page.locator('#change-mode').selectOption('transfer');await page.locator('#change-doctor').selectOption('E'.repeat(20));await page.locator('#change-room').fill('2');
  await page.locator('#ticket-change-form button[type=submit]').click();await expect(page.locator('#notice')).toContainText('RAD-001');
- await page.locator('.v33-staff-guide summary').click();await expect(page.locator('#staff-guide-count')).toHaveText('1 of 5');
+ await page.locator('[data-staff-tab=guide]').click();await expect(page.locator('#staff-guide-count')).toHaveText('1 of 5');
  await page.locator('#staff-guide-next').click();await expect(page.locator('#staff-guide-count')).toHaveText('2 of 5');
+ await page.locator('[data-staff-tab=missed]').click();await expect(page.locator('#missed-list')).toBeVisible();
+ await page.setViewportSize({width:390,height:844});await page.locator('#staff-greeting').click();await expect(page.locator('#staff-account-panel')).toBeVisible();
+ const menu=await page.locator('#staff-account-panel').boundingBox();expect(menu.x).toBeGreaterThanOrEqual(0);expect(menu.x+menu.width).toBeLessThanOrEqual(391);
  expect(errors).toEqual([]);
 });
 test('patient workspace shows live position and private print option',async({page})=>{

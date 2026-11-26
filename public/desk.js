@@ -8,6 +8,7 @@ import {dayKey,patientDisplayName,getDoctorLane,doctorActiveCodes,ticketStatusLa
 import {watchDoctors} from './doctors.js?v=3.3.1';
 import {doctorAvailable} from './doctor-model.js';
 import {avatarContents,compressProfilePhoto} from './profile-photo.js';
+import {bindAccountMenu} from './account-menu.js?v=3.3.2';
 import {bindLanguage,t} from './locale.js?v=2.6.1';
 import {recallEligibility,graceMinutes} from './v26-engine.js?v=2.6.2';
 
@@ -15,6 +16,15 @@ import {hospitalCustomization,counterOptions,applyHospitalBrand} from './hospita
 import {operationGate,canMutateQueue,connectionLabel,persistent} from './reliability.js?v=3.2.0';
 const {esc,fmt}=window.turnahead, $=id=>document.getElementById(id);
 const views=['login-view','verify-view','no-access-view','dashboard'];
+const accountMenu=bindAccountMenu('staff');
+const staffNav=document.querySelector('.staff-section-nav');
+function showStaffSection(section,scroll=false){
+ const selected=['overview','queues','tickets','missed','guide'].includes(section)?section:'overview';
+ document.querySelectorAll('[data-staff-section]').forEach(panel=>{panel.hidden=panel.dataset.staffSection!==selected;});
+ staffNav.querySelectorAll('[data-staff-tab]').forEach(button=>{const active=button.dataset.staffTab===selected;button.classList.toggle('is-active',active);if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');});
+ if(scroll)staffNav.scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+}
+document.getElementById('dashboard').addEventListener('click',e=>{const b=e.target.closest('[data-staff-tab],[data-staff-open]');if(b)showStaffSection(b.dataset.staffTab||b.dataset.staffOpen,true);});
 // Old v2.1 invitation URLs continue through the dedicated activation screen.
 if(new URLSearchParams(location.search).has('invite')) location.replace('./activate.html'+location.search);
 let currentHospital=null,currentMember=null,memberships=[],queues=[],tickets=[],selectedQueue=null,currentTicket=null;
@@ -33,6 +43,7 @@ function updateConnection(){
 function beginMutation(){if(!mutationAllowed()){notice('Wait for a live connection and the current operation to finish.',true);return null;}const token=gate.begin();render();return token;}
 function endMutation(token){gate.end(token);if(currentHospital)render();else updateConnection();}
 function clearPrivateDesk(){
+ accountMenu.show(false);showStaffSection('overview');
  const edit=$('ticket-change-dialog');if(edit?.open)edit.close();$('ticket-change-form')?.reset();
  currentTicket=null;queues=[];tickets=[];doctors=[];selectedQueue=null;selectedDoctor=null;queueConfirmed=false;
  for(const id of ['issue-modal','ticket-modal','queue-modal']){const el=$(id);if(el)el.hidden=true;}
@@ -47,7 +58,7 @@ const loginButton=$('login-form').querySelector('[type=submit]');
 const loginOriginal=loginButton.textContent;
 function loadingLogin(busy){loginButton.disabled=busy;loginButton.classList.toggle('is-loading',busy);loginButton.textContent=busy?'Signing in…':loginOriginal;}
 const show=(id,visible)=>$(id).hidden=!visible;
-function view(name){if(name!=='login-view')loadingLogin(false);views.forEach(v=>show(v,v===name));show('logout',Boolean(auth?.currentUser));show('workspace-switch',name==='dashboard'&&memberships.filter(m=>isStaffRole(m.role)).length>1);show('public-board-link',name==='dashboard');show('staff-greeting',name==='dashboard'&&Boolean(currentMember));show('admin-link',name==='dashboard'&&canManageStaff(currentMember?.role));window.scrollTo(0,0);}
+function view(name){if(name!=='login-view')loadingLogin(false);views.forEach(v=>show(v,v===name));show('logout',Boolean(auth?.currentUser));show('workspace-switch',name==='dashboard'&&memberships.filter(m=>isStaffRole(m.role)).length>1);show('public-board-link',name==='dashboard');accountMenu.show(name==='dashboard'&&Boolean(currentMember));show('admin-link',name==='dashboard'&&canManageStaff(currentMember?.role));window.scrollTo(0,0);}
 function toast(message,error=false){const el=$('toast');el.textContent=message;el.classList.toggle('error',error);show('toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('toast',false),4600);}
 function notice(message,error=false){const el=$('notice');el.textContent=message;el.classList.toggle('error',error);show('notice',true);clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>show('notice',false),6000);}
 function stopSubscriptions(){workspaceEpoch++;queueConfirmed=false;stopQueues?.();stopTickets?.();stopMember?.();stopDoctors?.();stopHospital?.();stopHospital=null;stopQueues=stopTickets=stopMember=stopDoctors=null;doctors=[];
@@ -83,7 +94,7 @@ function render(){
       const ln=getDoctorLane(q,doc.id);
       return `<button type="button" class="doctor-tab ${selectedDoctor===doc.id?'selected':''}" data-doctor-queue="${esc(doc.id)}"><span>${esc(doc.name)}</span><small>${ln.waitingNumbers.length} waiting · ${doc.active?'Available':'Inactive'}${ln.paused?' · On break':''}</small></button>`;
     }).join('');
-    const detail=d?`<div class="doctor-queue-heading"><div><span class="kicker">DOCTOR-SPECIFIC QUEUE</span><h3>Dr. ${esc(d.name)}</h3><small>${esc(d.roomNumber?'Room '+d.roomNumber:'Room assigned on each ticket')}</small></div><span class="state-pill ${paused?'paused':''}">${paused?'⏸ ON BREAK':d.active?'● ACCEPTING':'INACTIVE'}</span></div><div class="serving-box"><div><span>NOW SERVING</span><strong>${esc(lane.active?.code||'—')}</strong><small>${active?`Called from ${esc(lane.active.counter||'reception')}`:'No patient currently being served'}</small></div><span class="serving-symbol">↗</span></div><div class="queue-facts"><span><b>${lane.waitingNumbers.length}</b> waiting for this doctor</span><span><b>${lane.served||0}</b> completed</span><span><b>${lane.avgMinutes||8} min</b> average</span></div><div class="queue-buttons"><button class="btn btn-primary" data-action="next" ${paused||active||!lane.waitingNumbers.length||!d.active||selectedCounter>hospitalCustomization(currentHospital).counters?'disabled':''}>Call next ↗</button><button class="btn btn-positive" data-action="complete" ${!belongsHere?'disabled':''}>✓ Complete</button><button class="btn btn-danger" data-action="skip" ${!belongsHere?'disabled':''}>Skip</button><button class="btn btn-outline" data-action="${lane.paused?'resume':'pause'}" ${q.paused?'disabled':''}>${lane.paused?'▶ Resume':'⏸ Doctor break'}</button></div><div class="queue-buttons"><label>Delay notice <select data-delay-select><option value="">No notice</option><option value="running-late" ${lane.pauseReason==='running-late'?'selected':''}>Running late</option><option value="unexpected-delay" ${lane.pauseReason==='unexpected-delay'?'selected':''}>Unexpected delay</option><option value="extended-service" ${lane.pauseReason==='extended-service'?'selected':''}>Extended service</option></select></label><button type="button" class="btn btn-small btn-outline" data-delay-save ${!mutationAllowed()?'disabled':''}>Update notice</button></div><p class="queue-caption">${active&&!belongsHere?`This patient belongs to ${esc(lane.active.counter)}. Select that counter to finish the ticket.`:'Each doctor has an independent FIFO line. Actions are committed atomically across reception counters.'}</p></div>`:'<div class="empty-state">No doctors registered in this department. Ask the administrator to add a doctor.</div>';
+    const detail=d?`<div class="doctor-queue-heading"><div><span class="kicker">DOCTOR-SPECIFIC QUEUE</span><h3>Dr. ${esc(d.name)}</h3><small>${esc(d.roomNumber?'Room '+d.roomNumber:'Room assigned on each ticket')}</small></div><span class="state-pill ${paused?'paused':''}">${paused?'⏸ ON BREAK':d.active?'● ACCEPTING':'INACTIVE'}</span></div><div class="serving-box"><div><span>NOW SERVING</span><strong>${esc(lane.active?.code||'—')}</strong><small>${active?`Called from ${esc(lane.active.counter||'reception')}`:'No patient currently being served'}</small></div><span class="serving-symbol">↗</span></div><div class="queue-facts"><span><b>${lane.waitingNumbers.length}</b> waiting for this doctor</span><span><b>${lane.served||0}</b> completed</span><span><b>${lane.avgMinutes||8} min</b> average</span></div><div class="queue-buttons"><button class="btn btn-primary" data-action="next" ${paused||active||!lane.waitingNumbers.length||!d.active||selectedCounter>hospitalCustomization(currentHospital).counters?'disabled':''}>Call next ↗</button><button class="btn btn-positive" data-action="complete" ${!belongsHere?'disabled':''}>✓ Complete</button><button class="btn btn-danger" data-action="skip" ${!belongsHere?'disabled':''}>Skip</button><button class="btn btn-outline" data-action="${lane.paused?'resume':'pause'}" ${q.paused?'disabled':''}>${lane.paused?'▶ Resume':'⏸ Doctor break'}</button></div><section class="delay-notice-panel" aria-label="Doctor delay notice"><div class="delay-notice-heading"><span class="delay-notice-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><strong>Delay notice</strong><small>Share an update with patients waiting for this doctor.</small></div></div><div class="delay-notice-controls"><label class="visually-hidden" for="doctor-delay-select">Delay notice</label><select id="doctor-delay-select" data-delay-select><option value="">No notice</option><option value="running-late" ${lane.pauseReason==='running-late'?'selected':''}>Running late</option><option value="unexpected-delay" ${lane.pauseReason==='unexpected-delay'?'selected':''}>Unexpected delay</option><option value="extended-service" ${lane.pauseReason==='extended-service'?'selected':''}>Extended service</option></select><button type="button" class="btn btn-small btn-outline" data-delay-save ${!mutationAllowed()?'disabled':''}>Update notice</button></div></section><p class="queue-caption">${active&&!belongsHere?`This patient belongs to ${esc(lane.active.counter)}. Select that counter to finish the ticket.`:'Each doctor has an independent FIFO line. Actions are committed atomically across reception counters.'}</p></div>`:'<div class="empty-state">No doctors registered in this department. Ask the administrator to add a doctor.</div>';
     $('queue-detail').innerHTML=`<div class="queue-view"><div class="queue-topline"><div><strong>${esc(q.name)}</strong><small>${esc(q.prefix)} · ${q.waiting} waiting across ${available.length} doctors</small></div><span class="state-pill ${q.paused?'paused':''}">${q.paused?'⏸ DEPARTMENT PAUSED':'● LIVE'}</span></div><button type="button" class="btn btn-small btn-outline" data-action="${q.paused?'resume-department':'pause-department'}">${q.paused?'▶ Resume department':'⏸ Pause department'}</button><div class="doctor-tabs" role="group" aria-label="Select doctor queue">${doctorList||'<p class="queue-caption">No doctors added yet.</p>'}</div>${detail}</div>`;
     $('queue-detail').querySelectorAll('[data-doctor-queue]').forEach(btn=>btn.addEventListener('click',()=>{selectedDoctor=btn.dataset.doctorQueue;render();}));
     $('queue-detail').querySelector('[data-delay-save]')?.addEventListener('click',async()=>{const reason=$('queue-detail').querySelector('[data-delay-select]').value,hid=currentHospital.id,epoch=workspaceEpoch,doctorId=selectedDoctor;const token=beginMutation();if(!token)return;try{await setDoctorDelay(hid,q.id,doctorId,reason);if(epoch===workspaceEpoch)notice('Delay notice updated.');}catch(e){if(epoch===workspaceEpoch)notice(helpfulError(e),true);}finally{endMutation(token);}});
@@ -140,7 +151,7 @@ async function openHospital(member){
   selectedCounter=Number(persistent.getItem('turnahead-counter-'+member.hospitalId))||1;
   if(selectedCounter<1||selectedCounter>12)selectedCounter=1;
   $('counter-select').value=String(selectedCounter);
-  queues=[];tickets=[];selectedQueue=null;selectedDoctor=null;applyHospitalBrand(currentHospital);render();view('dashboard');show('v26-operations',true);
+  queues=[];tickets=[];selectedQueue=null;selectedDoctor=null;applyHospitalBrand(currentHospital);render();view('dashboard');showStaffSection('overview');
   stopMember=watchMembership(member.hospitalId,auth.currentUser.uid,updated=>{
     if(epoch!==workspaceEpoch)return;
     if(!updated?.active||!isStaffRole(updated.role)){toast('Your access to this hospital has been disabled.',true);stopSubscriptions();currentHospital=null;routeCurrentUser();return;}
@@ -156,7 +167,7 @@ async function openHospital(member){
 }
 async function routeCurrentUser(){
   const seq=++authEpoch;
-  stopSubscriptions();clearPrivateDesk();show('v26-operations',false);currentHospital=null;currentMember=null;
+  stopSubscriptions();clearPrivateDesk();currentHospital=null;currentMember=null;
   const user=auth?.currentUser;
   if(!user){memberships=[];view('login-view');if(pendingSignOut){toast('You have been signed out successfully.');pendingSignOut=false;}return;}
   show('logout',true);
@@ -253,12 +264,14 @@ else observeAuth(()=>routeCurrentUser());
 
 $('staff-profile-file').addEventListener('change',async e=>{
  if(!currentHospital||!currentMember)return;const file=e.target.files?.[0];if(!file)return;
- const epoch=workspaceEpoch,hid=currentHospital.id;e.target.disabled=true;try{const photo=await compressProfilePhoto(file);if(epoch!==workspaceEpoch)return;await updateOwnProfilePhoto(hid,photo);notice('Profile photo saved.');}
- catch(err){notice(helpfulError(err),true);}finally{e.target.value='';e.target.disabled=false;}
+ const epoch=workspaceEpoch,hid=currentHospital.id,input=e.target;input.disabled=true;accountMenu.busy(true);
+ try{const photo=await compressProfilePhoto(file);if(epoch!==workspaceEpoch||currentHospital?.id!==hid)return;await updateOwnProfilePhoto(hid,photo);if(epoch===workspaceEpoch&&!(currentHospital?.id!==hid))notice('Profile photo saved.');}
+ catch(err){if(epoch===workspaceEpoch)notice(helpfulError(err),true);}finally{input.value='';input.disabled=false;accountMenu.busy(false);}
 });
 $('staff-profile-remove').addEventListener('click',async()=>{
- if(!currentHospital)return;try{await updateOwnProfilePhoto(currentHospital.id,'');notice('Profile photo removed.');}
- catch(err){notice(helpfulError(err),true);}
+ if(!currentHospital||!currentMember)return;const epoch=workspaceEpoch,hid=currentHospital.id;accountMenu.busy(true);
+ try{await updateOwnProfilePhoto(hid,'');if(epoch===workspaceEpoch&&!(currentHospital?.id!==hid))notice('Profile photo removed.');}
+ catch(err){if(epoch===workspaceEpoch)notice(helpfulError(err),true);}finally{accountMenu.busy(false);}
 });
 
 let editTicketId=null,guideStep=0;

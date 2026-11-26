@@ -7,10 +7,11 @@ import {canChangeRole,normalizeEmail,invitationLink,boardLink,staffGreeting} fro
 import {dayKey,patientDisplayName,ticketStatusLabel} from './queue-engine.js?v=2.6.2';
 import {watchDoctors,addDoctor,changeDoctor} from './doctors.js?v=3.3.1';
 import {avatarHTML,avatarContents,compressProfilePhoto} from './profile-photo.js';
+import {bindAccountMenu} from './account-menu.js?v=3.3.2';
 import {patientReportRows,downloadPatientReport} from './patient-report.js?v=3.3.1';
 import {bindLanguage,t} from './locale.js?v=2.6.1';
 import {persistent} from './reliability.js?v=3.2.0';
-import {bindV3,resetV3,renderCustomization,renderOnboarding} from './admin-v3.js?v=3.3.1';
+import {bindV3,resetV3,renderCustomization,renderOnboarding} from './admin-v3.js?v=3.3.2';
 const $=id=>document.getElementById(id),esc=window.turnahead.esc,fmt=window.turnahead.fmt;
 let hospital=null,me=null,members=[],invites=[],departments=[],tickets=[],unsubs=[],toastTimer,authEpoch=0,pendingLogin=false,pendingLogout=false;
 let fullHistoryGeneration=0;
@@ -19,7 +20,8 @@ const loginButton=$('admin-login-form').querySelector('[type=submit]'),loginLabe
 function loadingLogin(busy){loginButton.disabled=busy;loginButton.classList.toggle('is-loading',busy);loginButton.textContent=busy?'Checking access…':loginLabel;}
 const show=(id,value)=>$(id).hidden=!value;
 function toast(message,error=false){const el=$('admin-toast');el.textContent=message;el.classList.toggle('error',error);show('admin-toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('admin-toast',false),4800);}
-function stop(){fullHistoryGeneration++;resetV3();unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;editingMember=null;editingDoctor=null;doctors=[];members=[];invites=[];departments=[];tickets=[];historyDays=[];archiveCursors.clear();historyRecords.clear();
+const accountMenu=bindAccountMenu('admin');
+function stop(){accountMenu.show(false);fullHistoryGeneration++;resetV3();unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;editingMember=null;editingDoctor=null;doctors=[];members=[];invites=[];departments=[];tickets=[];historyDays=[];archiveCursors.clear();historyRecords.clear();
   feedbackRecords=[];['history-detail-modal','doctor-edit-modal','staff-edit-modal'].forEach(id=>show(id,false));
   for(const id of ['patient-ticket-list','history-days','doctor-list','staff-list','invite-list','department-list','feedback-list','history-detail-body','history-detail-title','onboarding-list','admin-profile-avatar','activity-list'])$(id)?.replaceChildren();
   for(const id of ['invitation-url','invite-email','invite-name','staff-edit-name','staff-edit-email','doctor-edit-name']){const el=$(id);if(el){if('value' in el)el.value='';else el.textContent='';}}
@@ -81,7 +83,7 @@ function renderTickets(){
   $('patient-ticket-count').textContent=`Latest ${current.length} today · live`;
   $('patient-ticket-list').innerHTML=current.length?current.map(t=>`<div class="admin-person"><span class="activity-token">${esc(t.code)}</span><div class="person-info"><strong>${esc(patientDisplayName(t))} · ${esc(t.queueName||'Department')}</strong><small>${esc(t.doctorName?'Dr. '+t.doctorName:'Doctor not recorded')} · ${esc(t.roomNumber?'Room '+t.roomNumber:'Room not recorded')} · Issued ${esc(fmt(t.createdAt))} by ${esc(issuingReceptionist(t))} · ${esc(issuingCounter(t))} · Called ${esc(fmt(t.calledAt))} · ${t.attendance==='present'?(t.recallCount?'Recalled & completed':'Attended'):t.attendance==='missed'?'Missed':'Pending'}</small></div><span class="activity-state">${esc(ticketStatusLabel(t))}</span></div>`).join(''):'<div class="empty-state">No anonymous queue tickets in the recent sample today.</div>';
 }
-function renderOwnAvatar(){if(!me)return;$('admin-profile-avatar').innerHTML=avatarContents(me,esc);}
+function renderOwnAvatar(){if(!me)return;const photo=avatarContents(me,esc);$('admin-profile-avatar').innerHTML=photo;$('admin-nav-avatar').innerHTML=photo;$('admin-greeting-name').textContent=me.displayName||'Administrator';}
 function renderMembers(){
   $('staff-list').innerHTML=members.length?members.map(m=>{
     const isOwner=m.role==='owner',self=m.uid===auth.currentUser?.uid;
@@ -270,7 +272,7 @@ async function initialize(){
     if(resolved.ownerUid!==user.uid)throw Error('Access denied. Only the designated owner may use administration.');
     hospital=resolved;
     persistent.setItem('turnahead-hospital',hospital.id);
-    show('admin-guard',false);show('admin-content',true);show('admin-sign-out',true);loadingLogin(false);
+    show('admin-guard',false);show('admin-content',true);show('admin-sign-out',true);accountMenu.show(true);loadingLogin(false);
     $('admin-hospital-name').textContent=`${hospital.name} · Live hospital operations`;
     $('admin-role').textContent='ADMINISTRATOR';$('settings-name').value=hospital.name;showGraceValue(hospital.recallGraceMinutes||10);renderOwnAvatar();renderCustomization(hospital);showAdminSection('overview');
     $('open-reception').href=boardLink(hospital.id,location.href);
@@ -315,12 +317,14 @@ if(configured)observeAuth(()=>initialize());else initialize();
 
 $('admin-profile-file').addEventListener('change',async e=>{
  if(!hospital||!me)return;const file=e.target.files?.[0];if(!file)return;
- const epoch=authEpoch,hid=hospital.id;e.target.disabled=true;try{const photo=await compressProfilePhoto(file);if(epoch!==authEpoch||hospital?.id!==hid)return;await updateOwnProfilePhoto(hid,photo);toast('Profile photo saved.');}
- catch(err){toast(helpfulError(err),true);}finally{e.target.value='';e.target.disabled=false;}
+ const epoch=authEpoch,hid=hospital.id,input=e.target;input.disabled=true;accountMenu.busy(true);
+ try{const photo=await compressProfilePhoto(file);if(epoch!==authEpoch||hospital?.id!==hid)return;await updateOwnProfilePhoto(hid,photo);if(epoch===authEpoch&&!(hospital?.id!==hid))toast('Profile photo saved.');}
+ catch(err){if(epoch===authEpoch)toast(helpfulError(err),true);}finally{input.value='';input.disabled=false;accountMenu.busy(false);}
 });
 $('admin-profile-remove').addEventListener('click',async()=>{
- if(!hospital)return;try{await updateOwnProfilePhoto(hospital.id,'');toast('Profile photo removed.');}
- catch(err){toast(helpfulError(err),true);}
+ if(!hospital||!me)return;const epoch=authEpoch,hid=hospital.id;accountMenu.busy(true);
+ try{await updateOwnProfilePhoto(hid,'');if(epoch===authEpoch&&!(hospital?.id!==hid))toast('Profile photo removed.');}
+ catch(err){if(epoch===authEpoch)toast(helpfulError(err),true);}finally{accountMenu.busy(false);}
 });
 
 function applyHistoryFilters(parent){

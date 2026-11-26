@@ -29,36 +29,42 @@ async function pdfExport(){
  try{
  const {jsPDF}=await import('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm');
  if(reportInfo?.token!==info.token)return;
- const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
- const navy=[16,35,68],blue=[34,104,235],teal=[6,160,135],muted=[88,106,132],pale=[240,245,252];let y=0;
- const header=(title)=>{doc.setFillColor(...navy);doc.rect(0,0,297,27,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(16);doc.text('TurnAhead  /  '+title,12,12);doc.setFont('helvetica','normal');doc.setFontSize(9);doc.text(doc.splitTextToSize(info.name+' | '+info.start+' to '+info.end,270),12,19);doc.setFillColor(...teal);doc.rect(0,27,297,2,'F');y=38;};
- const next=title=>{doc.addPage();header(title);};
- const note=(s)=>{doc.setFontSize(10);doc.setTextColor(...muted);doc.text(doc.splitTextToSize(s,270),12,y);};
+ const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
+ const navy=[16,35,68],blue=[34,104,235],teal=[6,160,135],muted=[88,106,132],pale=[240,245,252];
+ const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),margin=12,bodyWidth=W-2*margin,bottom=H-19;let y=0,currentTitle='';
+ const value=v=>v==null?'—':String(v);
+ const header=title=>{currentTitle=title;doc.setFillColor(...navy);doc.rect(0,0,W,33,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(15);doc.text('TurnAhead  /  '+title,margin,12);doc.setFont('helvetica','normal');doc.setFontSize(9);doc.text(doc.splitTextToSize(info.name,bodyWidth).slice(0,2),margin,19);doc.text(info.start+' to '+info.end,margin,28);doc.setFillColor(...teal);doc.rect(0,33,W,2,'F');y=43;};
+ const next=title=>{doc.addPage('a4','portrait');header(title);};
+ const paragraph=s=>{doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(...muted);const lines=doc.splitTextToSize(s,bodyWidth);if(y+lines.length*4.7>bottom)next(currentTitle);doc.text(lines,margin,y);y+=lines.length*4.7+7;};
  header('Operational overview');
  const metrics=[['Issued',r.total.issued],['Completed',r.total.completed],['Missed (final)',r.total.missed],['Unresolved',r.total.unresolved],['Recalled',r.total.recalled],['Recall completed',r.total.recalledCompleted],['Avg wait (min)',r.total.wait],['Avg service (min)',r.total.service],['Rating / 5',r.ratings.average],['Feedback',r.ratings.count],['Wait samples',r.total.waitN],['Service samples',r.total.serviceN]];
- metrics.forEach(([label,value],i)=>{const x=12+(i%4)*69,top=38+Math.floor(i/4)*29;doc.setFillColor(...pale);doc.roundedRect(x,top,65,25,2,2,'F');doc.setTextColor(...muted);doc.setFontSize(10);doc.text(label,x+4,top+7);doc.setTextColor(...blue);doc.setFont('helvetica','bold');doc.setFontSize(19);doc.text(String(value??'—'),x+4,top+18);doc.setFont('helvetica','normal');});
- y=135;note('Aggregate operational data only. Wait excludes recalled tickets; service includes valid completed visits. Missing timestamps are excluded. Feedback is grouped by submission date. Transferred visits count once in the final service department. No patient names or comments. Dates in PKT.');
- const table=(title,headers,rows,widths)=>{
-  next(title);let index=0;
-  const draw=(values,heading=false)=>{
-   doc.setFont('helvetica',heading?'bold':'normal');doc.setFontSize(9);
-   const strings=values.map((v,i)=>doc.splitTextToSize(String(v??'—'),widths[i]-4));
-   const h=Math.max(...strings.map(s=>s.length))*4+5;
-   if(!heading&&y+h>190){next(title+' (continued)');draw(headers,true);}
-   doc.setFillColor(...(heading?navy:index++%2?pale:[255,255,255]));doc.rect(12,y, widths.reduce((s,v)=>s+v,0),h,'F');doc.setTextColor(...(heading?[255,255,255]:navy));let x=12;
-   strings.forEach((s,i)=>{doc.text(s,x+2,y+5);x+=widths[i];});y+=h;
+ const cardGap=4,cardW=(bodyWidth-2*cardGap)/3,cardH=26;
+ metrics.forEach(([label,val],i)=>{const x=margin+(i%3)*(cardW+cardGap),top=43+Math.floor(i/3)*(cardH+4);doc.setFillColor(...pale);doc.roundedRect(x,top,cardW,cardH,2,2,'F');doc.setTextColor(...muted);doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.text(label,x+4,top+7);doc.setTextColor(...blue);doc.setFont('helvetica','bold');doc.setFontSize(19);doc.text(value(val),x+4,top+19);});
+ y=170;paragraph('Report guide: waiting time excludes recalled tickets; service includes valid completed visits. Missing timestamps are excluded. Feedback is grouped by submission date. Transferred visits count once in the final service department. No patient names or comments. Dates in PKT.');
+ const table=(title,headers,rows,weights)=>{
+  const widths=weights.map(x=>x*bodyWidth/weights.reduce((a,b)=>a+b,0));let index=0;
+  const measure=(values,bold)=>{doc.setFont('helvetica',bold?'bold':'normal');doc.setFontSize(9);const lines=values.map((val,i)=>doc.splitTextToSize(value(val),widths[i]-4));return {lines,h:Math.max(...lines.map(s=>s.length))*4.4+5};};
+  const paint=(values,heading=false)=>{
+   const {lines,h}=measure(values,heading);
+   doc.setFillColor(...(heading?navy:index++%2?pale:[255,255,255]));doc.rect(margin,y,bodyWidth,h,'F');doc.setTextColor(...(heading?[255,255,255]:navy));let x=margin;
+   lines.forEach((s,i)=>{doc.text(s,x+2,y+5);x+=widths[i];});y+=h;
   };
-  draw(headers,true);rows.forEach(r=>draw(r));
+  const headingHeight=measure(headers,true).h,firstHeight=rows.length?measure(rows[0],false).h:10;
+  if(y+12+headingHeight+firstHeight>bottom)next(currentTitle.replace(/ \(cont\.\)$/,'')+' (cont.)');
+  doc.setTextColor(...blue);doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text(title,margin,y);y+=6;paint(headers,true);
+  if(!rows.length){paint(['No records',...headers.slice(1).map(()=>null)]);y+=10;return;}
+  for(const row of rows){
+   if(y+measure(row,false).h>bottom){next(currentTitle.replace(/ \(cont\.\)$/,'')+' (cont.)');doc.setFont('helvetica','bold');doc.setTextColor(...blue);doc.setFontSize(11);doc.text(title+' (continued)',margin,y);y+=6;paint(headers,true);}
+   paint(row);
+  }y+=10;
  };
- const groupHeaders=['Group','Issued','Done','Missed','Recall','Recall done','Unresolved','Wait min','Svc min','Wait n','Svc n'];
- const widths=[73,19,19,19,19,23,23,20,20,19,19];
- const row=g=>[g.date||g.label,g.issued,g.completed,g.missed,g.recalled,g.recalledCompleted,g.unresolved,g.wait,g.service,g.waitN,g.serviceN];
- table('Daily activity',groupHeaders,r.days.map(row),widths);
- table('Department comparison',groupHeaders,r.departments.map(row),widths);
- table('Doctor comparison',groupHeaders,r.doctors.map(row),widths);
- table('Peak issue hours (PKT)',['Hour','Tickets issued'],r.hours.map((n,i)=>[String(i).padStart(2,'0')+':00',n]),[135,138]);
- table('Patient satisfaction',['Date / rating','Responses','Average / 5'],[...r.ratings.trend.map(x=>[x.date,x.count,x.average]),...r.ratings.distribution.map((n,i)=>[(i+1)+' / 5',n,'—'])],[123,75,75]);
- for(let p=1;p<=doc.getNumberOfPages();p++){doc.setPage(p);doc.setFontSize(8);doc.setTextColor(...muted);doc.text('TurnAhead · Confidential aggregate report',12,202);doc.text(p+' / '+doc.getNumberOfPages(),285,202,{align:'right'});}
+ const group=(title,items)=>{next(title);const label=g=>g.date||g.label;
+  table('Queue outcomes',['Group','Issued','Done','Missed','Recall','Recall done','Unresolved'],items.map(g=>[label(g),g.issued,g.completed,g.missed,g.recalled,g.recalledCompleted,g.unresolved]),[54,22,20,22,22,23,23]);
+  table('Waiting and service',['Group','Wait min','Service min','Wait samples','Service samples'],items.map(g=>[label(g),g.wait,g.service,g.waitN,g.serviceN]),[62,31,31,31,31]);};
+ group('Daily activity',r.days);group('Department comparison',r.departments);group('Doctor comparison',r.doctors);
+ next('Peak issue hours (PKT)');table('Hourly ticket volume',['Hour','Tickets issued'],r.hours.map((n,i)=>[String(i).padStart(2,'0')+':00',n]),[93,93]);
+ next('Patient satisfaction');table('Rating distribution',['Rating','Responses'],r.ratings.distribution.map((n,i)=>[(i+1)+' / 5',n]),[93,93]);table('Satisfaction by date',['Date','Responses','Average / 5'],r.ratings.trend.map(x=>[x.date,x.count,x.average]),[86,50,50]);
+ for(let p=1;p<=doc.getNumberOfPages();p++){doc.setPage(p);doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...muted);doc.setDrawColor(225,232,241);doc.line(margin,H-14,W-margin,H-14);doc.text('TurnAhead · Confidential aggregate report',margin,H-9);doc.text(p+' / '+doc.getNumberOfPages(),W-margin,H-9,{align:'right'});}
  doc.save('turnahead-analytics-'+info.end+'.pdf');
  }catch(e){notify('PDF export failed: '+e.message,true);}finally{button.disabled=!report;}
 }
