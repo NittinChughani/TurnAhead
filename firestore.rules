@@ -103,8 +103,9 @@ service cloud.firestore {
     // v2.3 tickets remain readable and may be completed during a rules-first rollout.
     // New doctor fields are validated when present, and the registered doctor is verified on create.
     function validTicket(data) {
-      return data.keys().hasOnly(['queueId','queueName','code','number','dayKey','status','createdAt','calledAt','finishedAt','patientName','attendance','patientGender','doctorId','doctorName','roomNumber','calledCounter','missedAt','recalledAt','recallCount','changeId']) &&
+      return data.keys().hasOnly(['queueId','queueName','code','number','dayKey','status','createdAt','calledAt','finishedAt','patientName','attendance','patientGender','doctorId','doctorName','roomNumber','calledCounter','missedAt','recalledAt','recallCount','changeId','originQueueId']) &&
         (!('changeId' in data) || (data.changeId is string && data.changeId.size() == 20)) &&
+        (!('originQueueId' in data) || (data.originQueueId is string && data.originQueueId.size() >= 3 && data.originQueueId.size() <= 64)) &&
         data.get('recallCount',0) is int && data.get('recallCount',0) >= 0 && data.get('recallCount',0) <= 1 &&
         (!('missedAt' in data) || data.missedAt is number) &&
         (!('recalledAt' in data) || data.recalledAt is number) &&
@@ -130,7 +131,7 @@ service cloud.firestore {
       );
     }
     function validHistoryRecord(data,hid,day,qid,ticketId) {
-      return data.keys().hasOnly(['ticketId','queueId','queueName','code','number','dayKey','patientName','status','attendance','issuedAt','calledAt','finishedAt','updatedAt','patientGender','doctorId','doctorName','roomNumber','calledCounter','calledBy','finishedBy','issuedBy','issuedCounter','missedAt','recalledAt','recallCount']) &&
+      return data.keys().hasOnly(['ticketId','queueId','queueName','code','number','dayKey','patientName','status','attendance','issuedAt','calledAt','finishedAt','updatedAt','patientGender','doctorId','doctorName','roomNumber','calledCounter','calledBy','finishedBy','issuedBy','issuedCounter','missedAt','recalledAt','recallCount','serviceQueueId','serviceQueueName','serviceCode','serviceNumber']) &&
         data.get('recallCount',0) is int && data.get('recallCount',0) >= 0 && data.get('recallCount',0) <= 1 &&
         (!('missedAt' in data) || data.missedAt is number) &&
         (!('recalledAt' in data) || data.recalledAt is number) &&
@@ -139,6 +140,11 @@ service cloud.firestore {
         data.get('calledBy','') is string && data.get('finishedBy','') is string &&
         (!('calledCounter' in data) || (data.calledCounter is string && (data.calledCounter == '' || data.calledCounter.matches('^Counter (?:[1-9]|1[0-2])$')))) &&
         data.ticketId == ticketId && data.queueId == qid && data.dayKey == day &&
+        getAfter(ticketPath(hid,ticketId)).data.get('originQueueId',getAfter(ticketPath(hid,ticketId)).data.queueId) == qid &&
+        data.get('serviceQueueId',data.queueId) == getAfter(ticketPath(hid,ticketId)).data.queueId &&
+        data.get('serviceQueueName',data.queueName) == getAfter(ticketPath(hid,ticketId)).data.queueName &&
+        data.get('serviceCode',data.code) == getAfter(ticketPath(hid,ticketId)).data.code &&
+        data.get('serviceNumber',data.number) == getAfter(ticketPath(hid,ticketId)).data.number &&
         data.queueName is string && data.code is string && data.number is int &&
         data.patientName is string && data.patientName.size() >= 2 && data.patientName.size() <= 80 &&
         data.status in ['waiting','called','completed','skipped'] && data.attendance in ['pending','present','missed'] &&
@@ -171,10 +177,11 @@ service cloud.firestore {
     function controlPath(hid,qid) { return /databases/$(database)/documents/hospitals/$(hid)/controls/$(qid); }
     function queuePath(hid,qid) { return /databases/$(database)/documents/hospitals/$(hid)/queues/$(qid); }
     function matchingChangeArchive(hid,t,id) {
-      let a = getAfter(archivePath(hid,t.dayKey,t.queueId,id)).data;
+      let a = getAfter(archivePath(hid,t.dayKey,t.get('originQueueId',t.queueId),id)).data;
       return a.patientName == t.patientName && a.patientGender == t.patientGender &&
         a.roomNumber == t.roomNumber && a.doctorId == t.doctorId && a.doctorName == t.doctorName &&
-        a.status == 'waiting' && a.code == t.code;
+        a.status == 'waiting' && a.get('serviceCode',a.code) == t.code &&
+        a.get('serviceQueueId',a.queueId) == t.queueId && a.get('serviceNumber',a.number) == t.number;
     }
     function validLaneTransfer(hid,old,t,id) {
       let q = getAfter(queuePath(hid,t.queueId)).data;
@@ -186,6 +193,25 @@ service cloud.firestore {
         !c.lanes[old.doctorId].pending.hasAny([pending]) &&
         c.lanes[t.doctorId].pending.hasAny([pending]);
     }
+    function validDepartmentTransfer(hid,old,t,id) {
+      let source = getAfter(queuePath(hid,old.queueId)).data;
+      let dest = getAfter(queuePath(hid,t.queueId)).data;
+      let sc = getAfter(controlPath(hid,old.queueId)).data;
+      let dc = getAfter(controlPath(hid,t.queueId)).data;
+      return old.queueId != t.queueId && old.doctorId != t.doctorId &&
+        t.originQueueId == old.get('originQueueId',old.queueId) &&
+        source.dayKey == old.dayKey && dest.dayKey == old.dayKey &&
+        !dest.paused && !dest.lanes[t.doctorId].paused &&
+        dest.name == t.queueName && dest.lastNumber == t.number &&
+        t.number == get(queuePath(hid,t.queueId)).data.lastNumber + 1 &&
+        t.code.matches('^' + dest.prefix + '-[0-9]+$') &&
+        !source.waitingNumbers.hasAny([old.number]) &&
+        !source.lanes[old.doctorId].waitingNumbers.hasAny([old.number]) &&
+        !sc.lanes[old.doctorId].pending.hasAny([{'id':id,'number':old.number}]) &&
+        dest.waitingNumbers.hasAny([t.number]) &&
+        dest.lanes[t.doctorId].waitingNumbers.hasAny([t.number]) &&
+        dc.lanes[t.doctorId].pending.hasAny([{'id':id,'number':t.number}]);
+    }
     function validTicketChange(hid,old,t,id) {
       let e = getAfter(changePath(hid,t.changeId)).data;
       let changed = t.diff(old).affectedKeys();
@@ -193,12 +219,13 @@ service cloud.firestore {
         t.changeId != old.get('changeId','') && !exists(changePath(hid,t.changeId)) &&
         e.ticketId == id && e.actorUid == request.auth.uid && e.createdAt == request.time &&
         e.fromDoctor == old.doctorId && e.toDoctor == t.doctorId &&
-        get(queuePath(hid,old.queueId)).data.dayKey == old.dayKey &&
         matchingChangeArchive(hid,t,id) &&
-        ((e.kind == 'correction' && changed.hasOnly(['patientName','patientGender','roomNumber','changeId']) &&
+        ((e.kind == 'correction' && get(queuePath(hid,old.queueId)).data.dayKey == old.dayKey && changed.hasOnly(['patientName','patientGender','roomNumber','changeId']) &&
           changed.hasAny(['patientName','patientGender','roomNumber']) && t.patientName.size() >= 2) ||
-         (e.kind == 'transfer' && changed.hasOnly(['doctorId','doctorName','roomNumber','changeId']) &&
-          old.doctorId != t.doctorId && validDoctorOnNewTicket(hid,t) && validLaneTransfer(hid,old,t,id)));
+         (e.kind == 'transfer' && get(queuePath(hid,old.queueId)).data.dayKey == old.dayKey && changed.hasOnly(['doctorId','doctorName','roomNumber','changeId']) &&
+          old.doctorId != t.doctorId && validDoctorOnNewTicket(hid,t) && validLaneTransfer(hid,old,t,id)) ||
+         (e.kind == 'department-transfer' && changed.hasOnly(['originQueueId','queueId','queueName','number','code','doctorId','doctorName','roomNumber','changeId']) &&
+          validDoctorOnNewTicket(hid,t) && validDepartmentTransfer(hid,old,t,id)));
     }
 
     match /hospitals/{hid} {
@@ -266,7 +293,7 @@ service cloud.firestore {
         allow get: if true;
         allow list: if isMember(hid);
         allow create: if isMember(hid) && validTicket(request.resource.data) &&
-          validDoctorOnNewTicket(hid,request.resource.data);
+          !('originQueueId' in request.resource.data) && !('changeId' in request.resource.data) && validDoctorOnNewTicket(hid,request.resource.data);
         allow update: if isMember(hid) && validTicket(request.resource.data) &&
           // Reception can advance status, never rewrite patient/doctor/room history.
           ((request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','attendance','calledAt','finishedAt','calledCounter']) &&
@@ -284,7 +311,7 @@ service cloud.firestore {
         allow create: if isMember(hid) &&
           request.resource.data.keys().hasOnly(['kind','ticketId','actorUid','fromDoctor','toDoctor','createdAt']) &&
           request.resource.data.keys().hasAll(['kind','ticketId','actorUid','fromDoctor','toDoctor','createdAt']) &&
-          request.resource.data.kind in ['correction','transfer'] &&
+          request.resource.data.kind in ['correction','transfer','department-transfer'] &&
           request.resource.data.ticketId is string && request.resource.data.ticketId.size() == 20 &&
           request.resource.data.actorUid == request.auth.uid && request.resource.data.createdAt == request.time &&
           get(ticketPath(hid,request.resource.data.ticketId)).data.get('changeId','') != changeId &&
@@ -330,7 +357,7 @@ service cloud.firestore {
             validHistoryRecord(request.resource.data,hid,date,qid,ticketId) &&
             getAfter(ticketPath(hid,ticketId)).data.attendance == request.resource.data.attendance ||
           (isMember(hid) && resource.data.status == 'waiting' &&
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['patientName','patientGender','doctorId','doctorName','roomNumber','updatedAt']) &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['patientName','patientGender','doctorId','doctorName','roomNumber','updatedAt','serviceQueueId','serviceQueueName','serviceCode','serviceNumber']) &&
            validHistoryRecord(request.resource.data,hid,date,qid,ticketId) &&
            getAfter(ticketPath(hid,ticketId)).data.get('changeId','') != get(ticketPath(hid,ticketId)).data.get('changeId','') &&
            getAfter(ticketPath(hid,ticketId)).data.patientName == request.resource.data.patientName &&

@@ -2,7 +2,7 @@
 import {
   collection,doc,getDocs,getDocFromServer,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter,deleteField,setDoc,serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
-import {planTicketChange} from './ticket-change.js?v=3.3.0';
+import {planTicketChange,planDepartmentTransfer} from './ticket-change.js?v=3.3.0';
 import {mapLimited} from './reliability.js?v=3.2.0';
 import {hospitalCustomization} from './hospital-custom.js?v=3.1.0';
 import {db,auth} from './firebase.js';
@@ -170,7 +170,7 @@ export async function performAction(hid,id,action,doctorId,counterNumber=1){
       const original=ts.data();
       const plan=planDoctorCall(q,c,doctorId,original,first.id,counter,uid,now);
       tx.update(qr,plan.queuePatch);tx.update(cr,plan.controlPatch);tx.update(tr,plan.ticketPatch);
-      if(original.patientName)tx.update(historyDoc(hid,original.dayKey,id,first.id),plan.historyPatch);
+      if(original.patientName)tx.update(historyDoc(hid,original.dayKey,original.originQueueId||id,first.id),plan.historyPatch);
       return {code:original.code,counter};
     }
     if(!['complete','skip'].includes(action))throw Error('Unknown queue action');
@@ -179,7 +179,7 @@ export async function performAction(hid,id,action,doctorId,counterNumber=1){
     if(!ts.exists())throw Error('Active ticket changed. Refresh reception.');
     const old=ts.data(),plan=planDoctorFinish(q,c,doctorId,old,counter,uid,action,now);
     tx.update(qr,plan.queuePatch);tx.update(cr,plan.controlPatch);tx.update(tr,plan.ticketPatch);
-    if(old.patientName)tx.update(historyDoc(hid,old.dayKey,id,control.activeId),plan.historyPatch);
+    if(old.patientName)tx.update(historyDoc(hid,old.dayKey,old.originQueueId||id,control.activeId),plan.historyPatch);
     return {code:old.code,status:plan.ticketPatch.status,counter};
   });
 }
@@ -224,7 +224,7 @@ export async function recallMissedTicket(hid,queueId,ticketId){
     const minutes=graceMinutes(hs.data().recallGraceMinutes);
     const plan=planRecall(qs.data(),cs.data(),old,ticketId,now,minutes,today);
     tx.update(qr,plan.queuePatch);tx.update(cr,plan.controlPatch);tx.update(tr,{...plan.ticketPatch,calledCounter:deleteField()});
-    if(old.patientName)tx.update(historyDoc(hid,old.dayKey,queueId,ticketId),{...plan.historyPatch,calledCounter:''});
+    if(old.patientName)tx.update(historyDoc(hid,old.dayKey,old.originQueueId||queueId,ticketId),{...plan.historyPatch,calledCounter:''});
     return {code:old.code,minutes};
   });
 }
@@ -247,12 +247,20 @@ export async function changeWaitingTicket(hid,qid,ticketId,doctorId,details){
   const qr=qDoc(hid,qid),cr=controlDoc(hid,qid),tr=ticketDoc(hid,ticketId);
   const [qs,cs,ts,ds]=await Promise.all([tx.get(qr),tx.get(cr),tx.get(tr),tx.get(doctorDoc(hid,doctorId))]);
   if(!qs.exists()||!cs.exists()||!ts.exists()||!ds.exists()||ts.data().queueId!==qid)throw Error('Ticket or doctor no longer available.');
-  const t=ts.data(),now=Date.now(),plan=planTicketChange(qs.data(),cs.data(),t,ticketId,ds.data(),doctorId,details,now,dayKey());
+  const t=ts.data(),doctor=ds.data(),now=Date.now(),target=doctor.departmentId;
+  let plan,dqr,dcr;
+  if(target!==qid){
+   dqr=qDoc(hid,target);dcr=controlDoc(hid,target);
+   const [dqs,dcs]=await Promise.all([tx.get(dqr),tx.get(dcr)]);
+   if(!dqs.exists()||!dcs.exists())throw Error('Destination unavailable.');
+   plan=planDepartmentTransfer(qs.data(),cs.data(),dqs.data(),dcs.data(),t,ticketId,doctor,doctorId,target,details,now,dayKey());
+  }else plan=planTicketChange(qs.data(),cs.data(),t,ticketId,doctor,doctorId,details,now,dayKey());
   if(plan.queuePatch){tx.update(qr,plan.queuePatch);tx.update(cr,plan.controlPatch);}
+  if(plan.destinationQueuePatch){tx.update(dqr,plan.destinationQueuePatch);tx.update(dcr,plan.destinationControlPatch);}
   tx.update(tr,{...plan.patch,changeId:event.id});
-  tx.update(historyDoc(hid,t.dayKey,qid,ticketId),{...plan.patch,updatedAt:now});
+  tx.update(historyDoc(hid,t.dayKey,t.originQueueId||qid,ticketId),plan.archivePatch||{...plan.patch,updatedAt:now});
   tx.set(event,{kind:plan.kind,ticketId,actorUid:uid,fromDoctor:t.doctorId,toDoctor:doctorId,createdAt:serverTimestamp()});
-  return plan.kind;
+  return {kind:plan.kind,code:plan.patch.code||t.code};
  });
 }
 export async function readTicketChanges(hid){

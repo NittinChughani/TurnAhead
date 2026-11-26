@@ -29,12 +29,14 @@ function setSyncStatus(){
 function applyTicket(ticket){
   if(!ticket||missingConfirmed&&ticket._fromCache)return;
   missingConfirmed=false;
-  if(!shouldApplyTicket(currentTicket,ticket))return;
+  if(!shouldApplyTicket(currentTicket,ticket)||ticket._fromCache&&currentTicket&&!currentTicket._fromCache&&ticket.changeId!==currentTicket.changeId)return;
   currentTicket=ticket;
   if(!ticket._fromCache)lastConfirmed=Date.now();
   if(subscribedQueueId!==ticket.queueId){
     stopQueue?.();subscribedQueueId=ticket.queueId;currentQueue=null;
-    stopQueue=observeQueue(hospitalId,ticket.queueId,q=>{
+    const queueId=ticket.queueId;
+    stopQueue=observeQueue(hospitalId,queueId,q=>{
+      if(subscribedQueueId!==queueId)return;
       if(q)currentQueue=q;
       else if(!['completed','skipped'].includes(currentTicket?.status))$('sync-state').textContent='DEPARTMENT UNAVAILABLE';
       update();
@@ -63,6 +65,7 @@ function update(){
   const ahead=validWait?estimate.peopleAhead:null;
   loader.hidden=true;$('track-error').hidden=true;$('track-content').hidden=false;
   $('track-code').textContent=t.code;
+  $('track-transfer').hidden=!t.originQueueId;$('track-transfer').textContent=t.originQueueId?'Your ticket was transferred. Use the current number shown above; your original QR still works.':'';
   $('track-queue').textContent=`${facility} · ${q?.name||t.queueName}`;
   $('track-patient').textContent=t.patientName?`Ticket for ${patientDisplayName(t)}`:'Patient name not recorded on this older ticket';
   $('track-visit').textContent=t.doctorName?`Visiting Dr. ${t.doctorName}${t.roomNumber?' · Room '+t.roomNumber:''}`:'Doctor / room details not recorded on this older ticket';

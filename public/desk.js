@@ -266,7 +266,7 @@ $('recent-tickets').addEventListener('click',e=>{
  const b=e.target.closest('[data-change-ticket]');if(!b||!mutationAllowed())return;
  const ticket=tickets.find(x=>x.id===b.dataset.changeTicket&&x.status==='waiting');if(!ticket)return;
  editTicketId=ticket.id;$('change-name').value=ticket.patientName;$('change-title').value=ticket.patientGender;$('change-room').value=ticket.roomNumber;
- $('change-doctor').innerHTML=doctors.filter(x=>x.departmentId===ticket.queueId&&(x.active||x.id===ticket.doctorId)).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join('');
+ $('change-doctor').innerHTML=doctors.filter(x=>x.active||x.id===ticket.doctorId).map(x=>'<option value="'+esc(x.id)+'">'+esc((queues.find(q=>q.id===x.departmentId)?.name||'Department')+' · '+x.name)+'</option>').join('');
  $('change-doctor').value=ticket.doctorId;$('change-mode').value='correction';$('change-state').textContent='';$('ticket-change-dialog').showModal();
 });
 $('change-mode').addEventListener('change',()=>{const transfer=$('change-mode').value==='transfer';$('change-name').disabled=transfer;$('change-title').disabled=transfer;$('change-doctor').disabled=!transfer;});
@@ -278,7 +278,7 @@ $('ticket-change-form').addEventListener('submit',async e=>{
  if(mode==='transfer'&&doctorId===ticket.doctorId){$('change-state').textContent='Choose a different doctor.';return;}
  const hid=currentHospital.id,epoch=workspaceEpoch,token=beginMutation();if(!token)return;
  const b=e.target.querySelector('[type=submit]');b.disabled=true;
- try{await changeWaitingTicket(hid,ticket.queueId,ticket.id,doctorId,details);if(epoch===workspaceEpoch){$('ticket-change-dialog').close();notice('Ticket updated. The existing QR remains valid.');}}
+ try{const result=await changeWaitingTicket(hid,ticket.queueId,ticket.id,doctorId,details);if(epoch===workspaceEpoch){$('ticket-change-dialog').close();notice(result.kind==='department-transfer'?'Transferred to '+result.code+'. Existing QR remains valid; tell the patient their new code or reprint.':'Ticket updated. The existing QR remains valid.');}}
  catch(err){if(epoch===workspaceEpoch)$('change-state').textContent=helpfulError(err);}
  finally{b.disabled=false;endMutation(token);}
 });
