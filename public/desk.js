@@ -3,7 +3,7 @@ import {observeAuth, login, logout, requestVerification, refreshVerification,
   myMemberships, getHospital, watchMembership,updateOwnProfilePhoto,watchHospital} from './org-store.js?v=3.2.0';
 import {canManageStaff, canManageDepartments, boardLink, isStaffRole, staffGreeting} from './org-model.js';
 import {bootstrap, rollOverAll, observeQueues, observeTickets,
-  issueTicket, createQueue, performAction,recallMissedTicket,setDoctorDelay} from './store.js?v=3.3.0';
+  issueTicket, createQueue, performAction,recallMissedTicket,setDoctorDelay,changeWaitingTicket} from './store.js?v=3.3.0';
 import {dayKey,patientDisplayName,getDoctorLane,doctorActiveCodes,ticketStatusLabel} from './queue-engine.js?v=2.6.2';
 import {watchDoctors} from './doctors.js';
 import {doctorAvailable} from './doctor-model.js';
@@ -33,6 +33,7 @@ function updateConnection(){
 function beginMutation(){if(!mutationAllowed()){notice('Wait for a live connection and the current operation to finish.',true);return null;}const token=gate.begin();render();return token;}
 function endMutation(token){gate.end(token);if(currentHospital)render();else updateConnection();}
 function clearPrivateDesk(){
+ const edit=$('ticket-change-dialog');if(edit?.open)edit.close();$('ticket-change-form')?.reset();
  currentTicket=null;queues=[];tickets=[];doctors=[];selectedQueue=null;selectedDoctor=null;queueConfirmed=false;
  for(const id of ['issue-modal','ticket-modal','queue-modal']){const el=$(id);if(el)el.hidden=true;}
  for(const id of ['recent-tickets','queue-detail','queue-tabs','missed-list','receipt-patient','receipt-visit','receipt-code','receipt-link','receipt-issued','receipt-queue','receipt-counter','receipt-facility','receipt-custom-note'])$(id)?.replaceChildren();
@@ -93,7 +94,7 @@ function render(){
   if(!mutationAllowed())document.querySelectorAll('#queue-detail [data-action],#missed-list [data-recall],#issue-form [type=submit]').forEach(b=>b.disabled=true);
   else if(!$('issue-form').querySelector('[type=submit]').classList.contains('is-loading'))$('issue-form').querySelector('[type=submit]').disabled=false;
   $('activity-count').textContent=`${latest.length} recent`;
-  $('recent-tickets').innerHTML=latest.length?latest.slice(0,14).map(t=>`<div class="activity-item"><div class="activity-token">${esc(t.code)}</div><div class="activity-main"><b>${esc(t.patientName||'Older ticket')} · ${esc(t.queueName||'Service desk')}</b><small>Dr. ${esc(t.doctorName||'—')} · ${esc(fmt(t.createdAt))}${t.calledCounter?' · '+esc(t.calledCounter):''}</small></div><span class="activity-state">${esc(ticketStatusLabel(t))}</span></div>`).join(''):'<div class="empty-state">No tickets today. Create the first walk-in ticket to get started.</div>';
+  $('recent-tickets').innerHTML=latest.length?latest.slice(0,14).map(t=>`<div class="activity-item"><div class="activity-token">${esc(t.code)}</div><div class="activity-main"><b>${esc(t.patientName||'Older ticket')} · ${esc(t.queueName||'Service desk')}</b><small>Dr. ${esc(t.doctorName||'—')} · ${esc(fmt(t.createdAt))}${t.calledCounter?' · '+esc(t.calledCounter):''}</small></div><span class="activity-state">${esc(ticketStatusLabel(t))}</span>${t.status==='waiting'?'<button type="button" class="btn btn-small btn-outline" data-change-ticket="'+esc(t.id)+'" '+(!mutationAllowed()?'disabled':'')+'>Edit / transfer</button>':''}</div>`).join(''):'<div class="empty-state">No tickets today. Create the first walk-in ticket to get started.</div>';
 }
 function renderV26(){
   if(!currentHospital)return;
@@ -258,4 +259,26 @@ $('staff-profile-file').addEventListener('change',async e=>{
 $('staff-profile-remove').addEventListener('click',async()=>{
  if(!currentHospital)return;try{await updateOwnProfilePhoto(currentHospital.id,'');notice('Profile photo removed.');}
  catch(err){notice(helpfulError(err),true);}
+});
+
+let editTicketId=null;
+$('recent-tickets').addEventListener('click',e=>{
+ const b=e.target.closest('[data-change-ticket]');if(!b||!mutationAllowed())return;
+ const ticket=tickets.find(x=>x.id===b.dataset.changeTicket&&x.status==='waiting');if(!ticket)return;
+ editTicketId=ticket.id;$('change-name').value=ticket.patientName;$('change-title').value=ticket.patientGender;$('change-room').value=ticket.roomNumber;
+ $('change-doctor').innerHTML=doctors.filter(x=>x.departmentId===ticket.queueId&&(x.active||x.id===ticket.doctorId)).map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join('');
+ $('change-doctor').value=ticket.doctorId;$('change-mode').value='correction';$('change-state').textContent='';$('ticket-change-dialog').showModal();
+});
+$('change-mode').addEventListener('change',()=>{const transfer=$('change-mode').value==='transfer';$('change-name').disabled=transfer;$('change-title').disabled=transfer;$('change-doctor').disabled=!transfer;});
+$('change-cancel').onclick=()=>{$('ticket-change-dialog').close();$('ticket-change-form').reset();editTicketId=null;};
+$('ticket-change-dialog').addEventListener('close',()=>{$('ticket-change-form').reset();$('change-name').disabled=false;$('change-title').disabled=false;$('change-doctor').disabled=true;editTicketId=null;});
+$('ticket-change-form').addEventListener('submit',async e=>{
+ e.preventDefault();const ticket=tickets.find(x=>x.id===editTicketId&&x.status==='waiting');if(!ticket||!currentHospital){$('change-state').textContent='Ticket is no longer waiting.';return;}
+ const mode=$('change-mode').value,doctorId=mode==='transfer'?$('change-doctor').value:ticket.doctorId,details={patientName:$('change-name').value,patientGender:$('change-title').value,roomNumber:$('change-room').value};
+ if(mode==='transfer'&&doctorId===ticket.doctorId){$('change-state').textContent='Choose a different doctor.';return;}
+ const hid=currentHospital.id,epoch=workspaceEpoch,token=beginMutation();if(!token)return;
+ const b=e.target.querySelector('[type=submit]');b.disabled=true;
+ try{await changeWaitingTicket(hid,ticket.queueId,ticket.id,doctorId,details);if(epoch===workspaceEpoch){$('ticket-change-dialog').close();notice('Ticket updated. The existing QR remains valid.');}}
+ catch(err){if(epoch===workspaceEpoch)$('change-state').textContent=helpfulError(err);}
+ finally{b.disabled=false;endMutation(token);}
 });

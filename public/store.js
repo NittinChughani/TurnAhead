@@ -2,6 +2,7 @@
 import {
   collection,doc,getDocs,getDocFromServer,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter,deleteField,setDoc,serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+import {planTicketChange} from './ticket-change.js?v=3.3.0';
 import {mapLimited} from './reliability.js?v=3.2.0';
 import {hospitalCustomization} from './hospital-custom.js?v=3.1.0';
 import {db,auth} from './firebase.js';
@@ -237,4 +238,24 @@ export async function setDoctorDelay(hid,qid,doctorId,reason){
   const q=qs.data(),lane=getDoctorLane(q,doctorId),now=Date.now();
   tx.update(qr,{lanes:{...q.lanes,[doctorId]:{...lane,pauseReason:reason,updatedAt:now}},updatedAt:now});
  });
+}
+
+export async function changeWaitingTicket(hid,qid,ticketId,doctorId,details){
+ const uid=auth.currentUser?.uid;if(!uid)throw Error('Sign in first.');
+ const event=doc(collection(db,'hospitals',hid,'ticketChanges'));
+ return runTransaction(db,async tx=>{
+  const qr=qDoc(hid,qid),cr=controlDoc(hid,qid),tr=ticketDoc(hid,ticketId);
+  const [qs,cs,ts,ds]=await Promise.all([tx.get(qr),tx.get(cr),tx.get(tr),tx.get(doctorDoc(hid,doctorId))]);
+  if(!qs.exists()||!cs.exists()||!ts.exists()||!ds.exists()||ts.data().queueId!==qid)throw Error('Ticket or doctor no longer available.');
+  const t=ts.data(),now=Date.now(),plan=planTicketChange(qs.data(),cs.data(),t,ticketId,ds.data(),doctorId,details,now,dayKey());
+  if(plan.queuePatch){tx.update(qr,plan.queuePatch);tx.update(cr,plan.controlPatch);}
+  tx.update(tr,{...plan.patch,changeId:event.id});
+  tx.update(historyDoc(hid,t.dayKey,qid,ticketId),{...plan.patch,updatedAt:now});
+  tx.set(event,{kind:plan.kind,ticketId,actorUid:uid,fromDoctor:t.doctorId,toDoctor:doctorId,createdAt:serverTimestamp()});
+  return plan.kind;
+ });
+}
+export async function readTicketChanges(hid){
+ const snap=await getDocs(query(collection(db,'hospitals',hid,'ticketChanges'),orderBy('createdAt','desc'),limit(100)));
+ return snap.docs.map(d=>d.data());
 }

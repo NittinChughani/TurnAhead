@@ -103,7 +103,8 @@ service cloud.firestore {
     // v2.3 tickets remain readable and may be completed during a rules-first rollout.
     // New doctor fields are validated when present, and the registered doctor is verified on create.
     function validTicket(data) {
-      return data.keys().hasOnly(['queueId','queueName','code','number','dayKey','status','createdAt','calledAt','finishedAt','patientName','attendance','patientGender','doctorId','doctorName','roomNumber','calledCounter','missedAt','recalledAt','recallCount']) &&
+      return data.keys().hasOnly(['queueId','queueName','code','number','dayKey','status','createdAt','calledAt','finishedAt','patientName','attendance','patientGender','doctorId','doctorName','roomNumber','calledCounter','missedAt','recalledAt','recallCount','changeId']) &&
+        (!('changeId' in data) || (data.changeId is string && data.changeId.size() == 20)) &&
         data.get('recallCount',0) is int && data.get('recallCount',0) >= 0 && data.get('recallCount',0) <= 1 &&
         (!('missedAt' in data) || data.missedAt is number) &&
         (!('recalledAt' in data) || data.recalledAt is number) &&
@@ -164,6 +165,42 @@ service cloud.firestore {
         incoming.diff(old).affectedKeys().hasOnly(['status','attendance','calledAt','finishedAt','calledCounter','missedAt','recalledAt','recallCount']) &&
         getAfter(/databases/$(database)/documents/hospitals/$(hid)/queues/$(old.queueId)).data.waitingNumbers.hasAny([old.number]);
     }
+
+    function changePath(hid,id) { return /databases/$(database)/documents/hospitals/$(hid)/ticketChanges/$(id); }
+    function archivePath(hid,day,qid,id) { return /databases/$(database)/documents/hospitals/$(hid)/history/$(day)/departments/$(qid)/records/$(id); }
+    function controlPath(hid,qid) { return /databases/$(database)/documents/hospitals/$(hid)/controls/$(qid); }
+    function queuePath(hid,qid) { return /databases/$(database)/documents/hospitals/$(hid)/queues/$(qid); }
+    function matchingChangeArchive(hid,t,id) {
+      let a = getAfter(archivePath(hid,t.dayKey,t.queueId,id)).data;
+      return a.patientName == t.patientName && a.patientGender == t.patientGender &&
+        a.roomNumber == t.roomNumber && a.doctorId == t.doctorId && a.doctorName == t.doctorName &&
+        a.status == 'waiting' && a.code == t.code;
+    }
+    function validLaneTransfer(hid,old,t,id) {
+      let q = getAfter(queuePath(hid,t.queueId)).data;
+      let c = getAfter(controlPath(hid,t.queueId)).data;
+      let pending = {'id':id,'number':t.number};
+      return !q.paused && !q.lanes[t.doctorId].paused &&
+        !q.lanes[old.doctorId].waitingNumbers.hasAny([t.number]) &&
+        q.lanes[t.doctorId].waitingNumbers.hasAny([t.number]) &&
+        !c.lanes[old.doctorId].pending.hasAny([pending]) &&
+        c.lanes[t.doctorId].pending.hasAny([pending]);
+    }
+    function validTicketChange(hid,old,t,id) {
+      let e = getAfter(changePath(hid,t.changeId)).data;
+      let changed = t.diff(old).affectedKeys();
+      return old.status == 'waiting' && t.status == 'waiting' &&
+        t.changeId != old.get('changeId','') && !exists(changePath(hid,t.changeId)) &&
+        e.ticketId == id && e.actorUid == request.auth.uid && e.createdAt == request.time &&
+        e.fromDoctor == old.doctorId && e.toDoctor == t.doctorId &&
+        get(queuePath(hid,old.queueId)).data.dayKey == old.dayKey &&
+        matchingChangeArchive(hid,t,id) &&
+        ((e.kind == 'correction' && changed.hasOnly(['patientName','patientGender','roomNumber','changeId']) &&
+          changed.hasAny(['patientName','patientGender','roomNumber']) && t.patientName.size() >= 2) ||
+         (e.kind == 'transfer' && changed.hasOnly(['doctorId','doctorName','roomNumber','changeId']) &&
+          old.doctorId != t.doctorId && validDoctorOnNewTicket(hid,t) && validLaneTransfer(hid,old,t,id)));
+    }
+
     match /hospitals/{hid} {
       // Public landing/board can fetch a *known* hospital ID, never enumerate hospitals.
       allow get: if true;
@@ -238,8 +275,21 @@ service cloud.firestore {
              (resource.data.status == 'called' && request.resource.data.status in ['completed','skipped'] &&
               request.resource.data.finishedAt is number &&
               request.resource.data.attendance == (request.resource.data.status == 'completed' ? 'present' : 'missed')))) ||
-           validRecall(hid,resource.data,request.resource.data,ticketId));
+           validRecall(hid,resource.data,request.resource.data,ticketId) ||
+           validTicketChange(hid,resource.data,request.resource.data,ticketId));
         allow delete: if false;
+      }
+      match /ticketChanges/{changeId} {
+        allow get, list: if owner(hid);
+        allow create: if isMember(hid) &&
+          request.resource.data.keys().hasOnly(['kind','ticketId','actorUid','fromDoctor','toDoctor','createdAt']) &&
+          request.resource.data.keys().hasAll(['kind','ticketId','actorUid','fromDoctor','toDoctor','createdAt']) &&
+          request.resource.data.kind in ['correction','transfer'] &&
+          request.resource.data.ticketId is string && request.resource.data.ticketId.size() == 20 &&
+          request.resource.data.actorUid == request.auth.uid && request.resource.data.createdAt == request.time &&
+          get(ticketPath(hid,request.resource.data.ticketId)).data.get('changeId','') != changeId &&
+          getAfter(ticketPath(hid,request.resource.data.ticketId)).data.changeId == changeId;
+        allow update, delete: if false;
       }
       // Feedback is immutable, one private response per completed bearer-QR ticket.
       // Device clock skew must not block feedback once a ticket is completed.
@@ -278,7 +328,14 @@ service cloud.firestore {
             (!('calledBy' in request.resource.data) || request.resource.data.calledBy == request.auth.uid || resource.data.get('calledBy','') == request.resource.data.calledBy) &&
             (!('finishedBy' in request.resource.data) || request.resource.data.finishedBy == request.auth.uid || resource.data.get('finishedBy','') == request.resource.data.finishedBy) &&
             validHistoryRecord(request.resource.data,hid,date,qid,ticketId) &&
-            getAfter(ticketPath(hid,ticketId)).data.attendance == request.resource.data.attendance;
+            getAfter(ticketPath(hid,ticketId)).data.attendance == request.resource.data.attendance ||
+          (isMember(hid) && resource.data.status == 'waiting' &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['patientName','patientGender','doctorId','doctorName','roomNumber','updatedAt']) &&
+           validHistoryRecord(request.resource.data,hid,date,qid,ticketId) &&
+           getAfter(ticketPath(hid,ticketId)).data.get('changeId','') != get(ticketPath(hid,ticketId)).data.get('changeId','') &&
+           getAfter(ticketPath(hid,ticketId)).data.patientName == request.resource.data.patientName &&
+           getAfter(ticketPath(hid,ticketId)).data.doctorName == request.resource.data.doctorName &&
+           getAfter(ticketPath(hid,ticketId)).data.attendance == request.resource.data.attendance);
           allow delete: if false;
         }
       }
