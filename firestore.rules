@@ -306,6 +306,17 @@ service cloud.firestore {
            validTicketChange(hid,resource.data,request.resource.data,ticketId));
         allow delete: if false;
       }
+      match /activity/{eventId} {
+        allow get, list: if owner(hid);
+        allow create: if isMember(hid) &&
+          request.resource.data.keys().hasOnly(['actorUid','kind','createdAt']) &&
+          request.resource.data.keys().hasAll(['actorUid','kind','createdAt']) &&
+          request.resource.data.actorUid == request.auth.uid && request.resource.data.createdAt == request.time &&
+          (request.resource.data.kind in ['ticket-issued','ticket-called','ticket-completed','ticket-skipped','ticket-recalled','doctor-paused','doctor-resumed','department-paused','department-resumed','delay-updated'] ||
+           (manager(hid) && request.resource.data.kind == 'department-created') ||
+           (owner(hid) && request.resource.data.kind in ['invitation-created','invitation-revoked','staff-updated','hospital-renamed','recall-grace-updated','branding-updated','doctor-created','doctor-updated']));
+        allow update, delete: if false;
+      }
       match /ticketChanges/{changeId} {
         allow get, list: if owner(hid);
         allow create: if isMember(hid) &&

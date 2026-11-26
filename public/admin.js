@@ -1,10 +1,11 @@
+import {readActivity} from './activity-store.js?v=3.3.0';
 import {configured,auth,helpfulError} from './firebase.js';
 import {observeAuth,login,logout,refreshVerification,requestVerification,myMemberships,getHospital,
-  watchMembership,watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,updateRecallGrace,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js?v=3.2.0';
-import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory,observeFeedback,readTicketChanges,searchHistoryDate} from './store.js?v=3.3.0';
+  watchMembership,watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,updateRecallGrace,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js?v=3.3.1';
+import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory,observeFeedback,readTicketChanges,searchHistoryDate} from './store.js?v=3.3.1';
 import {canChangeRole,normalizeEmail,invitationLink,boardLink,staffGreeting} from './org-model.js';
 import {dayKey,patientDisplayName,ticketStatusLabel} from './queue-engine.js?v=2.6.2';
-import {watchDoctors,addDoctor,changeDoctor} from './doctors.js';
+import {watchDoctors,addDoctor,changeDoctor} from './doctors.js?v=3.3.1';
 import {avatarHTML,avatarContents,compressProfilePhoto} from './profile-photo.js';
 import {patientReportRows,downloadPatientReport} from './patient-report.js?v=3.2.0';
 import {bindLanguage,t} from './locale.js?v=2.6.1';
@@ -328,9 +329,9 @@ function applyHistoryFilters(parent){
  parent.querySelector('[data-filter-count]').textContent=shown+' matching loaded records';
 }
 async function loadActivity(){
- if(!hospital)return;const hid=hospital.id,epoch=authEpoch,el=$('activity-list');el.textContent='Loading recent ticket changes…';
- try{const rows=await readTicketChanges(hid);if(epoch!==authEpoch||hospital?.id!==hid)return;
- el.innerHTML=rows.length?rows.map(r=>'<div class="admin-person"><div class="person-info"><strong>'+esc(r.kind==='department-transfer'?'Department transfer':r.kind==='transfer'?'Doctor transfer':'Patient details corrected')+'</strong><small>'+esc(issuingReceptionist({issuedBy:r.actorUid}))+' · '+esc(r.createdAt?.toDate()?.toLocaleString('en-PK',{timeZone:'Asia/Karachi'})||'—')+'</small></div><span class="role-chip">'+esc(r.kind)+'</span></div>').join(''):'<div class="empty-state">No ticket changes recorded yet.</div>';
+ if(!hospital)return;const hid=hospital.id,epoch=authEpoch,el=$('activity-list');el.textContent='Loading recent operations…';
+ try{const [changes,events]=await Promise.all([readTicketChanges(hid),readActivity(hid)]);const rows=[...changes,...events].sort((a,b)=>(b.createdAt?.toMillis()||0)-(a.createdAt?.toMillis()||0)).slice(0,100);if(epoch!==authEpoch||hospital?.id!==hid)return;
+ el.innerHTML=rows.length?rows.map(r=>'<div class="admin-person"><div class="person-info"><strong>'+esc(r.kind==='department-transfer'?'Department transfer':r.kind==='transfer'?'Doctor transfer':r.kind==='correction'?'Patient details corrected':r.kind.replace(/-/g,' ').replace(/^./,x=>x.toUpperCase()))+'</strong><small>'+esc(issuingReceptionist({issuedBy:r.actorUid}))+' · '+esc(r.createdAt?.toDate()?.toLocaleString('en-PK',{timeZone:'Asia/Karachi'})||'—')+'</small></div><span class="role-chip">'+esc(r.kind)+'</span></div>').join(''):'<div class="empty-state">No operations recorded yet.</div>';
  }catch(e){if(epoch===authEpoch)el.textContent=helpfulError(e);}
 }
 $('activity-refresh').addEventListener('click',loadActivity);

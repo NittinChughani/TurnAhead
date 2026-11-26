@@ -8,6 +8,7 @@ import {
   sendEmailVerification, sendPasswordResetEmail, signOut, reload
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import {auth, db} from './firebase.js';
+import {appendActivity} from './activity-store.js?v=3.3.0';
 import {validProfilePhoto} from './profile-photo.js';
 import {normalizeEmail, validHospitalName, canInviteRole, canChangeRole,
   membershipId, INVITE_DAYS, validStaffProfile} from './org-model.js';
@@ -77,14 +78,14 @@ export async function inviteStaff(hospitalId,email,role,actorRole,name,gender,us
   if(!canInviteRole(actorRole,role)) throw Error('Only the designated hospital administrator can add authorized staff.');
   const profile=validStaffProfile(name,gender);
   const now=Date.now();
-  await setDoc(inviteRef(hospitalId,email),{
+  const batch=writeBatch(db);batch.set(inviteRef(hospitalId,email),{
     email,role,status:'pending',createdBy:user.uid,
     createdAt:serverTimestamp(),expiresAt:Timestamp.fromMillis(now+INVITE_DAYS*86400000),
     acceptedUid:null,acceptedAt:null,...profile
-  });
+  });appendActivity(batch,hospitalId,'invitation-created');await batch.commit();
 }
 export async function revokeInvitation(hospitalId,email) {
-  await updateDoc(inviteRef(hospitalId,email),{status:'revoked'});
+  const batch=writeBatch(db);batch.update(inviteRef(hospitalId,email),{status:'revoked'});appendActivity(batch,hospitalId,'invitation-revoked');await batch.commit();
 }
 export function watchInvitations(hospitalId,next,error) {
   return onSnapshot(collection(db,'hospitals',hospitalId,'invites'),
@@ -100,10 +101,10 @@ export async function updateStaff(hospitalId,member,changes,actorRole) {
   if('role' in changes) patch.role=changes.role;
   if('active' in changes) patch.active=Boolean(changes.active);
   if('displayName' in changes||'gender' in changes)Object.assign(patch,validStaffProfile(changes.displayName??member.displayName,changes.gender??member.gender));
-  await updateDoc(memberRef(hospitalId,member.uid),patch);
+  const batch=writeBatch(db);batch.update(memberRef(hospitalId,member.uid),patch);appendActivity(batch,hospitalId,'staff-updated');await batch.commit();
 }
 export async function renameHospital(hospitalId,name) {
-  await updateDoc(hospitalRef(hospitalId),{name:validHospitalName(name),updatedAt:serverTimestamp()});
+  const batch=writeBatch(db);batch.update(hospitalRef(hospitalId),{name:validHospitalName(name),updatedAt:serverTimestamp()});appendActivity(batch,hospitalId,'hospital-renamed');await batch.commit();
 }
 
 /** Sends Firebase's secure password-reset email; administrators cannot view or set staff passwords. */
@@ -120,10 +121,10 @@ export async function updateOwnProfilePhoto(hospitalId,photo,user=auth.currentUs
 
 export async function updateRecallGrace(hospitalId,minutes){
   if(!Number.isInteger(minutes)||minutes<1||minutes>120)throw Error('Choose a grace period between 1 and 120 minutes.');
-  await updateDoc(hospitalRef(hospitalId),{recallGraceMinutes:minutes,updatedAt:serverTimestamp()});
+  const batch=writeBatch(db);batch.update(hospitalRef(hospitalId),{recallGraceMinutes:minutes,updatedAt:serverTimestamp()});appendActivity(batch,hospitalId,'recall-grace-updated');await batch.commit();
 }
 
 export async function updateHospitalCustomization(hospitalId,customization){
-  await updateDoc(hospitalRef(hospitalId),{customization,updatedAt:serverTimestamp()});
+  const batch=writeBatch(db);batch.update(hospitalRef(hospitalId),{customization,updatedAt:serverTimestamp()});appendActivity(batch,hospitalId,'branding-updated');await batch.commit();
 }
 export function watchHospital(id,next,error){return onSnapshot(hospitalRef(id),snap=>{if(snap.exists()&&snap.data().status==='active')next({id:snap.id,...snap.data()});},error);}

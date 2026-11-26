@@ -164,3 +164,13 @@ test('cross-department transfer retains original archive, new code, and can be c
  assert.equal((await getDoc(archive(owner))).data().status,'completed');
  assert.equal((await getDoc(archive(owner))).data().serviceCode,'RAD-001');
 });
+
+test('activity events are owner-readable, immutable, restricted by actor and role',async()=>{
+ const staff=user('staff'),owner=user('owner'),event='A'.repeat(20),path=db=>p(db,'activity',event);
+ const data={kind:'ticket-issued',actorUid:'staff',createdAt:serverTimestamp()};
+ await assertFails(setDoc(path(user('disabled')),data));await assertFails(setDoc(path(staff),{...data,actorUid:'owner'}));
+ await assertFails(setDoc(path(staff),{...data,kind:'staff-updated'}));await assertFails(setDoc(path(staff),{...data,patientName:'Private'}));
+ await assertSucceeds(setDoc(path(staff),data));await assertSucceeds(getDoc(path(owner)));await assertFails(getDoc(path(staff)));
+ await assertFails(updateDoc(path(owner),{kind:'ticket-called'}));await assertFails(deleteDoc(path(owner)));
+ await assertSucceeds(setDoc(p(owner,'activity','B'.repeat(20)),{kind:'staff-updated',actorUid:'owner',createdAt:serverTimestamp()}));
+});
