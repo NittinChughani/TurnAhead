@@ -1,7 +1,7 @@
 import {configured,auth,helpfulError} from './firebase.js';
 import {observeAuth,login,logout,refreshVerification,requestVerification,myMemberships,getHospital,
   watchMembership,watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,updateRecallGrace,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js?v=3.2.0';
-import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory,observeFeedback} from './store.js?v=3.2.0';
+import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory,observeFeedback,readTicketChanges} from './store.js?v=3.3.0';
 import {canChangeRole,normalizeEmail,invitationLink,boardLink,staffGreeting} from './org-model.js';
 import {dayKey,patientDisplayName,ticketStatusLabel} from './queue-engine.js?v=2.6.2';
 import {watchDoctors,addDoctor,changeDoctor} from './doctors.js';
@@ -19,13 +19,13 @@ const show=(id,value)=>$(id).hidden=!value;
 function toast(message,error=false){const el=$('admin-toast');el.textContent=message;el.classList.toggle('error',error);show('admin-toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('admin-toast',false),4800);}
 function stop(){resetV3();unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;editingMember=null;editingDoctor=null;doctors=[];members=[];invites=[];departments=[];tickets=[];historyDays=[];archiveCursors.clear();historyRecords.clear();
   feedbackRecords=[];['history-detail-modal','doctor-edit-modal','staff-edit-modal'].forEach(id=>show(id,false));
-  for(const id of ['patient-ticket-list','history-days','doctor-list','staff-list','invite-list','department-list','feedback-list','history-detail-body','history-detail-title','onboarding-list','admin-profile-avatar'])$(id)?.replaceChildren();
+  for(const id of ['patient-ticket-list','history-days','doctor-list','staff-list','invite-list','department-list','feedback-list','history-detail-body','history-detail-title','onboarding-list','admin-profile-avatar','activity-list'])$(id)?.replaceChildren();
   for(const id of ['invitation-url','invite-email','invite-name','staff-edit-name','staff-edit-email','doctor-edit-name']){const el=$(id);if(el){if('value' in el)el.value='';else el.textContent='';}}
   show('invitation-link',false);}
 /** Keep the signed-in landing view focused: only overview cards and the profile. */
 const adminNavigation=document.querySelector('.admin-section-nav');
 function showAdminSection(section,scroll=false){
-  const available=new Set(['overview','team','invites','departments','doctors','patients','history','feedback','settings','analytics','customization','onboarding']);
+  const available=new Set(['overview','team','invites','departments','doctors','patients','history','feedback','settings','analytics','customization','onboarding','activity']);
   const selected=available.has(section)?section:'overview';
   $('admin-overview').hidden=selected!=='overview';
   document.querySelectorAll('[data-admin-section]').forEach(panel=>{panel.hidden=panel.dataset.adminSection!==selected;});
@@ -34,6 +34,7 @@ function showAdminSection(section,scroll=false){
     button.classList.toggle('is-active',active);
     if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
   });
+  if(selected==='activity')loadActivity();
   if(selected==='onboarding')renderOnboarding({hospital,departments,doctors,members});
   if(scroll)adminNavigation.scrollIntoView({behavior:'smooth',block:'start'});
 }
@@ -156,13 +157,13 @@ $('doctor-edit-form').addEventListener('submit',async e=>{
 function renderHistory(){
   const host=$('history-days');
   if(!historyDays.length){host.innerHTML='<div class="empty-state">No dated patient records yet. New tickets appear here automatically.</div>';return;}
-  host.innerHTML=historyDays.map(date=>`<details class="history-day" data-history-day="${esc(date)}"><summary><b>${esc(date)}</b><span>Search by department and ticket number ↗</span></summary><div class="history-tools"><label>Department<select data-history-dept="${esc(date)}">${departments.map(d=>`<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.prefix)})</option>`).join('')}</select></label><label>Ticket number<input type="search" data-history-code="${esc(date)}" placeholder="CAR-001" maxlength="24"></label><button class="btn btn-small btn-primary" type="button" data-history-search="${esc(date)}">Search</button><button class="btn btn-small btn-outline" type="button" data-history-recent="${esc(date)}">Show recent</button></div><div class="history-results" data-history-results="${esc(date)}">Select a department to view its records.</div><button class="btn btn-small btn-outline history-more" data-history-more="${esc(date)}" type="button" hidden>Load 100 more ↗</button></details>`).join('');
+  host.innerHTML=historyDays.map(date=>`<details class="history-day" data-history-day="${esc(date)}"><summary><b>${esc(date)}</b><span>Search by department and ticket number ↗</span></summary><div class="history-tools"><label>Department<select data-history-dept="${esc(date)}">${departments.map(d=>`<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.prefix)})</option>`).join('')}</select></label><label>Ticket number<input type="search" data-history-code="${esc(date)}" placeholder="CAR-001" maxlength="24"></label><button class="btn btn-small btn-primary" type="button" data-history-search="${esc(date)}">Search</button><button class="btn btn-small btn-outline" type="button" data-history-recent="${esc(date)}">Show recent</button></div><div class="history-filter-tools"><label>Doctor<select data-filter="doctor"><option value="">All</option>${doctors.map(d=>'<option value="'+esc(d.id)+'">'+esc(d.name)+'</option>').join('')}</select></label><label>Issuing counter<select data-filter="counter"><option value="">All</option>${Array.from({length:12},(_,i)=>'<option>Counter '+(i+1)+'</option>').join('')}</select></label><label>Issuer<select data-filter="staff"><option value="">All</option>${members.map(m=>'<option value="'+esc(m.uid)+'">'+esc(staffGreeting(m))+'</option>').join('')}</select></label><label>Status<select data-filter="status"><option value="">All</option><option value="waiting">Waiting</option><option value="called">Called</option><option value="completed">Completed</option><option value="skipped">Missed</option></select></label><small>Filters apply to loaded pages. Load more to search more records.</small><p data-filter-count role="status"></p></div><div class="history-results" data-history-results="${esc(date)}">Select a department to view its records.</div><button class="btn btn-small btn-outline history-more" data-history-more="${esc(date)}" type="button" hidden>Load 100 more ↗</button></details>`).join('');
 }
 function historyRecordHtml(t,date,departmentId){
   const presence=t.attendance==='present'?(t.recallCount?'Recalled & completed':'Attended'):t.attendance==='missed'?'Missed':['waiting','called'].includes(t.status)&&date<dayKey()?'Unresolved after day end':'Pending';
   const key=[date,departmentId,t.id].join(':');
   historyRecords.set(key,t);
-  return `<div class="history-record"><div><strong>${esc(t.code)} · ${esc(patientDisplayName(t))}</strong><small>${esc(t.queueName||'Department')} · ${esc(presence)}</small></div><div class="history-record-actions"><span class="activity-state">${esc(ticketStatusLabel(t))}</span><button type="button" class="btn btn-small btn-outline" data-record-key="${esc(key)}">Details</button></div></div>`;
+  return `<div class="history-record" data-filter-doctor="${esc(t.doctorId||'')}" data-filter-counter="${esc(t.issuedCounter||'')}" data-filter-staff="${esc(t.issuedBy||'')}" data-filter-status="${esc(t.status||'')}"><div><strong>${esc(t.code)} · ${esc(patientDisplayName(t))}</strong><small>${esc(t.queueName||'Department')} · ${esc(presence)}</small></div><div class="history-record-actions"><span class="activity-state">${esc(ticketStatusLabel(t))}</span><button type="button" class="btn btn-small btn-outline" data-record-key="${esc(key)}">Details</button></div></div>`;
 }
 function closeHistoryDetail(){show('history-detail-modal',false);currentHistoryTicket=null;}
 $('history-download-pdf').addEventListener('click',async()=>{
@@ -207,7 +208,7 @@ async function loadHistory(date,mode='recent'){
     archiveCursors.set(key,page.cursor);
     const html=page.records.length?page.records.map(t=>historyRecordHtml(t,date,id)).join(''):'<div class="empty-state">No matching ticket records for this department and date.</div>';
     if(mode==='more')result.insertAdjacentHTML('beforeend',html);else result.innerHTML=html;
-    more.hidden=!page.hasMore||mode==='search';
+    more.hidden=!page.hasMore||mode==='search';applyHistoryFilters(parent);
   }catch(e){result.textContent=helpfulError(e);more.hidden=true;}
   finally{result.removeAttribute('aria-busy');}
 }
@@ -223,6 +224,7 @@ $('history-days').addEventListener('click',e=>{
   loadHistory(date,action.hasAttribute('data-history-search')?'search':action.hasAttribute('data-history-more')?'more':'recent');
 });
 $('history-days').addEventListener('change',e=>{
+  if(e.target.matches('[data-filter]'))applyHistoryFilters(e.target.closest('[data-history-day]'));
   if(e.target.matches('[data-history-dept]')){const p=e.target.closest('[data-history-day]');p.querySelector('[data-history-results]').textContent='Choose Search or Show recent for this department.';p.querySelector('[data-history-more]').hidden=true;}
 });
 $('history-days').addEventListener('keydown',e=>{
@@ -316,3 +318,17 @@ $('admin-profile-remove').addEventListener('click',async()=>{
  if(!hospital)return;try{await updateOwnProfilePhoto(hospital.id,'');toast('Profile photo removed.');}
  catch(err){toast(helpfulError(err),true);}
 });
+
+function applyHistoryFilters(parent){
+ if(!parent)return;const filters=[...parent.querySelectorAll('[data-filter]')].map(x=>[x.dataset.filter,x.value]);let shown=0;
+ for(const row of parent.querySelectorAll('.history-record')){row.hidden=!filters.every(([key,value])=>!value||row.getAttribute('data-filter-'+key)===value);if(!row.hidden)shown++;}
+ parent.querySelector('[data-filter-count]').textContent=shown+' matching loaded records';
+}
+async function loadActivity(){
+ if(!hospital)return;const hid=hospital.id,epoch=authEpoch,el=$('activity-list');el.textContent='Loading recent ticket changes…';
+ try{const rows=await readTicketChanges(hid);if(epoch!==authEpoch||hospital?.id!==hid)return;
+ el.innerHTML=rows.length?rows.map(r=>'<div class="admin-person"><div class="person-info"><strong>'+esc(r.kind==='transfer'?'Doctor transfer':'Patient details corrected')+'</strong><small>'+esc(issuingReceptionist({issuedBy:r.actorUid}))+' · '+esc(r.createdAt?.toDate()?.toLocaleString('en-PK',{timeZone:'Asia/Karachi'})||'—')+'</small></div><span class="role-chip">'+esc(r.kind)+'</span></div>').join(''):'<div class="empty-state">No ticket changes recorded yet.</div>';
+ }catch(e){if(epoch===authEpoch)el.textContent=helpfulError(e);}
+}
+$('activity-refresh').addEventListener('click',loadActivity);
+$('onboarding-list').addEventListener('click',e=>{const b=e.target.closest('[data-setup-section]');if(b)showAdminSection(b.dataset.setupSection,true);});

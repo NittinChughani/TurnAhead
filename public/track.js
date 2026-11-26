@@ -11,12 +11,11 @@ const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
 const ticketId=params.get('ticket'),hospitalId=params.get('hospital');
 const legacy=!hospitalId;
-let queueConfirmedAt=0, lastQueueChange=0;
 let facility='Your hospital',currentTicket=null,currentQueue=null,stopQueue=null,subscribedQueueId=null,alerts=false,vibrationEnabled=false,hadLoaded=false,lastStatus='',lastAhead=null,lastConfirmed=0,refreshing=false,lastRefresh=0,missingConfirmed=false;
 const loader=$('track-loading');
 setTimeout(()=>{if(!loader.hidden)$('track-loading-note').textContent='Still connecting. Your queue will appear as soon as the live service responds.';},3200);
 const messages={waiting:'Your place updates as reception calls each patient.',called:"It's your turn. Please go to your service counter.",completed:'Your visit was marked completed. Thank you for coming.',skipped:'Reception marked this turn as missed. Please ask them for help.',syncing:'Checking the latest status with reception…',expired:'This ticket belongs to an earlier day. Please ask reception for a new one.'};
-function clearPrivateTicket(){currentTicket=null;currentQueue=null;stopQueue?.();stopQueue=null;subscribedQueueId=null;lastConfirmed=0;for(const id of ['track-code','track-patient','track-visit','track-queue','track-call-history'])$(id).textContent='';}
+function clearPrivateTicket(){const img=$('saved-ticket-qr');img.hidden=true;img.removeAttribute('src');currentTicket=null;currentQueue=null;stopQueue?.();stopQueue=null;subscribedQueueId=null;lastConfirmed=0;for(const id of ['track-code','track-patient','track-visit','track-queue','track-call-history'])$(id).textContent='';}
 function missingTicket(){missingConfirmed=true;clearPrivateTicket();for(const id of ['near-popup','feedback-popup','feedback-success','feedback-progress']){const node=$(id);if(node)node.hidden=true;}if($('feedback-note'))$('feedback-note').value='';fail('Ticket not found or no longer available. Ask reception for help.');}
 function fail(message){loader.hidden=true;$('track-error').textContent=message;$('track-error').hidden=false;$('track-content').hidden=true;}
 function setSyncStatus(){
@@ -36,7 +35,7 @@ function applyTicket(ticket){
   if(subscribedQueueId!==ticket.queueId){
     stopQueue?.();subscribedQueueId=ticket.queueId;currentQueue=null;
     stopQueue=observeQueue(hospitalId,ticket.queueId,q=>{
-      if(q){currentQueue=q;lastQueueChange=Date.now();}
+      if(q)currentQueue=q;
       else if(!['completed','skipped'].includes(currentTicket?.status))$('sync-state').textContent='DEPARTMENT UNAVAILABLE';
       update();
     },err=>{$('sync-state').textContent='RECONNECTING…';console.warn(helpfulError(err));});
@@ -221,4 +220,4 @@ else{
   }},15000);
 }
 
-$('save-ticket').addEventListener('click',()=>{if(!currentTicket||missingConfirmed)return;window.print();});
+$('save-ticket').addEventListener('click',()=>{if(!currentTicket||missingConfirmed)return;const img=$('saved-ticket-qr');try{const url=new URL(location.pathname,location.origin);url.searchParams.set('ticket',ticketId);if(hospitalId)url.searchParams.set('hospital',hospitalId);img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(window.turnaheadQR.svg(url.href));img.hidden=false;window.print();}catch{window.print();}});window.addEventListener('afterprint',()=>{const img=$('saved-ticket-qr');img.hidden=true;img.removeAttribute('src');});

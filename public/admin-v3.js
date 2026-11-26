@@ -73,7 +73,8 @@ export function renderOnboarding({hospital,departments,doctors,members}){
  if(!hospital)return;
  const c=hospitalCustomization(hospital);
  const steps=[['Hospital workspace provisioned',true,'Your operator-created hospital is active.'],['Create a service department',departments.length>0,'Use Departments to create the first queue.'],['Register an active doctor',doctors.some(x=>x.active),'Use Doctors to make ticket issuance available.'],['Authorize reception staff',members.some(x=>x.active&&x.role!=='owner'),'Invite staff using their verified work email.'],['Set public hospital hours',c.hoursEnabled,'Optional: configure hours in Customization.'],['Upload hospital branding',!!c.logo,'Optional: choose a hospital logo.']];
- $('onboarding-list').innerHTML=steps.map(([title,done,description])=>'<div class="onboarding-step"><span class="onboarding-mark">'+(done?'✓':'○')+'</span><div><strong>'+esc(title)+'</strong><small>'+esc(description)+'</small></div><span class="role-chip">'+(done?'READY':'TO DO')+'</span></div>').join('');
+ const routes=['','departments','doctors','invites','customization','customization'];const done=steps.filter(x=>x[1]).length;
+ $('onboarding-list').innerHTML='<div class="onboarding-progress"><strong>'+done+' of '+steps.length+' setup items ready</strong><progress max="'+steps.length+'" value="'+done+'"></progress></div>'+steps.map(([title,done,description],i)=>'<div class="onboarding-step"><span class="onboarding-mark">'+(done?'✓':'○')+'</span><div><strong>'+esc(title)+'</strong><small>'+esc(description)+'</small></div><span class="role-chip">'+(done?'READY':'TO DO')+'</span>'+(routes[i]?'<button type="button" class="btn btn-small btn-outline" data-setup-section="'+routes[i]+'">Open</button>':'')+'</div>').join('');
 }
 export function bindV3(getContext,toast){
  context=getContext;notify=toast;
