@@ -54,7 +54,7 @@ async function pdfExport(){
   doc.setTextColor(...blue);doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text(title,margin,y);y+=6;paint(headers,true);
   if(!rows.length){paint(['No records',...headers.slice(1).map(()=>null)]);y+=10;return;}
   for(const row of rows){
-   if(y+measure(row,false).h>bottom){next(currentTitle.replace(/ \\(cont\\.\\)$/,'')+' (cont.)');doc.setFont('helvetica','bold');doc.setTextColor(...blue);doc.setFontSize(11);doc.text(title+' (continued)',margin,y);y+=6;paint(headers,true);}
+   if(y+measure(row,false).h>bottom){next(currentTitle.replace(/ \(cont\.\)$/,'')+' (cont.)');doc.setFont('helvetica','bold');doc.setTextColor(...blue);doc.setFontSize(11);doc.text(title+' (continued)',margin,y);y+=6;paint(headers,true);}
    paint(row);
   }y+=10;
  };

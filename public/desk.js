@@ -264,12 +264,14 @@ else observeAuth(()=>routeCurrentUser());
 
 $('staff-profile-file').addEventListener('change',async e=>{
  if(!currentHospital||!currentMember)return;const file=e.target.files?.[0];if(!file)return;
- const epoch=workspaceEpoch,hid=currentHospital.id;e.target.disabled=true;try{const photo=await compressProfilePhoto(file);if(epoch!==workspaceEpoch)return;await updateOwnProfilePhoto(hid,photo);notice('Profile photo saved.');}
- catch(err){notice(helpfulError(err),true);}finally{e.target.value='';e.target.disabled=false;}
+ const epoch=workspaceEpoch,hid=currentHospital.id,input=e.target;input.disabled=true;accountMenu.busy(true);
+ try{const photo=await compressProfilePhoto(file);if(epoch!==workspaceEpoch||currentHospital?.id!==hid)return;await updateOwnProfilePhoto(hid,photo);if(epoch===workspaceEpoch&&!(currentHospital?.id!==hid))notice('Profile photo saved.');}
+ catch(err){if(epoch===workspaceEpoch)notice(helpfulError(err),true);}finally{input.value='';input.disabled=false;accountMenu.busy(false);}
 });
 $('staff-profile-remove').addEventListener('click',async()=>{
- if(!currentHospital)return;try{await updateOwnProfilePhoto(currentHospital.id,'');notice('Profile photo removed.');}
- catch(err){notice(helpfulError(err),true);}
+ if(!currentHospital||!currentMember)return;const epoch=workspaceEpoch,hid=currentHospital.id;accountMenu.busy(true);
+ try{await updateOwnProfilePhoto(hid,'');if(epoch===workspaceEpoch&&!(currentHospital?.id!==hid))notice('Profile photo removed.');}
+ catch(err){if(epoch===workspaceEpoch)notice(helpfulError(err),true);}finally{accountMenu.busy(false);}
 });
 
 let editTicketId=null,guideStep=0;

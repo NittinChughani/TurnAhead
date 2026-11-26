@@ -317,12 +317,14 @@ if(configured)observeAuth(()=>initialize());else initialize();
 
 $('admin-profile-file').addEventListener('change',async e=>{
  if(!hospital||!me)return;const file=e.target.files?.[0];if(!file)return;
- const epoch=authEpoch,hid=hospital.id;e.target.disabled=true;try{const photo=await compressProfilePhoto(file);if(epoch!==authEpoch||hospital?.id!==hid)return;await updateOwnProfilePhoto(hid,photo);toast('Profile photo saved.');}
- catch(err){toast(helpfulError(err),true);}finally{e.target.value='';e.target.disabled=false;}
+ const epoch=authEpoch,hid=hospital.id,input=e.target;input.disabled=true;accountMenu.busy(true);
+ try{const photo=await compressProfilePhoto(file);if(epoch!==authEpoch||hospital?.id!==hid)return;await updateOwnProfilePhoto(hid,photo);if(epoch===authEpoch&&!(hospital?.id!==hid))toast('Profile photo saved.');}
+ catch(err){if(epoch===authEpoch)toast(helpfulError(err),true);}finally{input.value='';input.disabled=false;accountMenu.busy(false);}
 });
 $('admin-profile-remove').addEventListener('click',async()=>{
- if(!hospital)return;try{await updateOwnProfilePhoto(hospital.id,'');toast('Profile photo removed.');}
- catch(err){toast(helpfulError(err),true);}
+ if(!hospital||!me)return;const epoch=authEpoch,hid=hospital.id;accountMenu.busy(true);
+ try{await updateOwnProfilePhoto(hid,'');if(epoch===authEpoch&&!(hospital?.id!==hid))toast('Profile photo removed.');}
+ catch(err){if(epoch===authEpoch)toast(helpfulError(err),true);}finally{accountMenu.busy(false);}
 });
 
 function applyHistoryFilters(parent){

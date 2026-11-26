@@ -19,6 +19,8 @@ test('owner workspace renders analytics, exports a real PDF, navigates setup and
  for(const box of boxes){expect(Number(box[1])).toBeCloseTo(595.28,0);expect(Number(box[2])).toBeCloseTo(841.89,0);}
  await expect(page.locator('#admin-account-panel')).toBeHidden();
  await page.locator('#admin-greeting').click();await expect(page.locator('#admin-profile-choose')).toBeVisible();
+ const chooser=page.waitForEvent('filechooser');await page.locator('#admin-profile-choose').click();await chooser;
+ await page.locator('#admin-profile-remove').click();await expect(page.locator('#admin-toast')).toContainText('Profile photo removed');
  await page.keyboard.press('Escape');await expect(page.locator('#admin-account-panel')).toBeHidden();
  await page.locator('[data-admin-tab=onboarding]').click();await expect(page.locator('#onboarding-list')).toContainText('STEP 1 OF 6');
  await page.locator('#onboarding-list').getByRole('button',{name:'Next',exact:true}).click();await expect(page.locator('#onboarding-list')).toContainText('STEP 2 OF 6');
@@ -34,6 +36,7 @@ test('reception workspace edits waiting ticket, selects another department and u
  await expect(page.locator('[data-staff-section=queues]')).toBeHidden();
  await expect(page.locator('#staff-account-panel')).toBeHidden();
  await page.locator('#staff-greeting').click();await expect(page.locator('#staff-profile-remove')).toBeVisible();
+ await page.locator('#staff-profile-remove').click();await expect(page.locator('#notice')).toContainText('Profile photo removed');
  await page.keyboard.press('Escape');await expect(page.locator('#staff-account-panel')).toBeHidden();
  await page.locator('[data-staff-tab=queues]').click();
  await expect(page.locator('.delay-notice-panel')).toBeVisible();await expect(page.locator('[data-staff-section=overview]')).toBeHidden();
