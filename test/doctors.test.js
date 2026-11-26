@@ -33,6 +33,6 @@ test('Firestore rules limit doctor changes to owner and archived records to owne
   const rules=readFileSync(new URL('../firestore.rules',import.meta.url),'utf8');
   assert.match(rules,/match \/doctors\/\{doctorId\}/);
   assert.match(rules,/allow create: if owner\(hid\) && validDoctor/);
-  assert.match(rules,/get\(doctorPath\(hid,data.doctorId\)\).data.departmentId == data.queueId/);
+  assert.match(rules,/let d = get\(doctorPath\(hid,t.doctorId\)\).data/);assert.match(rules,/d.departmentId == t.queueId/);
   assert.match(rules,/allow get, list: if owner\(hid\)/);
 });

@@ -1,7 +1,9 @@
 /** Hospital-scoped Firestore queues, atomic ticket transitions and private dated history. */
 import {
-  collection,doc,getDocs,getDocFromServer,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter,deleteField,setDoc,serverTimestamp
+  collection,doc,getDocs,getDocsFromServer,getDocFromServer,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter,deleteField,setDoc,serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+import {appendActivity} from './activity-store.js?v=3.3.0';
+import {planTicketChange,planDepartmentTransfer} from './ticket-change.js?v=3.3.0';
 import {mapLimited} from './reliability.js?v=3.2.0';
 import {hospitalCustomization} from './hospital-custom.js?v=3.1.0';
 import {db,auth} from './firebase.js';
@@ -96,7 +98,7 @@ export async function createQueue(hid,name){
     tx.update(mr,{nextPrefix:(meta.data().nextPrefix||1)+1});
     tx.set(pr,{queueId:id});
     const now=Date.now();tx.set(qDoc(hid,id),initialQueue(name,prefix,dayKey(),now));
-    tx.set(controlDoc(hid,id),initialControl());
+    tx.set(controlDoc(hid,id),initialControl());appendActivity(tx,hid,'department-created');
   });
   return {id,name,prefix};
 }
@@ -127,7 +129,7 @@ export async function issueTicket(hid,id,patientName,details={}){
     if(!ds.exists())tx.set(dr,{dayKey:today,createdAt:now});
     // Retain who issued the ticket and the issuing counter in private history only.
     tx.set(historyDoc(hid,today,id,tr.id),{...archiveTicket(tr.id,ticket,now),issuedBy,issuedCounter});
-    return ticket;
+    appendActivity(tx,hid,'ticket-issued');return ticket;
   });
   return {...ticket,id:tr.id,queue:ticket.queueName,trackingUrl:ticketLink(hid,tr.id,window.location.href)};
 }
@@ -154,12 +156,12 @@ export async function performAction(hid,id,action,doctorId,counterNumber=1){
     if(action==='pause-department'||action==='resume-department'){
       const paused=action==='pause-department';
       tx.update(qr,{paused,updatedAt:now});
-      return {status:paused?'paused':'resumed'};
+      appendActivity(tx,hid,paused?'department-paused':'department-resumed');return {status:paused?'paused':'resumed'};
     }
     if(action==='pause'||action==='resume'){
       const paused=action==='pause';
       tx.update(qr,{lanes:{...q.lanes,[doctorId]:{...lane,paused,updatedAt:now}},updatedAt:now});
-      return {doctorName:doctorSnap.data().name,status:paused?'paused':'resumed'};
+      appendActivity(tx,hid,paused?'doctor-paused':'doctor-resumed');return {doctorName:doctorSnap.data().name,status:paused?'paused':'resumed'};
     }
     // Finishing a patient must remain possible during an unexpected doctor break.
     if(action==='next'){
@@ -169,8 +171,8 @@ export async function performAction(hid,id,action,doctorId,counterNumber=1){
       const original=ts.data();
       const plan=planDoctorCall(q,c,doctorId,original,first.id,counter,uid,now);
       tx.update(qr,plan.queuePatch);tx.update(cr,plan.controlPatch);tx.update(tr,plan.ticketPatch);
-      if(original.patientName)tx.update(historyDoc(hid,original.dayKey,id,first.id),plan.historyPatch);
-      return {code:original.code,counter};
+      if(original.patientName)tx.update(historyDoc(hid,original.dayKey,original.originQueueId||id,first.id),plan.historyPatch);
+      appendActivity(tx,hid,'ticket-called');return {code:original.code,counter};
     }
     if(!['complete','skip'].includes(action))throw Error('Unknown queue action');
     if(!control.activeId||!lane.active)throw Error('There is no active ticket for this doctor.');
@@ -178,8 +180,8 @@ export async function performAction(hid,id,action,doctorId,counterNumber=1){
     if(!ts.exists())throw Error('Active ticket changed. Refresh reception.');
     const old=ts.data(),plan=planDoctorFinish(q,c,doctorId,old,counter,uid,action,now);
     tx.update(qr,plan.queuePatch);tx.update(cr,plan.controlPatch);tx.update(tr,plan.ticketPatch);
-    if(old.patientName)tx.update(historyDoc(hid,old.dayKey,id,control.activeId),plan.historyPatch);
-    return {code:old.code,status:plan.ticketPatch.status,counter};
+    if(old.patientName)tx.update(historyDoc(hid,old.dayKey,old.originQueueId||id,control.activeId),plan.historyPatch);
+    appendActivity(tx,hid,action==='complete'?'ticket-completed':'ticket-skipped');return {code:old.code,status:plan.ticketPatch.status,counter};
   });
 }
 /** Day documents are created transactionally with the first ticket each day. */
@@ -223,7 +225,74 @@ export async function recallMissedTicket(hid,queueId,ticketId){
     const minutes=graceMinutes(hs.data().recallGraceMinutes);
     const plan=planRecall(qs.data(),cs.data(),old,ticketId,now,minutes,today);
     tx.update(qr,plan.queuePatch);tx.update(cr,plan.controlPatch);tx.update(tr,{...plan.ticketPatch,calledCounter:deleteField()});
-    if(old.patientName)tx.update(historyDoc(hid,old.dayKey,queueId,ticketId),{...plan.historyPatch,calledCounter:''});
-    return {code:old.code,minutes};
+    if(old.patientName)tx.update(historyDoc(hid,old.dayKey,old.originQueueId||queueId,ticketId),{...plan.historyPatch,calledCounter:''});
+    appendActivity(tx,hid,'ticket-recalled');return {code:old.code,minutes};
   });
+}
+
+export async function setDoctorDelay(hid,qid,doctorId,reason){
+ if(!['','running-late','unexpected-delay','extended-service'].includes(reason))throw Error('Choose a standard delay message.');
+ if(!auth.currentUser)throw Error('Sign in first.');
+ return runTransaction(db,async tx=>{
+  const qr=qDoc(hid,qid),[qs,ds]=await Promise.all([tx.get(qr),tx.get(doctorDoc(hid,doctorId))]);
+  if(!qs.exists()||!ds.exists()||ds.data().departmentId!==qid||qs.data().dayKey!==dayKey())throw Error('Refresh the selected doctor queue.');
+  const q=qs.data(),lane=getDoctorLane(q,doctorId),now=Date.now();
+  tx.update(qr,{lanes:{...q.lanes,[doctorId]:{...lane,pauseReason:reason,updatedAt:now}},updatedAt:now});appendActivity(tx,hid,'delay-updated');
+ });
+}
+
+export async function changeWaitingTicket(hid,qid,ticketId,doctorId,details){
+ const uid=auth.currentUser?.uid;if(!uid)throw Error('Sign in first.');
+ const event=doc(collection(db,'hospitals',hid,'ticketChanges'));
+ return runTransaction(db,async tx=>{
+  const qr=qDoc(hid,qid),cr=controlDoc(hid,qid),tr=ticketDoc(hid,ticketId);
+  const [qs,cs,ts,ds]=await Promise.all([tx.get(qr),tx.get(cr),tx.get(tr),tx.get(doctorDoc(hid,doctorId))]);
+  if(!qs.exists()||!cs.exists()||!ts.exists()||!ds.exists()||ts.data().queueId!==qid)throw Error('Ticket or doctor no longer available.');
+  const t=ts.data(),doctor=ds.data(),now=Date.now(),target=doctor.departmentId;
+  let plan,dqr,dcr;
+  if(target!==qid){
+   dqr=qDoc(hid,target);dcr=controlDoc(hid,target);
+   const [dqs,dcs]=await Promise.all([tx.get(dqr),tx.get(dcr)]);
+   if(!dqs.exists()||!dcs.exists())throw Error('Destination unavailable.');
+   plan=planDepartmentTransfer(qs.data(),cs.data(),dqs.data(),dcs.data(),t,ticketId,doctor,doctorId,target,details,now,dayKey());
+  }else plan=planTicketChange(qs.data(),cs.data(),t,ticketId,doctor,doctorId,details,now,dayKey());
+  if(plan.queuePatch){tx.update(qr,plan.queuePatch);tx.update(cr,plan.controlPatch);}
+  if(plan.destinationQueuePatch){tx.update(dqr,plan.destinationQueuePatch);tx.update(dcr,plan.destinationControlPatch);}
+  tx.update(tr,{...plan.patch,changeId:event.id});
+  tx.update(historyDoc(hid,t.dayKey,t.originQueueId||qid,ticketId),plan.archivePatch||{...plan.patch,updatedAt:now});
+  tx.set(event,{kind:plan.kind,ticketId,actorUid:uid,fromDoctor:t.doctorId,toDoctor:doctorId,createdAt:serverTimestamp()});
+  return {kind:plan.kind,code:plan.patch.code||t.code};
+ });
+}
+export async function readTicketChanges(hid){
+ const snap=await getDocs(query(collection(db,'hospitals',hid,'ticketChanges'),orderBy('createdAt','desc'),limit(100)));
+ return snap.docs.map(d=>d.data());
+}
+
+/** Explicit owner search over a whole selected date, with bounded reads and no silent truncation.
+ * Archive paths are immutable issue departments, so search every path for current service department.
+ */
+export async function searchHistoryDate(hid,date,departmentIds,filters={},cancelled=()=>false,progress=()=>{}){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw Error('Invalid archive date.');
+ const matches=[];let scanned=0,requests=0;
+ for(const qid of [...new Set(departmentIds)]){
+  let cursor=null;
+  do{
+   if(cancelled())throw Error('Search cancelled.');
+   if(++requests>200)throw Error('Search limit reached. Narrow the date or use the original department.');
+   const snap=await getDocsFromServer(query(historyCollection(hid,date,qid),orderBy('issuedAt','desc'),...(cursor?[startAfter(cursor)]:[]),limit(100)));
+   if(cancelled())throw Error('Search cancelled.');
+   for(const d of snap.docs){
+    if(++scanned>10000)throw Error('Search exceeds 10,000 records. Use a narrower original-department search.');
+    const t=d.data();
+    if(filters.department&&filters.department!==(t.serviceQueueId||t.queueId))continue;
+    if(filters.code&&![t.code,t.serviceCode].includes(filters.code))continue;
+    if(filters.doctor&&t.doctorId!==filters.doctor||filters.counter&&t.issuedCounter!==filters.counter||filters.staff&&t.issuedBy!==filters.staff||filters.status&&t.status!==filters.status)continue;
+    matches.push({id:d.id,...t});
+   }
+   cursor=snap.size===100?snap.docs.at(-1):null;
+   progress(scanned);
+  }while(cursor);
+ }
+ return {records:matches.sort((a,b)=>b.issuedAt-a.issuedAt),scanned};
 }

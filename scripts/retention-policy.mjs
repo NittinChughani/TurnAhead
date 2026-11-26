@@ -6,7 +6,7 @@ export function cutoffFor(days,now=Date.now()){
 export function eligibleForRetention(ticket,archive,cutoff){
  if(!ticket||!archive||!Number.isFinite(cutoff))return false;
  if(!['completed','skipped'].includes(ticket.status)||archive.status!==ticket.status)return false;
- if(ticket.dayKey!==archive.dayKey||ticket.queueId!==archive.queueId||ticket.code!==archive.code)return false;
+ if(ticket.dayKey!==archive.dayKey||(ticket.originQueueId||ticket.queueId)!==archive.queueId||ticket.queueId!==(archive.serviceQueueId||archive.queueId)||ticket.code!==(archive.serviceCode||archive.code))return false;
  return [ticket.createdAt,ticket.finishedAt,archive.issuedAt,archive.finishedAt].every(x=>typeof x==='number'&&Number.isFinite(x)&&x>0&&x<cutoff);
 }
 export function linkedToControl(control,id){

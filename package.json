@@ -1,14 +1,15 @@
 {
   "name": "turnahead-web",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "private": true,
   "type": "module",
-  "description": "TurnAhead v3.2.0: security validation, reliable queue operations and privacy safeguards",
+  "description": "TurnAhead v3.3 development candidate",
   "scripts": {
     "test": "node --test test/*.test.js",
     "check": "for file in public/*.js; do node --check \"$file\" || exit 1; done",
     "test:rules": "firebase emulators:exec --config firebase.emulator.json --only firestore --project demo-turnahead 'node --test security/firestore.test.mjs'",
-    "retention": "node scripts/retention.mjs"
+    "retention": "node scripts/retention.mjs",
+    "test:browser": "playwright test"
   },
   "license": "MIT"
 }

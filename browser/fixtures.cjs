@@ -1,0 +1,24 @@
+const {readFileSync}=require('node:fs');
+const {resolve}=require('node:path');
+async function mockWorkspace(page,role){
+ const common=`export const hid='H'.repeat(20),did='D'.repeat(20),target='E'.repeat(20),tid='T'.repeat(20),today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Karachi',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),now=Date.now();
+ export const hospital={id:hid,name:'Fictional hospital',ownerUid:'owner',status:'active'};
+ export const member={uid:${JSON.stringify(role==='owner'?'owner':'staff')},role:${JSON.stringify(role)},hospitalId:hid,active:true,email:'fictional@example.test',displayName:'Demo staff',gender:'unspecified'};
+ export const doctors=[{id:did,departmentId:'general-opd',departmentName:'General OPD',name:'Demo Doctor',roomNumber:'1',active:true},{id:target,departmentId:'radiology',departmentName:'Radiology',name:'Second Doctor',roomNumber:'2',active:true}];
+ const lane={waitingNumbers:[1],active:null,served:0,avgMinutes:8,paused:false,pauseReason:'',updatedAt:now};
+ export const queues=[{id:'general-opd',name:'General OPD',prefix:'GEN',dayKey:today,waitingNumbers:[1],waiting:1,activeCount:0,active:null,served:0,avgMinutes:8,paused:false,lanes:{[did]:lane},lastNumber:1},{id:'radiology',name:'Radiology',prefix:'RAD',dayKey:today,waitingNumbers:[],waiting:0,activeCount:0,active:null,served:0,avgMinutes:8,paused:false,lanes:{},lastNumber:0}];
+ export const ticket={id:tid,ticketId:tid,queueId:'general-opd',queueName:'General OPD',number:1,code:'GEN-001',doctorId:did,doctorName:'Demo Doctor',patientName:'Fictional Patient',patientGender:'male',roomNumber:'1',dayKey:today,createdAt:now,issuedAt:now,issuedBy:'staff',issuedCounter:'Counter 1',status:'waiting',attendance:'pending',calledAt:null,finishedAt:null};
+ export const stream=(callback,data,meta)=>{const handle=setTimeout(()=>callback(data,meta),10);return ()=>clearTimeout(handle)};
+ export const stamp={toMillis:()=>now,toDate:()=>new Date(now)};
+ `;
+ const stub=(path,body)=>page.route(url=>url.pathname.endsWith('/'+path),route=>route.fulfill({contentType:'application/javascript',body:common+'\n'+body}));
+ await stub('firebase.js',`export const configured=true,app={},auth={currentUser:{uid:member.uid,email:member.email,emailVerified:true}};export const helpfulError=e=>e.message;`);
+ await stub('org-store.js',`export const observeAuth=cb=>stream(cb,member),myMemberships=async()=>[member],getHospital=async()=>hospital,watchMembership=(h,u,cb)=>stream(cb,member),watchHospital=(h,cb)=>stream(cb,hospital),watchHospitalMembers=(h,cb)=>stream(cb,[member]),watchInvitations=(h,cb)=>stream(cb,[]);export const login=async()=>{},logout=async()=>{},refreshVerification=async()=>true,requestVerification=async()=>{},inviteStaff=async()=>{},revokeInvitation=async()=>{},updateStaff=async()=>{},renameHospital=async()=>{},updateRecallGrace=async()=>{},sendStaffPasswordReset=async()=>{},updateOwnProfilePhoto=async()=>{},updateHospitalCustomization=async()=>{};`);
+ await stub('doctors.js',`export const watchDoctors=(h,cb)=>stream(cb,doctors),addDoctor=async()=>{},changeDoctor=async()=>{};`);
+ await stub('store.js',`export const observeQueues=(h,cb)=>stream(cb,queues,{confirmed:true}),observeTickets=(h,cb)=>stream(cb,[ticket]),observeFeedback=(h,cb)=>stream(cb,[]),listHistoryDays=async()=>[today],readHistory=async()=>({records:[ticket],hasMore:false}),searchHistoryDate=async()=>({records:[ticket],scanned:1}),readTicketChanges=async()=>[],bootstrap=async()=>{},rollOverAll=async()=>{},createQueue=async()=>({name:'Demo'}),issueTicket=async()=>({...ticket,trackingUrl:location.origin+'/track.html?ticket='+tid}),performAction=async()=>({code:ticket.code,counter:'Counter 1'}),recallMissedTicket=async()=>({code:ticket.code}),setDoctorDelay=async()=>{},changeWaitingTicket=async(h,q,t,d,details)=>({kind:d===target?'department-transfer':'correction',code:d===target?'RAD-001':ticket.code}),observeTicket=(h,id,cb)=>stream(cb,ticket,{fromCache:false}),observeQueue=(h,id,cb)=>stream(cb,queues.find(q=>q.id===id)),fetchTicketFromServer=async()=>ticket,submitFeedback=async()=>{};`);
+ await stub('activity-store.js',`export const readActivity=async()=>[{actorUid:member.uid,kind:'ticket-issued',createdAt:stamp}];`);
+ await stub('analytics-store.js',`export const loadAnalytics=async()=>({records:[{...ticket,status:'completed',calledAt:now+60000,finishedAt:now+120000}],feedback:[{day:today,rating:4}],dates:[today]});`);
+ // Real jsPDF from the pinned npm package, bundled locally to avoid CDN/network dependency.
+ await page.route('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm',route=>route.fulfill({contentType:'application/javascript',body:readFileSync(resolve('browser/.generated/jspdf.mjs'),'utf8'),headers:{'access-control-allow-origin':'*'}}));
+}
+module.exports={mockWorkspace};

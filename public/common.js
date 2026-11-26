@@ -36,3 +36,12 @@ window.turnahead = {
   window.addEventListener('resize',update,{passive:true});
   update();
 })();
+
+// Installability only; live queue data is never cached by our service worker.
+if('serviceWorker' in navigator&&window.isSecureContext){navigator.serviceWorker.register('./sw.js').catch(()=>{});}
+(function(){const m=document.createElement('link');m.rel='manifest';m.href='./manifest.webmanifest';if(!document.querySelector('link[rel=manifest]'))document.head.append(m);
+ const nav=document.querySelector('.nav-actions');if(!nav)return;
+ let prompt=null;const b=document.createElement('button');b.className='btn btn-small btn-outline';b.textContent='Install';b.hidden=true;b.type='button';nav.append(b);
+ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();prompt=e;b.hidden=false;});
+ b.onclick=async()=>{if(!prompt)return;await prompt.prompt();prompt=null;b.hidden=true;};window.addEventListener('appinstalled',()=>{b.hidden=true;});
+})();

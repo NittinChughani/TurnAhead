@@ -1,0 +1,19 @@
+name: Browser workflows
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --package-lock=false @playwright/test@1.56.1 jspdf@2.5.1 esbuild@0.25.12
+      - run: npx playwright install --with-deps chromium
+      - run: mkdir -p browser/.generated && npx esbuild node_modules/jspdf/dist/jspdf.es.min.js --bundle --platform=browser --format=esm --outfile=browser/.generated/jspdf.mjs
+      - run: npx playwright test

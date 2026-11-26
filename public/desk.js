@@ -1,11 +1,11 @@
 import {configured, auth, helpfulError} from './firebase.js';
 import {observeAuth, login, logout, requestVerification, refreshVerification,
-  myMemberships, getHospital, watchMembership,updateOwnProfilePhoto,watchHospital} from './org-store.js?v=3.2.0';
+  myMemberships, getHospital, watchMembership,updateOwnProfilePhoto,watchHospital} from './org-store.js?v=3.3.1';
 import {canManageStaff, canManageDepartments, boardLink, isStaffRole, staffGreeting} from './org-model.js';
 import {bootstrap, rollOverAll, observeQueues, observeTickets,
-  issueTicket, createQueue, performAction,recallMissedTicket} from './store.js?v=3.2.0';
+  issueTicket, createQueue, performAction,recallMissedTicket,setDoctorDelay,changeWaitingTicket} from './store.js?v=3.3.1';
 import {dayKey,patientDisplayName,getDoctorLane,doctorActiveCodes,ticketStatusLabel} from './queue-engine.js?v=2.6.2';
-import {watchDoctors} from './doctors.js';
+import {watchDoctors} from './doctors.js?v=3.3.1';
 import {doctorAvailable} from './doctor-model.js';
 import {avatarContents,compressProfilePhoto} from './profile-photo.js';
 import {bindLanguage,t} from './locale.js?v=2.6.1';
@@ -33,6 +33,7 @@ function updateConnection(){
 function beginMutation(){if(!mutationAllowed()){notice('Wait for a live connection and the current operation to finish.',true);return null;}const token=gate.begin();render();return token;}
 function endMutation(token){gate.end(token);if(currentHospital)render();else updateConnection();}
 function clearPrivateDesk(){
+ const edit=$('ticket-change-dialog');if(edit?.open)edit.close();$('ticket-change-form')?.reset();
  currentTicket=null;queues=[];tickets=[];doctors=[];selectedQueue=null;selectedDoctor=null;queueConfirmed=false;
  for(const id of ['issue-modal','ticket-modal','queue-modal']){const el=$(id);if(el)el.hidden=true;}
  for(const id of ['recent-tickets','queue-detail','queue-tabs','missed-list','receipt-patient','receipt-visit','receipt-code','receipt-link','receipt-issued','receipt-queue','receipt-counter','receipt-facility','receipt-custom-note'])$(id)?.replaceChildren();
@@ -82,17 +83,18 @@ function render(){
       const ln=getDoctorLane(q,doc.id);
       return `<button type="button" class="doctor-tab ${selectedDoctor===doc.id?'selected':''}" data-doctor-queue="${esc(doc.id)}"><span>${esc(doc.name)}</span><small>${ln.waitingNumbers.length} waiting · ${doc.active?'Available':'Inactive'}${ln.paused?' · On break':''}</small></button>`;
     }).join('');
-    const detail=d?`<div class="doctor-queue-heading"><div><span class="kicker">DOCTOR-SPECIFIC QUEUE</span><h3>Dr. ${esc(d.name)}</h3><small>${esc(d.roomNumber?'Room '+d.roomNumber:'Room assigned on each ticket')}</small></div><span class="state-pill ${paused?'paused':''}">${paused?'⏸ ON BREAK':d.active?'● ACCEPTING':'INACTIVE'}</span></div><div class="serving-box"><div><span>NOW SERVING</span><strong>${esc(lane.active?.code||'—')}</strong><small>${active?`Called from ${esc(lane.active.counter||'reception')}`:'No patient currently being served'}</small></div><span class="serving-symbol">↗</span></div><div class="queue-facts"><span><b>${lane.waitingNumbers.length}</b> waiting for this doctor</span><span><b>${lane.served||0}</b> completed</span><span><b>${lane.avgMinutes||8} min</b> average</span></div><div class="queue-buttons"><button class="btn btn-primary" data-action="next" ${paused||active||!lane.waitingNumbers.length||!d.active||selectedCounter>hospitalCustomization(currentHospital).counters?'disabled':''}>Call next ↗</button><button class="btn btn-positive" data-action="complete" ${!belongsHere?'disabled':''}>✓ Complete</button><button class="btn btn-danger" data-action="skip" ${!belongsHere?'disabled':''}>Skip</button><button class="btn btn-outline" data-action="${lane.paused?'resume':'pause'}" ${q.paused?'disabled':''}>${lane.paused?'▶ Resume':'⏸ Doctor break'}</button></div><p class="queue-caption">${active&&!belongsHere?`This patient belongs to ${esc(lane.active.counter)}. Select that counter to finish the ticket.`:'Each doctor has an independent FIFO line. Actions are committed atomically across reception counters.'}</p></div>`:'<div class="empty-state">No doctors registered in this department. Ask the administrator to add a doctor.</div>';
+    const detail=d?`<div class="doctor-queue-heading"><div><span class="kicker">DOCTOR-SPECIFIC QUEUE</span><h3>Dr. ${esc(d.name)}</h3><small>${esc(d.roomNumber?'Room '+d.roomNumber:'Room assigned on each ticket')}</small></div><span class="state-pill ${paused?'paused':''}">${paused?'⏸ ON BREAK':d.active?'● ACCEPTING':'INACTIVE'}</span></div><div class="serving-box"><div><span>NOW SERVING</span><strong>${esc(lane.active?.code||'—')}</strong><small>${active?`Called from ${esc(lane.active.counter||'reception')}`:'No patient currently being served'}</small></div><span class="serving-symbol">↗</span></div><div class="queue-facts"><span><b>${lane.waitingNumbers.length}</b> waiting for this doctor</span><span><b>${lane.served||0}</b> completed</span><span><b>${lane.avgMinutes||8} min</b> average</span></div><div class="queue-buttons"><button class="btn btn-primary" data-action="next" ${paused||active||!lane.waitingNumbers.length||!d.active||selectedCounter>hospitalCustomization(currentHospital).counters?'disabled':''}>Call next ↗</button><button class="btn btn-positive" data-action="complete" ${!belongsHere?'disabled':''}>✓ Complete</button><button class="btn btn-danger" data-action="skip" ${!belongsHere?'disabled':''}>Skip</button><button class="btn btn-outline" data-action="${lane.paused?'resume':'pause'}" ${q.paused?'disabled':''}>${lane.paused?'▶ Resume':'⏸ Doctor break'}</button></div><div class="queue-buttons"><label>Delay notice <select data-delay-select><option value="">No notice</option><option value="running-late" ${lane.pauseReason==='running-late'?'selected':''}>Running late</option><option value="unexpected-delay" ${lane.pauseReason==='unexpected-delay'?'selected':''}>Unexpected delay</option><option value="extended-service" ${lane.pauseReason==='extended-service'?'selected':''}>Extended service</option></select></label><button type="button" class="btn btn-small btn-outline" data-delay-save ${!mutationAllowed()?'disabled':''}>Update notice</button></div><p class="queue-caption">${active&&!belongsHere?`This patient belongs to ${esc(lane.active.counter)}. Select that counter to finish the ticket.`:'Each doctor has an independent FIFO line. Actions are committed atomically across reception counters.'}</p></div>`:'<div class="empty-state">No doctors registered in this department. Ask the administrator to add a doctor.</div>';
     $('queue-detail').innerHTML=`<div class="queue-view"><div class="queue-topline"><div><strong>${esc(q.name)}</strong><small>${esc(q.prefix)} · ${q.waiting} waiting across ${available.length} doctors</small></div><span class="state-pill ${q.paused?'paused':''}">${q.paused?'⏸ DEPARTMENT PAUSED':'● LIVE'}</span></div><button type="button" class="btn btn-small btn-outline" data-action="${q.paused?'resume-department':'pause-department'}">${q.paused?'▶ Resume department':'⏸ Pause department'}</button><div class="doctor-tabs" role="group" aria-label="Select doctor queue">${doctorList||'<p class="queue-caption">No doctors added yet.</p>'}</div>${detail}</div>`;
     $('queue-detail').querySelectorAll('[data-doctor-queue]').forEach(btn=>btn.addEventListener('click',()=>{selectedDoctor=btn.dataset.doctorQueue;render();}));
+    $('queue-detail').querySelector('[data-delay-save]')?.addEventListener('click',async()=>{const reason=$('queue-detail').querySelector('[data-delay-select]').value,hid=currentHospital.id,epoch=workspaceEpoch,doctorId=selectedDoctor;const token=beginMutation();if(!token)return;try{await setDoctorDelay(hid,q.id,doctorId,reason);if(epoch===workspaceEpoch)notice('Delay notice updated.');}catch(e){if(epoch===workspaceEpoch)notice(helpfulError(e),true);}finally{endMutation(token);}});
     $('queue-detail').querySelectorAll('[data-action]').forEach(btn=>btn.addEventListener('click',()=>action(q.id,selectedDoctor,btn.dataset.action,btn)));
-  }else $('queue-detail').innerHTML='<div class="empty-state">No department yet. Ask your hospital administrator to create one.</div>';
+  }else $('queue-detail').innerHTML=queueConfirmed?'<div class="empty-state">No department yet. Ask your hospital administrator to create one.</div>':'<div class="report-skeleton" aria-hidden="true"><i></i><i></i><b></b></div><p role="status">Connecting to departments…</p>';
   const latest=tickets.filter(t=>t.dayKey===dayKey());
   renderV26();
   if(!mutationAllowed())document.querySelectorAll('#queue-detail [data-action],#missed-list [data-recall],#issue-form [type=submit]').forEach(b=>b.disabled=true);
   else if(!$('issue-form').querySelector('[type=submit]').classList.contains('is-loading'))$('issue-form').querySelector('[type=submit]').disabled=false;
   $('activity-count').textContent=`${latest.length} recent`;
-  $('recent-tickets').innerHTML=latest.length?latest.slice(0,14).map(t=>`<div class="activity-item"><div class="activity-token">${esc(t.code)}</div><div class="activity-main"><b>${esc(t.patientName||'Older ticket')} · ${esc(t.queueName||'Service desk')}</b><small>Dr. ${esc(t.doctorName||'—')} · ${esc(fmt(t.createdAt))}${t.calledCounter?' · '+esc(t.calledCounter):''}</small></div><span class="activity-state">${esc(ticketStatusLabel(t))}</span></div>`).join(''):'<div class="empty-state">No tickets today. Create the first walk-in ticket to get started.</div>';
+  $('recent-tickets').innerHTML=latest.length?latest.slice(0,14).map(t=>`<div class="activity-item"><div class="activity-token">${esc(t.code)}</div><div class="activity-main"><b>${esc(t.patientName||'Older ticket')} · ${esc(t.queueName||'Service desk')}</b><small>Dr. ${esc(t.doctorName||'—')} · ${esc(fmt(t.createdAt))}${t.calledCounter?' · '+esc(t.calledCounter):''}</small></div><span class="activity-state">${esc(ticketStatusLabel(t))}</span>${t.status==='waiting'?'<button type="button" class="btn btn-small btn-outline" data-change-ticket="'+esc(t.id)+'" '+(!mutationAllowed()?'disabled':'')+'>Edit / transfer</button>':''}</div>`).join(''):'<div class="empty-state">No tickets today. Create the first walk-in ticket to get started.</div>';
 }
 function renderV26(){
   if(!currentHospital)return;
@@ -257,4 +259,29 @@ $('staff-profile-file').addEventListener('change',async e=>{
 $('staff-profile-remove').addEventListener('click',async()=>{
  if(!currentHospital)return;try{await updateOwnProfilePhoto(currentHospital.id,'');notice('Profile photo removed.');}
  catch(err){notice(helpfulError(err),true);}
+});
+
+let editTicketId=null,guideStep=0;
+const staffGuide=[['Select your counter','Choose the physical counter you are operating.'],['Choose a doctor','Select a department, then the active doctor.'],['Issue the ticket','Enter only the required patient details and print the private QR.'],['Call and finish','Call next, then complete or skip using the same counter.'],['Recover safely','If offline, stop operations. Reconnect and verify the current ticket before retrying.']];
+function renderStaffGuide(){const [title,description]=staffGuide[guideStep];$('staff-guide-title').textContent=title;$('staff-guide-description').textContent=description;$('staff-guide-count').textContent=(guideStep+1)+' of '+staffGuide.length;$('staff-guide-prev').disabled=guideStep===0;$('staff-guide-next').disabled=guideStep===staffGuide.length-1;}
+$('staff-guide-prev').onclick=()=>{guideStep=Math.max(0,guideStep-1);renderStaffGuide();};$('staff-guide-next').onclick=()=>{guideStep=Math.min(staffGuide.length-1,guideStep+1);renderStaffGuide();};renderStaffGuide();
+$('recent-tickets').addEventListener('click',e=>{
+ const b=e.target.closest('[data-change-ticket]');if(!b||!mutationAllowed())return;
+ const ticket=tickets.find(x=>x.id===b.dataset.changeTicket&&x.status==='waiting');if(!ticket)return;
+ editTicketId=ticket.id;$('change-name').value=ticket.patientName;$('change-title').value=ticket.patientGender;$('change-room').value=ticket.roomNumber;
+ $('change-doctor').innerHTML=doctors.filter(x=>x.active||x.id===ticket.doctorId).map(x=>'<option value="'+esc(x.id)+'">'+esc((queues.find(q=>q.id===x.departmentId)?.name||'Department')+' · '+x.name)+'</option>').join('');
+ $('change-doctor').value=ticket.doctorId;$('change-mode').value='correction';$('change-state').textContent='';$('ticket-change-dialog').showModal();
+});
+$('change-mode').addEventListener('change',()=>{const transfer=$('change-mode').value==='transfer';$('change-name').disabled=transfer;$('change-title').disabled=transfer;$('change-doctor').disabled=!transfer;});
+$('change-cancel').onclick=()=>{$('ticket-change-dialog').close();$('ticket-change-form').reset();editTicketId=null;};
+$('ticket-change-dialog').addEventListener('close',()=>{$('ticket-change-form').reset();$('change-name').disabled=false;$('change-title').disabled=false;$('change-doctor').disabled=true;editTicketId=null;});
+$('ticket-change-form').addEventListener('submit',async e=>{
+ e.preventDefault();const ticket=tickets.find(x=>x.id===editTicketId&&x.status==='waiting');if(!ticket||!currentHospital){$('change-state').textContent='Ticket is no longer waiting.';return;}
+ const mode=$('change-mode').value,doctorId=mode==='transfer'?$('change-doctor').value:ticket.doctorId,details={patientName:$('change-name').value,patientGender:$('change-title').value,roomNumber:$('change-room').value};
+ if(mode==='transfer'&&doctorId===ticket.doctorId){$('change-state').textContent='Choose a different doctor.';return;}
+ const hid=currentHospital.id,epoch=workspaceEpoch,token=beginMutation();if(!token)return;
+ const b=e.target.querySelector('[type=submit]');b.disabled=true;
+ try{const result=await changeWaitingTicket(hid,ticket.queueId,ticket.id,doctorId,details);if(epoch===workspaceEpoch){$('ticket-change-dialog').close();notice(result.kind==='department-transfer'?'Transferred to '+result.code+'. Existing QR remains valid; tell the patient their new code or reprint.':'Ticket updated. The existing QR remains valid.');}}
+ catch(err){if(epoch===workspaceEpoch)$('change-state').textContent=helpfulError(err);}
+ finally{b.disabled=false;endMutation(token);}
 });

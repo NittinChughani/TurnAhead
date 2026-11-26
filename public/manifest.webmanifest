@@ -1,12 +1,19 @@
 {
   "id": "./",
-  "name": "TurnAhead · Live Walk-In Queue",
+  "name": "TurnAhead",
   "short_name": "TurnAhead",
-  "description": "Track your walk-in queue ticket and receive optional alerts.",
+  "description": "Live walk-in queue management",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f6f8fb",
-  "theme_color": "#0c2440",
-  "icons": [{"src":"./assets/favicon.png","sizes":"96x96","type":"image/png","purpose":"any"}]
+  "background_color": "#f7f9fc",
+  "theme_color": "#102344",
+  "icons": [
+    {
+      "src": "./assets/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
 }

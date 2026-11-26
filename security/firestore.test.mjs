@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {initializeTestEnvironment,assertSucceeds,assertFails} from '@firebase/rules-unit-testing';
 import {doc,collection,getDoc,getDocs,setDoc,updateDoc,deleteDoc,serverTimestamp,Timestamp,query,where,runTransaction} from 'firebase/firestore';
-import {initialQueue,initialControl,nextTicket,planDoctorCall,dayKey} from '../public/queue-engine.js';
+import {planTicketChange,planDepartmentTransfer} from '../public/ticket-change.js';
+import {initialQueue,initialControl,nextTicket,planDoctorCall,planDoctorFinish,dayKey} from '../public/queue-engine.js';
 import {defaultCustomization} from '../public/hospital-custom.js';
 if(!process.env.FIRESTORE_EMULATOR_HOST)throw Error('Refusing to run without the Firestore emulator.');
 const projectId='demo-turnahead',h='H'.repeat(20),other='X'.repeat(20),doctor='D'.repeat(20),tid='T'.repeat(20),done='F'.repeat(20),department='general-opd',day=dayKey(),now=Date.now();
@@ -98,4 +99,78 @@ test('two concurrent counters cannot claim the same FIFO ticket',async()=>{
  const db=user('owner'),q=(await getDoc(p(db,'queues',department))).data(),t=(await getDoc(p(db,'tickets',tid))).data(),a=(await getDoc(archive(db))).data();
  assert.equal(t.status,'called');assert.equal(a.status,'called');assert.equal(t.calledCounter,a.calledCounter);assert.equal(q.lanes[doctor].active.code,t.code);assert.deepEqual(q.waitingNumbers,[]);
  await assertFails(updateDoc(p(user('staff'),'tickets',tid),{doctorName:'Different doctor'}));
+});
+
+test('waiting ticket correction requires matching private audit and archive',async()=>{
+ const staff=user('staff'),owner=user('owner'),event='C'.repeat(20);
+ await assertFails(updateDoc(p(staff,'tickets',tid),{patientName:'New name'}));
+ const change=async db=>runTransaction(db,async tx=>{
+  tx.update(p(db,'tickets',tid),{patientName:'Corrected Fictional',changeId:event});
+  tx.update(archive(db),{patientName:'Corrected Fictional',updatedAt:now+1});
+  tx.set(p(db,'ticketChanges',event),{kind:'correction',ticketId:tid,actorUid:'staff',fromDoctor:doctor,toDoctor:doctor,createdAt:serverTimestamp()});
+ });
+ await assertFails(change(user('disabled')));await assertSucceeds(change(staff));
+ await assertSucceeds(getDoc(p(owner,'ticketChanges',event)));
+ await assertFails(getDoc(p(staff,'ticketChanges',event)));await assertFails(deleteDoc(p(owner,'ticketChanges',event)));
+ assert.equal((await getDoc(archive(owner))).data().patientName,'Corrected Fictional');
+});
+test('doctor transfer requires atomic queue, control, ticket, archive and audit',async()=>{
+ const target='E'.repeat(20),event='Z'.repeat(20),staff=user('staff'),owner=user('owner');
+ const d={name:'Second Doctor',departmentId:department,departmentName:'General OPD',roomNumber:'2',active:true,createdAt:Timestamp.fromMillis(now),updatedAt:Timestamp.fromMillis(now)};
+ await env.withSecurityRulesDisabled(async ctx=>setDoc(p(ctx.firestore(),'doctors',target),d));
+ const change=async(includeLanes)=>runTransaction(staff,async tx=>{
+  const q=p(staff,'queues',department),c=p(staff,'controls',department);
+  const [qs,cs]=await Promise.all([tx.get(q),tx.get(c)]);
+  const plan=planTicketChange(qs.data(),cs.data(),waiting,tid,d,target,{patientName:waiting.patientName,patientGender:waiting.patientGender,roomNumber:'2'},now+1,day);
+  if(includeLanes){tx.update(q,plan.queuePatch);tx.update(c,plan.controlPatch);}
+  tx.update(p(staff,'tickets',tid),{...plan.patch,changeId:event});
+  tx.update(archive(staff),{...plan.patch,updatedAt:now+1});
+  tx.set(p(staff,'ticketChanges',event),{kind:'transfer',ticketId:tid,actorUid:'staff',fromDoctor:doctor,toDoctor:target,createdAt:serverTimestamp()});
+ });
+ await assertFails(change(false));await assertSucceeds(change(true));
+ const q=(await getDoc(p(owner,'queues',department))).data(),t=(await getDoc(p(owner,'tickets',tid))).data();
+ assert.deepEqual(q.lanes[doctor].waitingNumbers,[]);assert.deepEqual(q.lanes[target].waitingNumbers,[1]);assert.equal(t.code,waiting.code);assert.equal(t.doctorId,target);
+ assert.equal((await getDoc(archive(owner))).data().doctorId,target);
+});
+
+test('cross-department transfer retains original archive, new code, and can be called and completed',async()=>{
+ const target='E'.repeat(20),dest='radiology',event='R'.repeat(20),staff=user('staff'),owner=user('owner');
+ const d={name:'Second Doctor',departmentId:dest,departmentName:'Radiology',roomNumber:'2',active:true,createdAt:Timestamp.fromMillis(now),updatedAt:Timestamp.fromMillis(now)};
+ await env.withSecurityRulesDisabled(async ctx=>{const db=ctx.firestore();await Promise.all([setDoc(p(db,'doctors',target),d),setDoc(p(db,'queues',dest),initialQueue('Radiology','RAD',day,now)),setDoc(p(db,'controls',dest),initialControl())]);});
+ const tr=p(staff,'tickets',tid),q=p(staff,'queues',department),c=p(staff,'controls',department),dq=p(staff,'queues',dest),dc=p(staff,'controls',dest);
+ const change=includeArchive=>runTransaction(staff,async tx=>{
+  const [qs,cs,dqs,dcs,ts]=await Promise.all([q,c,dq,dc,tr].map(x=>tx.get(x)));
+  const plan=planDepartmentTransfer(qs.data(),cs.data(),dqs.data(),dcs.data(),ts.data(),tid,d,target,dest,{patientName:waiting.patientName,patientGender:waiting.patientGender,roomNumber:'2'},now+1,day);
+  tx.update(q,plan.queuePatch);tx.update(c,plan.controlPatch);tx.update(dq,plan.destinationQueuePatch);tx.update(dc,plan.destinationControlPatch);
+  tx.update(tr,{...plan.patch,changeId:event});
+  if(includeArchive)tx.update(archive(staff),plan.archivePatch);
+  tx.set(p(staff,'ticketChanges',event),{kind:'department-transfer',ticketId:tid,actorUid:'staff',fromDoctor:doctor,toDoctor:target,createdAt:serverTimestamp()});
+ });
+ await assertFails(change(false));await assertSucceeds(change(true));
+ const after=(await getDoc(tr)).data();assert.equal(after.code,'RAD-001');assert.equal(after.originQueueId,department);
+ const a=(await getDoc(archive(owner))).data();assert.equal(a.code,waiting.code);assert.equal(a.serviceCode,after.code);assert.equal(a.issuedBy,'staff');
+ assert.deepEqual((await getDoc(q)).data().waitingNumbers,[]);
+ assert.equal((await getDoc(p(owner,'ticketChanges',event))).data().kind,'department-transfer');
+ await assertSucceeds(runTransaction(staff,async tx=>{
+  const [qs,cs,ts]=await Promise.all([dq,dc,tr].map(x=>tx.get(x)));
+  const plan=planDoctorCall(qs.data(),cs.data(),target,ts.data(),tid,'Counter 1','staff',now+1000);
+  tx.update(dq,plan.queuePatch);tx.update(dc,plan.controlPatch);tx.update(tr,plan.ticketPatch);tx.update(archive(staff),plan.historyPatch);
+ }));
+ await assertSucceeds(runTransaction(staff,async tx=>{
+  const [qs,cs,ts]=await Promise.all([dq,dc,tr].map(x=>tx.get(x)));
+  const plan=planDoctorFinish(qs.data(),cs.data(),target,ts.data(),'Counter 1','staff','complete',now+2000);
+  tx.update(dq,plan.queuePatch);tx.update(dc,plan.controlPatch);tx.update(tr,plan.ticketPatch);tx.update(archive(staff),plan.historyPatch);
+ }));
+ assert.equal((await getDoc(archive(owner))).data().status,'completed');
+ assert.equal((await getDoc(archive(owner))).data().serviceCode,'RAD-001');
+});
+
+test('activity events are owner-readable, immutable, restricted by actor and role',async()=>{
+ const staff=user('staff'),owner=user('owner'),event='A'.repeat(20),path=db=>p(db,'activity',event);
+ const data={kind:'ticket-issued',actorUid:'staff',createdAt:serverTimestamp()};
+ await assertFails(setDoc(path(user('disabled')),data));await assertFails(setDoc(path(staff),{...data,actorUid:'owner'}));
+ await assertFails(setDoc(path(staff),{...data,kind:'staff-updated'}));await assertFails(setDoc(path(staff),{...data,patientName:'Private'}));
+ await assertSucceeds(setDoc(path(staff),data));await assertSucceeds(getDoc(path(owner)));await assertFails(getDoc(path(staff)));
+ await assertFails(updateDoc(path(owner),{kind:'ticket-called'}));await assertFails(deleteDoc(path(owner)));
+ await assertSucceeds(setDoc(p(owner,'activity','B'.repeat(20)),{kind:'staff-updated',actorUid:'owner',createdAt:serverTimestamp()}));
 });

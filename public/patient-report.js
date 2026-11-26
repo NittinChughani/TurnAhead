@@ -4,6 +4,7 @@ export function patientReportRows(ticket, names={}) {
   const name=(ticket.patientGender==='male'?'Mr ':ticket.patientGender==='female'?'Ms ':'')+(ticket.patientName||'Patient');
   return [
     ['Ticket',ticket.code||'Not recorded'],['Patient',name],['Department',ticket.queueName||'Not recorded'],
+    ...(ticket.originalCode&&ticket.originalCode!==ticket.code?[['Original ticket',ticket.originalCode+' · '+ticket.originalQueueName]]:[]),
     ['Doctor',ticket.doctorName?'Dr. '+ticket.doctorName:'Not recorded'],['Room number',ticket.roomNumber||'Not recorded'],
     ['Queue date',ticket.dayKey||'Not recorded'],['Ticket issued',dt(ticket.issuedAt)],
     ['Issued by',names.issuedBy||'Not recorded'],['Issuing counter',ticket.issuedCounter||'Not recorded'],

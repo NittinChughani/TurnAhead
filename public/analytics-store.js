@@ -25,7 +25,7 @@ export async function loadAnalytics(hid,end,days,progress=()=>{},cancelled=()=>f
   if(cancelled())throw Error('Report cancelled.');
   for(const dept of depts.docs){
    if(cancelled())throw Error('Report cancelled.');
-   const items=await read(collection(db,...root,'history',d.id,'departments',dept.id,'records'),[orderBy('issuedAt')],t=>({dayKey:t.dayKey,queueId:t.queueId,queueName:t.queueName,doctorId:t.doctorId,doctorName:t.doctorName,status:t.status,recallCount:t.recallCount,issuedAt:t.issuedAt,calledAt:t.calledAt,finishedAt:t.finishedAt}));
+   const items=await read(collection(db,...root,'history',d.id,'departments',dept.id,'records'),[orderBy('issuedAt')],t=>({dayKey:t.dayKey,queueId:t.serviceQueueId||t.queueId,queueName:t.serviceQueueName||t.queueName,doctorId:t.doctorId,doctorName:t.doctorName,status:t.status,recallCount:t.recallCount,issuedAt:t.issuedAt,calledAt:t.calledAt,finishedAt:t.finishedAt}));
    records.push(...items);
   }
   progress('Loaded '+d.id+' · '+records.length+' tickets');

@@ -26,7 +26,7 @@ while(totals.scanned<limit){
   const inspect=async reader=>{
    const t=await reader(d.ref);if(!t.exists)return null;const data=t.data();
    if(!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(data.dayKey||'')||!(/^[A-Za-z0-9_-]{3,64}$/).test(data.queueId||''))return null;
-   const archive=root.collection('history').doc(data.dayKey).collection('departments').doc(data.queueId).collection('records').doc(d.id);
+   const archive=root.collection('history').doc(data.dayKey).collection('departments').doc(data.originQueueId||data.queueId).collection('records').doc(d.id);
    const control=root.collection('controls').doc(data.queueId);
    const queue=root.collection('queues').doc(data.queueId);
    const feedback=root.collection('feedback').doc(d.id);

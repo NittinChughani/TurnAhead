@@ -1,11 +1,11 @@
 import {configured,helpfulError} from './firebase.js';
-import {getHospital} from './org-store.js';
+import {getHospital} from './org-store.js?v=3.3.1';
 import {applyHospitalBrand} from './hospital-custom.js?v=3.1.0';
 import {registerTurnPush} from './push-client.js';
-import {observeTicket,observeQueue,fetchTicketFromServer,submitFeedback} from './store.js?v=3.2.0';
+import {observeTicket,observeQueue,fetchTicketFromServer,submitFeedback} from './store.js?v=3.3.1';
 import {t as tfn,bindLanguage} from './locale.js?v=2.6.1';
 import {nearTurnMilestone,shouldApplyTicket} from './v26-engine.js?v=2.6.3';
-import {dayKey,waitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName,doctorQueueSummary,callHistoryLine} from './queue-engine.js?v=2.6.3';
+import {dayKey,refinedWaitingEstimate,effectiveTicketStatus,approximateTurnTime,patientDisplayName,doctorQueueSummary,callHistoryLine} from './queue-engine.js?v=3.3.0';
 import {persistent,session} from './reliability.js?v=3.2.0';
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
@@ -15,7 +15,7 @@ let facility='Your hospital',currentTicket=null,currentQueue=null,stopQueue=null
 const loader=$('track-loading');
 setTimeout(()=>{if(!loader.hidden)$('track-loading-note').textContent='Still connecting. Your queue will appear as soon as the live service responds.';},3200);
 const messages={waiting:'Your place updates as reception calls each patient.',called:"It's your turn. Please go to your service counter.",completed:'Your visit was marked completed. Thank you for coming.',skipped:'Reception marked this turn as missed. Please ask them for help.',syncing:'Checking the latest status with reception…',expired:'This ticket belongs to an earlier day. Please ask reception for a new one.'};
-function clearPrivateTicket(){currentTicket=null;currentQueue=null;stopQueue?.();stopQueue=null;subscribedQueueId=null;lastConfirmed=0;for(const id of ['track-code','track-patient','track-visit','track-queue','track-call-history'])$(id).textContent='';}
+function clearPrivateTicket(){const img=$('saved-ticket-qr');img.hidden=true;img.removeAttribute('src');currentTicket=null;currentQueue=null;stopQueue?.();stopQueue=null;subscribedQueueId=null;lastConfirmed=0;for(const id of ['track-code','track-patient','track-visit','track-queue','track-call-history'])$(id).textContent='';}
 function missingTicket(){missingConfirmed=true;clearPrivateTicket();for(const id of ['near-popup','feedback-popup','feedback-success','feedback-progress']){const node=$(id);if(node)node.hidden=true;}if($('feedback-note'))$('feedback-note').value='';fail('Ticket not found or no longer available. Ask reception for help.');}
 function fail(message){loader.hidden=true;$('track-error').textContent=message;$('track-error').hidden=false;$('track-content').hidden=true;}
 function setSyncStatus(){
@@ -23,18 +23,20 @@ function setSyncStatus(){
   const seconds=lastConfirmed?Math.floor((Date.now()-lastConfirmed)/1000):Infinity;
   if(missingConfirmed){element.textContent='TICKET UNAVAILABLE';return;}
   if(!navigator.onLine){element.textContent='OFFLINE · RECONNECTING';return;}
-  element.textContent=refreshing?'CHECKING LIVE STATUS':seconds>35?'RECONNECTING…':lastConfirmed?'LIVE · SYNCED':'CONNECTING…';
+  element.textContent=refreshing?'CHECKING LIVE STATUS':seconds>95?'RECONNECTING…':lastConfirmed?'LIVE · SYNCED':'CONNECTING…';
 }
 /** Prevent an older cached snapshot from undoing a confirmed call or final state. */
 function applyTicket(ticket){
   if(!ticket||missingConfirmed&&ticket._fromCache)return;
   missingConfirmed=false;
-  if(!shouldApplyTicket(currentTicket,ticket))return;
+  if(!shouldApplyTicket(currentTicket,ticket)||ticket._fromCache&&currentTicket&&!currentTicket._fromCache&&ticket.changeId!==currentTicket.changeId)return;
   currentTicket=ticket;
   if(!ticket._fromCache)lastConfirmed=Date.now();
   if(subscribedQueueId!==ticket.queueId){
     stopQueue?.();subscribedQueueId=ticket.queueId;currentQueue=null;
-    stopQueue=observeQueue(hospitalId,ticket.queueId,q=>{
+    const queueId=ticket.queueId;
+    stopQueue=observeQueue(hospitalId,queueId,q=>{
+      if(subscribedQueueId!==queueId)return;
       if(q)currentQueue=q;
       else if(!['completed','skipped'].includes(currentTicket?.status))$('sync-state').textContent='DEPARTMENT UNAVAILABLE';
       update();
@@ -44,7 +46,7 @@ function applyTicket(ticket){
 }
 async function syncTicket(force=false){
   if(refreshing||!navigator.onLine||!ticketId||!configured)return;
-  if(!force&&Date.now()-lastRefresh<12000)return;
+  if(Date.now()-lastRefresh<(force?5000:60000))return;
   refreshing=true;lastRefresh=Date.now();setSyncStatus();
   try{
     const t=await fetchTicketFromServer(hospitalId,ticketId);
@@ -57,12 +59,13 @@ function update(){
   if(!t)return;
   const status=effectiveTicketStatus(t,q,dayKey());
   const doctorQueue=q&&t.doctorId&&q.lanes?.[t.doctorId]?doctorQueueSummary(q,t.doctorId):q;
-  const waiting=status==='waiting',estimate=waiting&&doctorQueue?waitingEstimate(doctorQueue,t.number):null;
+  const waiting=status==='waiting',estimate=waiting&&doctorQueue?refinedWaitingEstimate(doctorQueue,t.number):null;
   const validWait=Boolean(waiting&&estimate);
   const shownStatus=waiting&&!validWait&&q?'syncing':status;
   const ahead=validWait?estimate.peopleAhead:null;
   loader.hidden=true;$('track-error').hidden=true;$('track-content').hidden=false;
   $('track-code').textContent=t.code;
+  $('track-transfer').hidden=!t.originQueueId;$('track-transfer').textContent=t.originQueueId?'Your ticket was transferred. Use the current number shown above; your original QR still works.':'';
   $('track-queue').textContent=`${facility} · ${q?.name||t.queueName}`;
   $('track-patient').textContent=t.patientName?`Ticket for ${patientDisplayName(t)}`:'Patient name not recorded on this older ticket';
   $('track-visit').textContent=t.doctorName?`Visiting Dr. ${t.doctorName}${t.roomNumber?' · Room '+t.roomNumber:''}`:'Doctor / room details not recorded on this older ticket';
@@ -76,7 +79,10 @@ function update(){
   $('track-eta-clock').textContent=eta?`Around ${eta.clock} (PKT) · estimate only`:'';
   $('track-serving').textContent=doctorQueue?.active?.code||'—';
   $('track-message').textContent=shownStatus==='called'?tfn('turnMessage',{counter:t.calledCounter||'reception'}):shownStatus==='waiting'&&t.recallCount?'Your ticket has been recalled. You are back in the queue for your doctor.':shownStatus==='completed'&&t.recallCount?'Your recalled turn was completed. Thank you for visiting.':shownStatus==='skipped'&&t.recallCount?'Your recalled turn was marked missed again. Please ask reception for help.':legacy?'This uses the older queue system. Please request a new QR ticket.':doctorQueue?.paused&&validWait?tfn('paused'):tfn(({waiting:'pleaseWait',completed:'completedMessage',skipped:'missedMessage'}[shownStatus]||shownStatus));
-  const pct=validWait?Math.max(10,Math.min(92,Math.round(100/(ahead+1)))):shownStatus==='syncing'?65:100;
+  const pct=validWait?Math.max(10,Math.min(95,Math.round(100/(ahead+1)))):shownStatus==='called'||shownStatus==='completed'?100:0;
+  const progress=$('track-progress-bar').parentElement;progress.setAttribute('role','progressbar');progress.setAttribute('aria-label','Approximate queue progress');progress.setAttribute('aria-valuemin','0');progress.setAttribute('aria-valuemax','100');progress.setAttribute('aria-valuenow',String(pct));progress.setAttribute('aria-valuetext',validWait?ahead+' ahead':shownStatus);
+  const delay=$('track-delay');delay.hidden=!validWait||(!doctorQueue.paused&&!doctorQueue.pauseReason);delay.textContent=doctorQueue?.paused?'Queue paused. Please wait for reception to resume.':({'running-late':'Doctor is running behind schedule.','unexpected-delay':'Unexpected delay. Please remain near reception.','extended-service':'Current appointment is taking longer than expected.'}[doctorQueue?.pauseReason]||'');
+  if(!delay.textContent)delay.hidden=true;
   $('track-progress-bar').style.width=`${pct}%`;
   $('progress-description').textContent=validWait?`${ahead===0?'You are next in line.':`${ahead} ${ahead===1?'person':'people'} ahead of you.`} Times can change; stay near reception.`:messages[shownStatus]||'';
   if(hadLoaded&&lastStatus!=='called'&&shownStatus==='called'&&vibrationEnabled&&typeof navigator.vibrate==='function'&&document.visibilityState==='visible'){
@@ -142,7 +148,7 @@ function showFeedbackSuccess(){
   feedbackSuccess.hidden=false;
   $('feedback-success-close').focus({preventScroll:true});
   clearTimeout(feedbackSuccessTimer);
-  feedbackSuccessTimer=setTimeout(closeFeedbackSuccess,2200);
+  feedbackSuccessTimer=setTimeout(closeFeedbackSuccess,5000);
 }
 function renderFeedback(status){
   if(legacy||status!=='completed'||document.visibilityState!=='visible'||feedbackSending||!feedbackModal.hidden||!feedbackSuccess.hidden)return;
@@ -151,13 +157,14 @@ function renderFeedback(status){
   nearModal.hidden=true;currentlyShown=null;
   feedbackModal.hidden=false;
   $('feedback-state').textContent='';
-  $('feedback-close').focus({preventScroll:true});
+  feedbackModal.querySelector('input[name=rating]')?.focus({preventScroll:true});
 }
 $('feedback-close').addEventListener('click',closeFeedback);
 $('feedback-success-close').addEventListener('click',closeFeedbackSuccess);
 $('feedback-form').addEventListener('submit',async e=>{
   e.preventDefault();
   if(feedbackSending)return;
+  if(!navigator.onLine){$('feedback-state').textContent='You are offline. Reconnect before sending feedback.';return;}
   const form=e.currentTarget,b=form.querySelector('[type=submit]');
   const rating=form.querySelector('input[name=rating]:checked')?.value;
   feedbackSending=true;
@@ -204,14 +211,16 @@ else{
   },err=>{console.warn(helpfulError(err));$('sync-state').textContent='RECONNECTING…';syncTicket(true);});
   // Safari can suspend listeners while the device is locked. Recheck from the server
   // when the page resumes, and periodically while visible. These are bounded reads.
-  const resume=()=>{if(document.visibilityState==='visible'){lastRefresh=0;syncTicket(true);update();}};
+  const resume=()=>{if(document.visibilityState==='visible'){syncTicket(true);update();}};
   document.addEventListener('visibilitychange',resume);
   window.addEventListener('pageshow',resume);
   window.addEventListener('focus',resume);
   window.addEventListener('online',()=>syncTicket(true));
   window.addEventListener('offline',setSyncStatus);
   setInterval(()=>{setSyncStatus();if(document.visibilityState==='visible'){
-    if(!missingConfirmed&&!['completed','expired'].includes(currentTicket?.status))syncTicket();
+    if(!missingConfirmed&&!['completed','expired'].includes(currentTicket?.status)&&Date.now()-lastConfirmed>60000)syncTicket();
     if(currentTicket)update();
   }},15000);
 }
+
+$('save-ticket').addEventListener('click',()=>{if(!currentTicket||missingConfirmed)return;const img=$('saved-ticket-qr');try{const url=new URL(location.pathname,location.origin);url.searchParams.set('ticket',ticketId);if(hospitalId)url.searchParams.set('hospital',hospitalId);img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(window.turnaheadQR.svg(url.href));img.hidden=false;window.print();}catch{window.print();}});window.addEventListener('afterprint',()=>{const img=$('saved-ticket-qr');img.hidden=true;img.removeAttribute('src');});
