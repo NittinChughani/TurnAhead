@@ -28,7 +28,7 @@ test('thank-you popup only appears after Firestore confirms submission',()=>{
   const success=handler.indexOf('showFeedbackSuccess();');
   const saved=handler.indexOf("persistent.setItem(feedbackSubmittedKey,'yes')");
   assert.ok(ack>=0&&success>ack&&saved>ack&&success>saved);
-  assert.match(js,/feedbackSuccessTimer=setTimeout\(closeFeedbackSuccess,2200\)/);
+  assert.match(js,/feedbackSuccessTimer=setTimeout\(closeFeedbackSuccess,5000\)/);
   assert.match(js,/\$\('feedback-success-close'\)\.addEventListener\('click',closeFeedbackSuccess\)/);
 });
 
