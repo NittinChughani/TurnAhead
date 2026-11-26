@@ -88,7 +88,7 @@ function render(){
     $('queue-detail').querySelectorAll('[data-doctor-queue]').forEach(btn=>btn.addEventListener('click',()=>{selectedDoctor=btn.dataset.doctorQueue;render();}));
     $('queue-detail').querySelector('[data-delay-save]')?.addEventListener('click',async()=>{const reason=$('queue-detail').querySelector('[data-delay-select]').value,hid=currentHospital.id,epoch=workspaceEpoch,doctorId=selectedDoctor;const token=beginMutation();if(!token)return;try{await setDoctorDelay(hid,q.id,doctorId,reason);if(epoch===workspaceEpoch)notice('Delay notice updated.');}catch(e){if(epoch===workspaceEpoch)notice(helpfulError(e),true);}finally{endMutation(token);}});
     $('queue-detail').querySelectorAll('[data-action]').forEach(btn=>btn.addEventListener('click',()=>action(q.id,selectedDoctor,btn.dataset.action,btn)));
-  }else $('queue-detail').innerHTML='<div class="empty-state">No department yet. Ask your hospital administrator to create one.</div>';
+  }else $('queue-detail').innerHTML=queueConfirmed?'<div class="empty-state">No department yet. Ask your hospital administrator to create one.</div>':'<div class="report-skeleton" aria-hidden="true"><i></i><i></i><b></b></div><p role="status">Connecting to departments…</p>';
   const latest=tickets.filter(t=>t.dayKey===dayKey());
   renderV26();
   if(!mutationAllowed())document.querySelectorAll('#queue-detail [data-action],#missed-list [data-recall],#issue-form [type=submit]').forEach(b=>b.disabled=true);
@@ -261,7 +261,10 @@ $('staff-profile-remove').addEventListener('click',async()=>{
  catch(err){notice(helpfulError(err),true);}
 });
 
-let editTicketId=null;
+let editTicketId=null,guideStep=0;
+const staffGuide=[['Select your counter','Choose the physical counter you are operating.'],['Choose a doctor','Select a department, then the active doctor.'],['Issue the ticket','Enter only the required patient details and print the private QR.'],['Call and finish','Call next, then complete or skip using the same counter.'],['Recover safely','If offline, stop operations. Reconnect and verify the current ticket before retrying.']];
+function renderStaffGuide(){const [title,description]=staffGuide[guideStep];$('staff-guide-title').textContent=title;$('staff-guide-description').textContent=description;$('staff-guide-count').textContent=(guideStep+1)+' of '+staffGuide.length;$('staff-guide-prev').disabled=guideStep===0;$('staff-guide-next').disabled=guideStep===staffGuide.length-1;}
+$('staff-guide-prev').onclick=()=>{guideStep=Math.max(0,guideStep-1);renderStaffGuide();};$('staff-guide-next').onclick=()=>{guideStep=Math.min(staffGuide.length-1,guideStep+1);renderStaffGuide();};renderStaffGuide();
 $('recent-tickets').addEventListener('click',e=>{
  const b=e.target.closest('[data-change-ticket]');if(!b||!mutationAllowed())return;
  const ticket=tickets.find(x=>x.id===b.dataset.changeTicket&&x.status==='waiting');if(!ticket)return;
