@@ -85,3 +85,28 @@ test('patient downloads and prints a nonblank private ticket with the original s
  await page.emulateMedia({media:'screen'});await expect(page.locator('#patient-print-ticket')).toBeHidden();
  expect(errors).toEqual([]);
 });
+
+test('live pricing page displays packages and staged launch without creating an account',async({page})=>{
+ await mockWorkspace(page,'owner');
+ await page.goto('/pricing.html');
+ await expect(page.locator('#pricing-plans')).toContainText('PKR 4,999');
+ await page.locator('[data-cycle=annual]').click();
+ await expect(page.locator('#pricing-plans')).toContainText('PKR 149,990');
+ await page.locator('[data-select-plan=professional]').click();
+ await expect(page.locator('#pricing-launch-note')).toBeVisible();
+ await expect(page.locator('#pricing-launch-total')).toContainText('184,990');
+ await expect(page.locator('#pricing-auth')).toBeHidden();
+ await expect(page.locator('#pricing-request')).toBeHidden();
+});
+test('staged subscription tab preserves legacy analytics and does not enable commercial writes',async({page})=>{
+ await mockWorkspace(page,'owner');
+ await page.goto('/admin.html');await expect(page.locator('#admin-content')).toBeVisible();
+ await page.locator('[data-admin-tab=subscription]').click();
+ await expect(page.locator('#subscription-summary')).toContainText('Commercial onboarding coming soon');
+ await expect(page.locator('#subscription-request button[type=submit]')).toBeDisabled();
+ await expect(page.locator('#subscription-invoices')).toContainText('Available after commercial activation.');
+ await page.locator('[data-admin-tab=analytics]').click();
+ await expect(page.locator('#analytics-mode')).toHaveValue('advanced');
+ await page.locator('#analytics-load').click();
+ await expect(page.locator('#analytics-output')).toContainText('Operational overview');
+});
