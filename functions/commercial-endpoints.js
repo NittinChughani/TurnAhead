@@ -10,7 +10,7 @@ const options={region:'us-central1',maxInstances:3,memory:'256MiB',timeoutSecond
 function translate(e){return new HttpsError(e.message==='Access denied'?'permission-denied':'failed-precondition',e.message==='Access denied'?'Access denied':'Commercial operation could not be completed. Review the inputs and account state.');}
 export const commercialOperator=onCall({...options,enforceAppCheck:true},async req=>{
  const action=req.data?.action;
- if(!['issue','verifyPayment','activate','resolveRequest','cancel'].includes(action))throw new HttpsError('invalid-argument','Unknown operation');
+ if(!['issue','verifyPayment','activate','voidOrder','resolveRequest','cancel'].includes(action))throw new HttpsError('invalid-argument','Unknown operation');
  try{return await service[action](req.auth,req.data);}catch(e){throw translate(e);}
 });
 // Owner identity is checked against live membership and subscription on the server.

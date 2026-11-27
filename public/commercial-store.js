@@ -22,6 +22,10 @@ export async function requestChange(hid,kind,plan,cycle,message){
  await setDoc(doc(db,'commercialAccounts',hid,'requests',kind),{uid:u.uid,kind,plan,cycle,message:message.trim(),status:'pending',createdAt:serverTimestamp()});
 }
 export async function readChanges(hid){
- const snaps=await getDocsFromServer(collection(db,'commercialAccounts',hid,'requests'));
- return snaps.docs.map(s=>({id:s.id,...s.data()}));
+ const [pending,history]=await Promise.all([getDocsFromServer(collection(db,'commercialAccounts',hid,'requests')),getDocsFromServer(query(collection(db,'commercialAccounts',hid,'requestHistory'),orderBy('resolvedAt','desc'),limit(100)))]);
+ return [...pending.docs,...history.docs].map(s=>({id:s.id,...s.data()}));
+}
+export async function commercialRecords(hid){
+ const read=async(name,field)=>{const snaps=await getDocsFromServer(query(collection(db,'commercialAccounts',hid,name),orderBy(field,'desc'),limit(101)));return {items:snaps.docs.slice(0,100).map(s=>({id:s.id,...s.data()})),more:snaps.size>100};};
+ const [payments,notices]=await Promise.all([read('payments','verifiedAt'),read('notices','createdAt')]);return {payments,notices};
 }

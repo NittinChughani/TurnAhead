@@ -29,6 +29,7 @@ export function periodEnd(start,cycle){
 }
 export function createCommercialService(db,auth){
  const account=h=>db.doc('commercialAccounts/'+h),hospital=h=>db.doc('hospitals/'+h),order=id=>db.doc('commercialOrders/'+id),lead=uid=>db.doc('commercialLeads/'+uid),member=(h,u)=>db.doc('memberships/'+h+'_'+u),cap=h=>hospital(h).collection('capacity').doc('managed'),lock=h=>db.doc('commercialMigrationLocks/'+h);
+ const slot=h=>db.doc('commercialOrderSlots/'+h);
  const invoice=(h,id)=>account(h).collection('invoices').doc(id);
  function audit(tx,actor,kind,h,id){tx.create(db.collection('commercialAudit').doc(),{actorUid:actor,kind,hospitalId:h,reference:id,createdAt:now()});}
  async function operator(identity){const uid=uidValue(identity?.uid);if(identity.token?.email_verified!==true||identity.token?.turnaheadPlatformOperator!==true)throw Error('Access denied');const u=await auth.getUser(uid);if(u.disabled||!u.emailVerified||u.customClaims?.turnaheadPlatformOperator!==true)throw Error('Access denied');return uid;}
@@ -45,8 +46,8 @@ export function createCommercialService(db,auth){
   const ownerUid=uidValue(input.ownerUid),u=await auth.getUser(ownerUid);
   if(u.disabled||!u.emailVerified||!u.email)throw Error('Organization owner must have a verified account');
   return db.runTransaction(async tx=>{
-   const [os,hs,as,ls,ms]=await Promise.all([tx.get(order(id)),tx.get(hospital(h)),tx.get(account(h)),tx.get(lead(ownerUid)),tx.get(member(h,ownerUid))]);
-   if(os.exists)throw Error('Order already exists');
+   const [os,hs,as,ls,ms,ss]=await Promise.all([tx.get(order(id)),tx.get(hospital(h)),tx.get(account(h)),tx.get(lead(ownerUid)),tx.get(member(h,ownerUid)),tx.get(slot(h))]);
+   if(os.exists||ss.exists)throw Error('An outstanding order already exists');
    const a=exists(as),hr=exists(hs),m=exists(ms),l=exists(ls);
    if(hr){if(hr.ownerUid!==ownerUid||hr.status!=='active'||m?.role!=='owner'||m.active!==true)throw Error('Hospital owner mismatch');}
    else if(kind!=='initial'||a||!l||l.status!=='pending'||l.uid!==ownerUid||l.email!==u.email.toLowerCase()||m)throw Error('Verified pending lead required for new organization');
@@ -57,7 +58,7 @@ export function createCommercialService(db,auth){
    const issuedAt=now(),number='TA-'+id,setup=kind==='initial'?terms.setupAmount:0;
    const record={number,billTo,issuer,taxId,description:PLANS[terms.plan].name+' / '+terms.cycle,setup,recurring:terms.recurringAmount,discount,tax,total,currency:'PKR',status:'issued',issuedAt};
    tx.create(order(id),{hospitalId:h,ownerUid,kind,terms,billTo,status:'issued',total,expectedRevision:a?.revision??0,createdAt:issuedAt});
-   tx.create(invoice(h,id),record);audit(tx,actor,'invoice-issued',h,id);return {orderId:id,number,total};
+   tx.create(slot(h),{orderId:id,createdAt:issuedAt});tx.create(invoice(h,id),record);audit(tx,actor,'invoice-issued',h,id);return {orderId:id,number,total};
   });
  }
  async function verifyPayment(identity,input){
@@ -90,18 +91,23 @@ export function createCommercialService(db,auth){
     if(qs.size>10000||ds.size>10000||staff.size>10001||Object.keys(counts).some(k=>counts[k]>t.limits[k]))throw Error('Existing usage exceeds package capacity; agree a suitable plan before activation');
     if(!hr){
      const createdAt=now();tx.create(hospital(h),{name:o.billTo,ownerUid:u.uid,status:'active',createdAt,updatedAt:createdAt});
+     tx.create(hospital(h).collection('meta').doc('sequence'),{nextPrefix:1});
      tx.create(member(h,u.uid),{uid:u.uid,hospitalId:h,email:u.email.toLowerCase(),role:'owner',active:true,displayName:clean(l.representative,2,80,'representative').slice(0,70),gender:'unspecified',invitedBy:actor,createdAt,updatedAt:createdAt});
      tx.update(lead(u.uid),{status:'approved',hospitalId:h,resolvedAt:createdAt});
     }
     const expiry=periodEnd(start,t.cycle);
     tx.set(account(h),{plan:t.plan,cycle:t.cycle,status:'active',recurringAmount:t.recurringAmount,limits:t.limits,activatedAt:a?.activatedAt||stamp(at),expiresAt:stamp(expiry),revision:(a?.revision??0)+1,updatedAt:now()});
     tx.set(cap(h),{...counts,limits:t.limits,lastKind:'',lastId:'',updatedAt:now()});
-    tx.update(order(id),{status:'activated',activatedAt:now()});audit(tx,actor,'subscription-activated',h,id);
+    tx.update(order(id),{status:'activated',activatedAt:now()});tx.delete(slot(h));audit(tx,actor,'subscription-activated',h,id);
     return {hospitalId:h,expiresAt:expiry,counts};
    });
   }finally{
    await db.runTransaction(async tx=>{const s=await tx.get(lock(h));if(s.data()?.orderId===id)tx.delete(lock(h));});
   }
+ }
+ async function voidOrder(identity,input){
+  const actor=await operator(identity),id=ident(input.orderId,'order ID');
+  return db.runTransaction(async tx=>{const o=exists(await tx.get(order(id)));if(!o||o.status!=='issued')throw Error('Only an unpaid order may be voided');const ir=invoice(o.hospitalId,id),iv=exists(await tx.get(ir)),ss=exists(await tx.get(slot(o.hospitalId)));if(iv?.status!=='issued'||ss?.orderId!==id)throw Error('Order mismatch');tx.update(ir,{status:'void',voidedAt:now()});tx.update(order(id),{status:'void',voidedAt:now()});tx.delete(slot(o.hospitalId));audit(tx,actor,'invoice-voided',o.hospitalId,id);return {status:'void'};});
  }
  async function resolveRequest(identity,input){
   const actor=await operator(identity),h=ident(input.hospitalId),kind=input.kind;
@@ -116,7 +122,7 @@ export function createCommercialService(db,auth){
  }
  async function cancel(identity,input){
   const actor=await operator(identity),h=ident(input.hospitalId),reason=clean(input.reason,3,500,'cancellation reason');
-  return db.runTransaction(async tx=>{const a=exists(await tx.get(account(h)));if(!a||a.status==='cancelled')throw Error('No cancellable account');tx.update(account(h),{status:'cancelled',revision:(a.revision??0)+1,cancelledAt:now(),cancellationReason:reason,updatedAt:now()});audit(tx,actor,'subscription-cancelled',h,h);return {status:'cancelled'};});
+  return db.runTransaction(async tx=>{const [as,ss]=await Promise.all([tx.get(account(h)),tx.get(slot(h))]);const a=exists(as);if(ss.exists||!a||a.status==='cancelled')throw Error('No cancellable account');tx.update(account(h),{status:'cancelled',revision:(a.revision??0)+1,cancelledAt:now(),cancellationReason:reason,updatedAt:now()});audit(tx,actor,'subscription-cancelled',h,h);return {status:'cancelled'};});
  }
  async function analytics(identity,input){
   const h=ident(input.hospitalId);await owner(identity,h);
@@ -141,5 +147,5 @@ export function createCommercialService(db,auth){
   for(const d of page.docs){const made=await db.runTransaction(async tx=>{const fresh=await tx.get(d.ref),a=exists(fresh),stage=reminderStage(a,at);if(!stage)return false;const key=String(millis(a.expiresAt))+'-'+stage,ref=d.ref.collection('notices').doc(key),old=await tx.get(ref);if(old.exists)return false;tx.create(ref,{stage,expiresAt:a.expiresAt,createdAt:now()});return true;});if(made)written++;}
   return {written,cursor:page.size===100?page.docs.at(-1).id:null};
  }
- return {issue,verifyPayment,activate,resolveRequest,cancel,analytics,reminders};
+ return {issue,verifyPayment,activate,voidOrder,resolveRequest,cancel,analytics,reminders};
 }

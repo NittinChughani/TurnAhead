@@ -1,12 +1,12 @@
 {
   "name": "turnahead-web",
-  "version": "4.0.0-dev.1",
+  "version": "4.0.0-dev.2",
   "private": true,
   "type": "module",
   "description": "TurnAhead v4.0 commercial development candidate",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "for file in public/*.js; do node --check \"$file\" || exit 1; done",
+    "check": "for file in public/*.js; do node --check \"$file\" || exit 1; done; for file in functions/*.js; do node --check \"$file\" || exit 1; done",
     "test:rules": "firebase emulators:exec --config firebase.emulator.json --only firestore --project demo-turnahead 'node --test security/firestore.test.mjs'",
     "retention": "node scripts/retention.mjs",
     "test:browser": "playwright test"

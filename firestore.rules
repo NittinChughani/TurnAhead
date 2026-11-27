@@ -529,6 +529,7 @@ service cloud.firestore {
         commercialSelection(request.resource.data) && request.resource.data.status == 'pending' && request.resource.data.createdAt == request.time;
       allow update, delete: if false;
     }
+    match /commercialOrderSlots/{id} { allow read, write: if false; }
     match /commercialOrders/{id} { allow read: if platformOperator(); allow write: if false; }
     match /commercialAudit/{id} { allow read: if platformOperator(); allow write: if false; }
     match /commercialMigrationLocks/{id} { allow read, write: if false; }

@@ -1,0 +1,2 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+test('server pricing and analytics calculations match customer application',()=>{for(const [a,b] of [['public/subscription-model.js','functions/commercial-policy.js'],['public/analytics-engine.js','functions/commercial-analytics-engine.js']])assert.equal(readFileSync(new URL('../'+a,import.meta.url),'utf8'),readFileSync(new URL('../'+b,import.meta.url),'utf8'));});
