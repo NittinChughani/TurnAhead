@@ -1,8 +1,10 @@
+// Isolated staging only. Do not merge this configuration into main.
 export const firebaseConfig = {
-  apiKey: 'AIzaSyB4TDbj_yjmWr-ArmRtat9cbR2LuixRbAs',
-  authDomain: 'turnahead-b34f9.firebaseapp.com',
-  projectId: 'turnahead-b34f9',
-  appId: '1:348690841921:web:4a091271d11a618258e1c0'
+  "apiKey": "AIzaSyBQU1xHc6o92ZD02HOgTrh_Fe6UXm0O7ko",
+  "authDomain": "turnahead-staging.firebaseapp.com",
+  "projectId": "turnahead-staging",
+  "storageBucket": "turnahead-staging.firebasestorage.app",
+  "messagingSenderId": "528112784622",
+  "appId": "1:528112784622:web:7a2dababac531e0a254fff"
 };
-
-export const facilityName = 'TurnAhead Demo Clinic';
+export const facilityName = 'TurnAhead Staging';
