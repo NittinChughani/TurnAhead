@@ -153,7 +153,7 @@ for(const theme of ['light','dark'])for(const [role,url,content] of [['owner','/
   await expect(active).toBeVisible();await expect(inactive).toBeHidden();await expect(active).toHaveAttribute('src','./assets/brand-'+theme+'-blended.webp');
   expect(await active.getAttribute('src')).toBe(await page.locator('.site-header .brand img:visible').getAttribute('src'));
   await expect(brand).toHaveCSS('background-color','rgba(0, 0, 0, 0)');await expect(brand).toHaveCSS('border-top-width','0px');await expect(brand).toHaveCSS('box-shadow','none');await expect(active).toHaveCSS('mix-blend-mode','normal');
-  await expect(overlay.locator('.ta-signin-card')).toHaveCSS('background-color',await page.locator('.site-header').evaluate(e=>getComputedStyle(e).backgroundColor));
+  await expect(overlay.locator('.ta-signin-card')).toHaveCSS('background-color',theme==='dark'?'rgb(22, 37, 59)':'rgb(255, 255, 255)');
   await expect(page.locator(content)).toBeVisible();await expect(overlay).toBeHidden();
  });
 }
