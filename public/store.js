@@ -1,3 +1,4 @@
+import {archiveMonth} from './archive-month.js';
 /** Hospital-scoped Firestore queues, atomic ticket transitions and private dated history. */
 import {
   collection,doc,getDocs,getDocsFromServer,getDocFromServer,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter,deleteField,setDoc,serverTimestamp
@@ -186,7 +187,8 @@ export async function performAction(hid,id,action,doctorId,counterNumber=1){
 }
 /** Day documents are created transactionally with the first ticket each day. */
 export async function listHistoryDays(hid){
-  const snap=await getDocs(query(collection(db,'hospitals',hid,'history'),orderBy('dayKey','desc')));
+  const {first,next}=archiveMonth();
+  const snap=await getDocsFromServer(query(collection(db,'hospitals',hid,'history'),where('dayKey','>=',first),where('dayKey','<',next),orderBy('dayKey','desc'),limit(31)));
   return snap.docs.map(d=>d.id);
 }
 /** Day/department-specific records. Exact ticket code search queries the full archive. */

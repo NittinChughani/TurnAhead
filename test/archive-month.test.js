@@ -1,0 +1,2 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {archiveMonth,monthDates} from '../public/archive-month.js';
+test('Pakistan month boundaries, December rollover and newest-first archive filtering',()=>{assert.deepEqual(archiveMonth('2026-12-31'),{first:'2026-12-01',next:'2027-01-01',label:'December 2026'});assert.deepEqual(monthDates(['2026-11-30','2026-12-01','2026-12-30','2026-12-30','2027-01-01'],'2026-12-31'),['2026-12-30','2026-12-01']);});

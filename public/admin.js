@@ -1,10 +1,11 @@
+import {archiveMonth,monthDates} from './archive-month.js';
 import {bindSignInLoader} from './signin-loader.js?v=4.0.1';
 import {bindSubscription} from './admin-subscription.js?v=4.0.0-ui.1';
 import {readActivity} from './activity-store.js?v=3.3.0';
 import {configured,auth,helpfulError} from './firebase.js';
 import {observeAuth,login,logout,refreshVerification,requestVerification,resolveWorkspace,getHospital,
   watchMembership,watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,updateRecallGrace,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js?v=4.0.1';
-import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory,observeFeedback,readTicketChanges,searchHistoryDate} from './store.js?v=3.3.1';
+import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory,observeFeedback,readTicketChanges,searchHistoryDate} from './store.js?v=4.0.1';
 import {canChangeRole,normalizeEmail,invitationLink,boardLink,staffGreeting} from './org-model.js';
 import {dayKey,patientDisplayName,ticketStatusLabel} from './queue-engine.js?v=2.6.2';
 import {watchDoctors,addDoctor,changeDoctor} from './doctors.js?v=3.3.1';
@@ -16,7 +17,7 @@ import {persistent} from './reliability.js?v=3.2.0';
 import {bindV3,resetV3,resetAnalytics,renderCustomization,renderOnboarding} from './admin-v3.js?v=4.0.0-ui.1';
 const $=id=>document.getElementById(id),esc=window.turnahead.esc,fmt=window.turnahead.fmt;
 let hospital=null,me=null,members=[],invites=[],departments=[],tickets=[],unsubs=[],toastTimer,authEpoch=0,pendingLogin=false,pendingLogout=false;
-let fullHistoryGeneration=0;
+let fullHistoryGeneration=0,historyLoaded=false,historyLoading=false,historyMonth='',customHistoryDate=null,historyRequest=0;
 let feedbackRecords=[],currentHistoryTicket=null,editingMember=null,editingDoctor=null,doctors=[],historyDays=[],archiveCursors=new Map(),historyRecords=new Map();
 const loginButton=$('admin-login-form').querySelector('[type=submit]');
 const loadingLogin=bindSignInLoader(loginButton);
@@ -24,7 +25,7 @@ const show=(id,value)=>$(id).hidden=!value;
 function toast(message,error=false){const el=$('admin-toast');el.textContent=message;el.classList.toggle('error',error);show('admin-toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('admin-toast',false),4800);}
 const accountMenu=bindAccountMenu('admin');
 const subscription=bindSubscription(()=>({hospital,departments,doctors,members}),toast,()=>showAdminSection('subscription',true),()=>resetAnalytics());
-function stop(){subscription.stop();accountMenu.show(false);fullHistoryGeneration++;resetV3();unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;editingMember=null;editingDoctor=null;doctors=[];members=[];invites=[];departments=[];tickets=[];historyDays=[];archiveCursors.clear();historyRecords.clear();
+function stop(){subscription.stop();accountMenu.show(false);fullHistoryGeneration++;resetV3();unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;editingMember=null;editingDoctor=null;doctors=[];members=[];invites=[];departments=[];tickets=[];historyDays=[];historyLoaded=false;historyLoading=false;historyMonth='';customHistoryDate=null;historyRequest++;archiveCursors.clear();historyRecords.clear();
   feedbackRecords=[];['history-detail-modal','doctor-edit-modal','staff-edit-modal'].forEach(id=>show(id,false));
   for(const id of ['patient-ticket-list','history-days','doctor-list','staff-list','invite-list','department-list','feedback-list','history-detail-body','history-detail-title','onboarding-list','admin-profile-avatar','activity-list'])$(id)?.replaceChildren();
   for(const id of ['invitation-url','invite-email','invite-name','staff-edit-name','staff-edit-email','doctor-edit-name']){const el=$(id);if(el){if('value' in el)el.value='';else el.textContent='';}}
@@ -42,6 +43,7 @@ function showAdminSection(section,scroll=false){
     if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
   });
   if(selected==='activity')loadActivity();
+  if(selected==='history'&&(!historyLoaded||historyMonth!==archiveMonth().first)&&!historyLoading)refreshHistory();
   if(selected==='subscription')subscription.open();
   if(selected==='onboarding')renderOnboarding({hospital,departments,doctors,members});
   if(scroll)adminNavigation.scrollIntoView({behavior:'smooth',block:'start'});
@@ -165,8 +167,10 @@ $('doctor-edit-form').addEventListener('submit',async e=>{
 /** Each date has a separate search box; history reads are owner-only. */
 function renderHistory(){
   const host=$('history-days');
-  if(!historyDays.length){host.innerHTML='<div class="empty-state">No dated patient records yet. New tickets appear here automatically.</div>';return;}
-  host.innerHTML=historyDays.map(date=>`<details class="history-day" data-history-day="${esc(date)}"><summary><b>${esc(date)}</b><span>Search by department and ticket number ↗</span></summary><div class="history-tools"><label>Department<select data-history-dept="${esc(date)}">${departments.map(d=>`<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.prefix)})</option>`).join('')}</select></label><label>Ticket number<input type="search" data-history-code="${esc(date)}" placeholder="CAR-001" maxlength="24"></label><button class="btn btn-small btn-primary" type="button" data-history-search="${esc(date)}">Search</button><button class="btn btn-small btn-outline" type="button" data-history-recent="${esc(date)}">Show recent</button></div><div class="history-filter-tools"><label>Doctor<select data-filter="doctor"><option value="">All</option>${doctors.map(d=>'<option value="'+esc(d.id)+'">'+esc(d.name)+'</option>').join('')}</select></label><label>Issuing counter<select data-filter="counter"><option value="">All</option>${Array.from({length:12},(_,i)=>'<option>Counter '+(i+1)+'</option>').join('')}</select></label><label>Issuer<select data-filter="staff"><option value="">All</option>${members.map(m=>'<option value="'+esc(m.uid)+'">'+esc(staffGreeting(m))+'</option>').join('')}</select></label><label>Status<select data-filter="status"><option value="">All</option><option value="waiting">Waiting</option><option value="called">Called</option><option value="completed">Completed</option><option value="skipped">Missed</option></select></label><label>Full-date scope<select data-full-scope><option value="selected">Selected service department</option><option value="all">All departments</option></select></label><small>Recent mode filters loaded pages. Full-date search includes transferred patients and both original/current codes.</small><button type="button" class="btn btn-small btn-outline" data-history-full="${esc(date)}">Search entire date</button><button type="button" class="btn btn-small btn-outline" data-history-cancel hidden>Cancel search</button><p data-filter-count role="status"></p></div><div class="history-results" data-history-results="${esc(date)}">Select a department to view its records.</div><button class="btn btn-small btn-outline history-more" data-history-more="${esc(date)}" type="button" hidden>Load 100 more ↗</button></details>`).join('');
+  const dates=customHistoryDate&&!historyDays.includes(customHistoryDate)?[customHistoryDate,...historyDays]:historyDays;
+  if(!dates.length){host.innerHTML='<div class="empty-state">No dated patient records for this month. Use the date finder for earlier records.</div>';return;}
+  host.innerHTML=dates.map(date=>`<details class="history-day" data-history-day="${esc(date)}" ${date===(customHistoryDate||historyDays[0])?'open':''}><summary><b>${esc(date)}${date===customHistoryDate?' · Date search':date===historyDays[0]?' · Latest':''}</b><span class="history-expand-label"><span class="history-closed-label">Expand archive</span><span class="history-open-label">Minimize archive</span></span></summary><div class="history-tools"><label>Department<select data-history-dept="${esc(date)}">${departments.map(d=>`<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.prefix)})</option>`).join('')}</select></label><label>Ticket number<input type="search" data-history-code="${esc(date)}" placeholder="CAR-001" maxlength="24"></label><button class="btn btn-small btn-primary" type="button" data-history-search="${esc(date)}">Search</button><button class="btn btn-small btn-outline" type="button" data-history-recent="${esc(date)}">Show recent</button></div><div class="history-filter-tools"><label>Doctor<select data-filter="doctor"><option value="">All</option>${doctors.map(d=>'<option value="'+esc(d.id)+'">'+esc(d.name)+'</option>').join('')}</select></label><label>Issuing counter<select data-filter="counter"><option value="">All</option>${Array.from({length:12},(_,i)=>'<option>Counter '+(i+1)+'</option>').join('')}</select></label><label>Issuer<select data-filter="staff"><option value="">All</option>${members.map(m=>'<option value="'+esc(m.uid)+'">'+esc(staffGreeting(m))+'</option>').join('')}</select></label><label>Status<select data-filter="status"><option value="">All</option><option value="waiting">Waiting</option><option value="called">Called</option><option value="completed">Completed</option><option value="skipped">Missed</option></select></label><label>Full-date scope<select data-full-scope><option value="selected">Selected service department</option><option value="all">All departments</option></select></label><small>Recent mode filters loaded pages. Full-date search includes transferred patients and both original/current codes.</small><button type="button" class="btn btn-small btn-outline" data-history-full="${esc(date)}">Search entire date</button><button type="button" class="btn btn-small btn-outline" data-history-cancel hidden>Cancel search</button><p data-filter-count role="status"></p></div><div class="history-results" data-history-results="${esc(date)}">Select a department to view its records.</div><button class="btn btn-small btn-outline history-more" data-history-more="${esc(date)}" type="button" hidden>Load 100 more ↗</button></details>`).join('');
+  const opened=host.querySelector('details[open]');if(opened&&departments.length)loadHistory(opened.dataset.historyDay,'recent');
 }
 function historyRecordHtml(t,date,departmentId){
   t={...t,originalCode:t.code,originalQueueName:t.queueName,code:t.serviceCode||t.code,queueName:t.serviceQueueName||t.queueName};
@@ -197,9 +201,9 @@ $('history-days').addEventListener('click',e=>{
 });
 $('history-open-date').addEventListener('click',()=>{
  const date=$('history-date').value;if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){toast('Choose a valid calendar date first.',true);return;}
- if(!historyDays.includes(date)){historyDays=[date,...historyDays].sort((a,b)=>b.localeCompare(a));renderHistory();}
+ customHistoryDate=date;renderHistory();
  const day=[...$('history-days').querySelectorAll('[data-history-day]')].find(x=>x.dataset.historyDay===date);
- if(day){day.open=true;day.scrollIntoView({behavior:'smooth',block:'center'});loadHistory(date,'recent');}
+ if(day){day.open=true;day.scrollIntoView({behavior:'smooth',block:'center'});}
 });
 async function loadHistory(date,mode='recent'){
   fullHistoryGeneration++;
@@ -211,32 +215,34 @@ async function loadHistory(date,mode='recent'){
   const key=`${date}:${id}`,code=mode==='search'?raw:'';
   if(mode==='search'&&!code){toast('Enter a ticket number like CAR-001.',true);return;}
   const result=parent.querySelector('[data-history-results]'),more=parent.querySelector('[data-history-more]');
-  const cursor=mode==='more'?archiveCursors.get(key):null,epoch=authEpoch,hid=hospital.id;
+  const cursor=mode==='more'?archiveCursors.get(key):null,epoch=authEpoch,hid=hospital.id,request=String(++historyRequest);parent.dataset.request=request;parent.dataset.loaded='true';
   result.setAttribute('aria-busy','true');if(mode!=='more')result.textContent='Loading patient records…';
   try{
     const page=await readHistory(hid,date,id,code,cursor||null);
-    if(epoch!==authEpoch||hospital?.id!==hid||!result.isConnected||parent.querySelector('[data-history-dept]').value!==id)return;
+    if(epoch!==authEpoch||hospital?.id!==hid||!result.isConnected||parent.dataset.request!==request||parent.querySelector('[data-history-dept]').value!==id)return;
     archiveCursors.set(key,page.cursor);
     const html=page.records.length?page.records.map(t=>historyRecordHtml(t,date,id)).join(''):'<div class="empty-state">No matching ticket records for this department and date.</div>';
     if(mode==='more')result.insertAdjacentHTML('beforeend',html);else result.innerHTML=html;
     more.hidden=!page.hasMore||mode==='search';applyHistoryFilters(parent);
-  }catch(e){result.textContent=helpfulError(e);more.hidden=true;}
-  finally{result.removeAttribute('aria-busy');}
+  }catch(e){if(epoch===authEpoch&&result.isConnected&&parent.dataset.request===request){result.textContent=helpfulError(e);more.hidden=true;}}
+  finally{if(parent.dataset.request===request)result.removeAttribute('aria-busy');}
 }
 async function refreshHistory(){
-  if(!hospital)return;
-  const epoch=authEpoch,hid=hospital.id;
-  try{const dates=await listHistoryDays(hid);if(epoch!==authEpoch||hospital?.id!==hid)return;historyDays=dates;archiveCursors.clear();historyRecords.clear();renderHistory();}
-  catch(e){$('history-days').textContent=helpfulError(e);}
+  if(!hospital||historyLoading)return;
+  const epoch=authEpoch,hid=hospital.id,month=archiveMonth();historyLoading=true;historyLoaded=false;customHistoryDate=null;$('history-month-label').textContent=month.label;$('history-days').textContent='Loading this month’s dates…';
+  try{const dates=await listHistoryDays(hid);if(epoch!==authEpoch||hospital?.id!==hid)return;historyDays=monthDates(dates);historyMonth=month.first;historyLoaded=true;archiveCursors.clear();historyRecords.clear();renderHistory();}
+  catch(e){if(epoch===authEpoch)$('history-days').textContent=helpfulError(e);}
+  finally{if(epoch===authEpoch)historyLoading=false;}
 }
 $('history-days').addEventListener('click',e=>{
   const action=e.target.closest('[data-history-search],[data-history-recent],[data-history-more]');if(!action)return;
   const date=action.dataset.historySearch||action.dataset.historyRecent||action.dataset.historyMore;
   loadHistory(date,action.hasAttribute('data-history-search')?'search':action.hasAttribute('data-history-more')?'more':'recent');
 });
+$('history-days').addEventListener('toggle',e=>{const day=e.target;if(day.matches?.('[data-history-day]')&&day.open&&!day.dataset.loaded&&departments.length)loadHistory(day.dataset.historyDay,'recent');},true);
 $('history-days').addEventListener('change',e=>{
   if(e.target.matches('[data-filter]')){fullHistoryGeneration++;applyHistoryFilters(e.target.closest('[data-history-day]'));}
-  if(e.target.matches('[data-history-dept]')){fullHistoryGeneration++;const p=e.target.closest('[data-history-day]');p.querySelector('[data-history-results]').textContent='Choose Search or Show recent for this department.';p.querySelector('[data-history-more]').hidden=true;}
+  if(e.target.matches('[data-history-dept]')){fullHistoryGeneration++;const p=e.target.closest('[data-history-day]');p.dataset.request=String(++historyRequest);p.querySelector('[data-history-results]').textContent='Choose Search or Show recent for this department.';p.querySelector('[data-history-more]').hidden=true;}
 });
 $('history-days').addEventListener('keydown',e=>{
   if(e.key==='Enter'&&e.target.matches('[data-history-code]')){e.preventDefault();loadHistory(e.target.dataset.historyCode,'search');}
@@ -289,10 +295,9 @@ async function initialize(){
     unsubs.push(watchHospitalMembers(hospital.id,data=>{if(seq!==authEpoch)return;members=data;me=data.find(m=>m.uid===auth.currentUser?.uid)||me;renderOwnAvatar();renderMembers();renderTickets();displayMetrics();},e=>toast(helpfulError(e),true)));
     unsubs.push(watchInvitations(hospital.id,data=>{if(seq!==authEpoch)return;invites=data;renderInvites();displayMetrics();},e=>toast(helpfulError(e),true)));
     unsubs.push(watchDoctors(hospital.id,data=>{if(seq!==authEpoch)return;doctors=data;renderDoctors();subscription.usage();},e=>toast(helpfulError(e),true)));
-    unsubs.push(observeQueues(hospital.id,data=>{if(seq!==authEpoch)return;departments=data;renderDepartments();renderDoctors();displayMetrics();if(historyDays.length&&!$('history-days').querySelector('[data-history-dept]'))renderHistory();},e=>toast(helpfulError(e),true)));
+    unsubs.push(observeQueues(hospital.id,data=>{if(seq!==authEpoch)return;departments=data;renderDepartments();renderDoctors();displayMetrics();if(historyLoaded){const open=$('history-days').querySelector('details[open]');if(open&&!open.querySelector('[data-history-dept] option')&&departments.length)renderHistory();}},e=>toast(helpfulError(e),true)));
     unsubs.push(observeTickets(hospital.id,data=>{if(seq!==authEpoch)return;tickets=data;renderTickets();},e=>toast(helpfulError(e),true),100));
     unsubs.push(observeFeedback(hospital.id,data=>{if(seq!==authEpoch)return;feedbackRecords=data;renderFeedback();},e=>toast(helpfulError(e),true)));
-    refreshHistory();
   }catch(e){if(seq===authEpoch){$('guard-message').textContent=helpfulError(e);pendingLogin=false;loadingLogin(false);}}
 }
 $('admin-login-form').addEventListener('submit',async e=>{
