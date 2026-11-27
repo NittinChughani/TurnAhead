@@ -174,3 +174,64 @@ test('activity events are owner-readable, immutable, restricted by actor and rol
  await assertFails(updateDoc(path(owner),{kind:'ticket-called'}));await assertFails(deleteDoc(path(owner)));
  await assertSucceeds(setDoc(p(owner,'activity','B'.repeat(20)),{kind:'staff-updated',actorUid:'owner',createdAt:serverTimestamp()}));
 });
+
+test('commercial data: verified lead intake, immutable billing and tenant isolation',async()=>{
+ const db=user('prospect'),anon=env.unauthenticatedContext().firestore(),owner=user('owner'),outside=user('otherowner'),staff=user('staff');
+ const lead={uid:'prospect',email:'prospect@example.test',organization:'Example clinic',representative:'Test contact',phone:'03001234567',plan:'essential',cycle:'annual',status:'pending',createdAt:serverTimestamp()};
+ await assertFails(setDoc(doc(anon,'commercialLeads','prospect'),lead));
+ await assertFails(setDoc(doc(db,'commercialLeads','someone'),lead));
+ await assertFails(setDoc(doc(db,'commercialLeads','prospect'),{...lead,status:'active'}));
+ await assertSucceeds(setDoc(doc(db,'commercialLeads','prospect'),lead));
+ await assertSucceeds(getDoc(doc(db,'commercialLeads','prospect')));
+ await assertFails(getDoc(doc(owner,'commercialLeads','prospect')));
+ await assertFails(getDocs(collection(db,'commercialLeads')));
+ await assertFails(updateDoc(doc(db,'commercialLeads','prospect'),{status:'active'}));
+ await env.withSecurityRulesDisabled(async c=>{await setDoc(doc(c.firestore(),'commercialAccounts',h),{plan:'essential',cycle:'annual',status:'active'});});
+ await assertSucceeds(getDoc(doc(owner,'commercialAccounts',h)));
+ for(const x of [anon,outside,staff])await assertFails(getDoc(doc(x,'commercialAccounts',h)));
+ await assertFails(updateDoc(doc(owner,'commercialAccounts',h),{plan:'enterprise'}));
+ const req={uid:'owner',kind:'renew',plan:'essential',cycle:'annual',message:'',status:'pending',createdAt:serverTimestamp()};
+ await assertSucceeds(setDoc(doc(owner,'commercialAccounts',h,'requests','renew'),req));
+ await assertFails(setDoc(doc(outside,'commercialAccounts',h,'requests','renew'),req));
+ await assertFails(updateDoc(doc(owner,'commercialAccounts',h,'requests','renew'),{status:'approved'}));
+ const operator=env.authenticatedContext('operator',{...claims('operator'),turnaheadPlatformOperator:true}).firestore();
+ await assertSucceeds(getDocs(collection(operator,'commercialLeads')));
+ await assertSucceeds(getDoc(doc(operator,'commercialAccounts',h)));
+ await assertFails(updateDoc(doc(operator,'commercialAccounts',h),{plan:'enterprise'}));
+ await assertFails(getDoc(archive(operator)));
+});
+
+test('managed capacity requires atomic unique resource reservations and protects existing queues',async()=>{
+ const db=user('owner'),cap=p(db,'capacity','managed'),account=doc(db,'commercialAccounts',h),newQueue='next-department',otherQueue='overflow-department',newDoctor='N'.repeat(20);
+ const queue=initialQueue('New department','NEW',day,now),docData={name:'New Doctor',departmentId:department,departmentName:'General OPD',roomNumber:'2',active:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
+ const seed=async(expires=now+86400000)=>env.withSecurityRulesDisabled(async c=>{const d=c.firestore();await setDoc(doc(d,'commercialAccounts',h),{status:'active',plan:'essential',expiresAt:Timestamp.fromMillis(expires)});await setDoc(p(d,'capacity','managed'),{departments:1,doctors:1,staff:3,limits:{departments:2,doctors:2,staff:4},lastKind:'',lastId:'',updatedAt:Timestamp.fromMillis(now)});});
+ await seed();
+ await assertFails(setDoc(p(db,'queues',newQueue),queue));
+ await assertFails(updateDoc(cap,{departments:0}));
+ await assertFails(updateDoc(cap,{limits:{departments:99,doctors:99,staff:99}}));
+ const add=async(kind,id,value)=>runTransaction(db,async tx=>{const s=await tx.get(cap);tx.update(cap,{[kind]:s.data()[kind]+1,lastKind:kind,lastId:id,updatedAt:serverTimestamp()});tx.set(p(db,kind==='departments'?'queues':'doctors',id),value);});
+ await assertSucceeds(add('departments',newQueue,queue));
+ await assertFails(add('departments',otherQueue,queue));
+ await assertFails(setDoc(p(db,'doctors',newDoctor),docData));
+ await assertSucceeds(add('doctors',newDoctor,docData));
+ await assertFails(add('doctors','Q'.repeat(20),docData));
+ await assertFails(updateDoc(cap,{doctors:2,lastKind:'doctors',lastId:'Q'.repeat(20),updatedAt:serverTimestamp()}));
+ await env.withSecurityRulesDisabled(async c=>{await updateDoc(doc(c.firestore(),'commercialAccounts',h),{expiresAt:Timestamp.fromMillis(now-1000)});});
+ await assertSucceeds(updateDoc(p(db,'queues',department),{updatedAt:now+100}));
+ await assertSucceeds(getDoc(archive(db)));
+ await assertFails(setDoc(p(db,'queues','more'),queue));
+});
+test('accepted staff invitation atomically consumes a permanent managed staff slot',async()=>{
+ const uid='newstaff',db=user(uid),email=uid+'@example.test',cap=p(db,'capacity','managed'),invite=p(db,'invites',email),ref=doc(db,'memberships',h+'_'+uid);
+ await env.withSecurityRulesDisabled(async c=>{const d=c.firestore(),stamp=Timestamp.fromMillis(now);await setDoc(doc(d,'commercialAccounts',h),{plan:'essential',status:'active',expiresAt:Timestamp.fromMillis(now+86400000)});await setDoc(p(d,'capacity','managed'),{departments:1,doctors:1,staff:2,limits:{departments:2,doctors:5,staff:3},lastKind:'',lastId:'',updatedAt:stamp});await setDoc(p(d,'invites',email),{email,role:'receptionist',status:'pending',createdBy:'owner',createdAt:stamp,expiresAt:Timestamp.fromMillis(now+86400000),acceptedUid:null,acceptedAt:null,displayName:'Test staff',gender:'male'});});
+ const accept=reserve=>runTransaction(db,async tx=>{const s=await tx.get(cap);if(reserve)tx.update(cap,{staff:s.data().staff+1,lastKind:'staff',lastId:uid,updatedAt:serverTimestamp()});tx.set(ref,{...member(uid,'receptionist'),gender:'male',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});tx.update(invite,{status:'accepted',acceptedUid:uid,acceptedAt:serverTimestamp()});});
+ await assertFails(accept(false));await assertSucceeds(accept(true));await assertFails(accept(true));
+});
+
+test('commercial operator audit and payment records are read-only and isolated; migration locks do not halt queues',async()=>{
+ const own=user('owner'),out=user('otherowner'),staff=user('staff'),operator=env.authenticatedContext('operator',{...claims('operator'),turnaheadPlatformOperator:true}).firestore();
+ await env.withSecurityRulesDisabled(async ctx=>{const d=ctx.firestore();await setDoc(doc(d,'commercialAccounts',h,'payments','test'),{amount:4999,status:'verified'});await setDoc(doc(d,'commercialAccounts',h,'notices','test'),{stage:'7'});await setDoc(doc(d,'commercialAudit','test'),{kind:'payment-verified'});await setDoc(doc(d,'commercialMigrationLocks',h),{orderId:'test'});});
+ for(const key of ['payments','notices']){const ref=db=>doc(db,'commercialAccounts',h,key,'test');await assertSucceeds(getDoc(ref(own)));await assertSucceeds(getDoc(ref(operator)));await assertFails(getDoc(ref(out)));await assertFails(getDoc(ref(staff)));await assertFails(updateDoc(ref(own),{status:'paid'}));await assertFails(updateDoc(ref(operator),{status:'paid'}));}
+ await assertFails(getDoc(doc(own,'commercialAudit','test')));await assertSucceeds(getDoc(doc(operator,'commercialAudit','test')));await assertFails(updateDoc(doc(operator,'commercialAudit','test'),{kind:'modified'}));
+ await assertFails(setDoc(p(own,'queues','new-department'),initialQueue('New department','NEW',day,now)));await assertSucceeds(updateDoc(p(own,'queues',department),{updatedAt:now+100}));await assertSucceeds(getDoc(archive(own)));
+});

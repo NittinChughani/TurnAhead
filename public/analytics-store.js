@@ -1,9 +1,15 @@
 import {collection,query,where,orderBy,limit,startAfter,getDocsFromServer} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
-import {db} from './firebase.js';
+import {db,app} from './firebase.js';
 import {dayKey} from './queue-engine.js';
 import {reportDates} from './analytics-engine.js?v=3.1.0';
 // Explicit bounded reports. No silent truncation, no patient names in retained analytics data.
-export async function loadAnalytics(hid,end,days,progress=()=>{},cancelled=()=>false){
+export async function loadAnalytics(hid,end,days,progress=()=>{},cancelled=()=>false,options={advanced:true,managed:false}){
+ if(options.advanced&&options.managed){
+  const {getFunctions,httpsCallable}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-functions.js');
+  if(cancelled())throw Error('Report cancelled.');progress('Generating verified managed-service report…');
+  const response=await httpsCallable(getFunctions(app,'us-central1'),'commercialAnalytics')({hospitalId:hid,end,days});
+  if(cancelled())throw Error('Report cancelled.');return response.data;
+ }
  const dates=reportDates(end,days);
  if(end>dayKey())throw Error('Choose today or an earlier report date.');
  let count=0,requests=0;
@@ -31,7 +37,7 @@ export async function loadAnalytics(hid,end,days,progress=()=>{},cancelled=()=>f
   progress('Loaded '+d.id+' · '+records.length+' tickets');
  }
  const from=new Date(dates[0]+'T00:00:00+05:00'),until=new Date(+new Date(end+'T00:00:00+05:00')+86400000);
- const feedback=await read(collection(db,...root,'feedback'),[where('createdAt','>=',from),where('createdAt','<',until),orderBy('createdAt')],f=>({rating:f.rating,day:dayKey(f.createdAt.toDate())}));
+ const feedback=options.advanced?await read(collection(db,...root,'feedback'),[where('createdAt','>=',from),where('createdAt','<',until),orderBy('createdAt')],f=>({rating:f.rating,day:dayKey(f.createdAt.toDate())})):[];
  if(cancelled())throw Error('Report cancelled.');
  return {dates,records,feedback};
 }
