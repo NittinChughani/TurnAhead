@@ -1,4 +1,4 @@
-import {bindSignInLoader} from './signin-loader.js?v=4.0.2';
+import {bindSignInLoader} from './signin-loader.js?v=4.0.3';
 import {configured, auth, helpfulError} from './firebase.js';
 import {observeAuth, login, logout, requestVerification, refreshVerification,
   resolveWorkspace, getHospital, watchMembership,updateOwnProfilePhoto,watchHospital} from './org-store.js?v=4.0.1';
