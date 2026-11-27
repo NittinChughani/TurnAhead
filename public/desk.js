@@ -1,6 +1,7 @@
+import {bindSignInLoader} from './signin-loader.js?v=4.0.1';
 import {configured, auth, helpfulError} from './firebase.js';
 import {observeAuth, login, logout, requestVerification, refreshVerification,
-  myMemberships, getHospital, watchMembership,updateOwnProfilePhoto,watchHospital} from './org-store.js?v=3.3.1';
+  resolveWorkspace, getHospital, watchMembership,updateOwnProfilePhoto,watchHospital} from './org-store.js?v=4.0.1';
 import {canManageStaff, canManageDepartments, boardLink, isStaffRole, staffGreeting} from './org-model.js';
 import {bootstrap, rollOverAll, observeQueues, observeTickets,
   issueTicket, createQueue, performAction,recallMissedTicket,setDoctorDelay,changeWaitingTicket} from './store.js?v=3.3.1';
@@ -55,8 +56,7 @@ window.addEventListener('offline',()=>{queueConfirmed=false;if(currentHospital)r
 window.addEventListener('online',()=>{if(currentHospital){connectQueueStream(currentHospital.id,workspaceEpoch);render();}});
 
 const loginButton=$('login-form').querySelector('[type=submit]');
-const loginOriginal=loginButton.textContent;
-function loadingLogin(busy){loginButton.disabled=busy;loginButton.classList.toggle('is-loading',busy);loginButton.textContent=busy?'Signing in…':loginOriginal;}
+const loadingLogin=bindSignInLoader(loginButton);
 const show=(id,visible)=>$(id).hidden=!visible;
 function view(name){if(name!=='login-view')loadingLogin(false);views.forEach(v=>show(v,v===name));show('logout',Boolean(auth?.currentUser));show('workspace-switch',name==='dashboard'&&memberships.filter(m=>isStaffRole(m.role)).length>1);show('public-board-link',name==='dashboard');accountMenu.show(name==='dashboard'&&Boolean(currentMember));show('admin-link',name==='dashboard'&&canManageStaff(currentMember?.role));window.scrollTo(0,0);}
 function toast(message,error=false){const el=$('toast');el.textContent=message;el.classList.toggle('error',error);show('toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('toast',false),4600);}
@@ -139,9 +139,9 @@ function connectQueueStream(hid,epoch){
  stopQueues?.();queueConfirmed=false;
  stopQueues=observeQueues(hid,(data,meta)=>{if(epoch!==workspaceEpoch)return;queues=data;queueConfirmed=Boolean(meta?.confirmed);render();},e=>{if(epoch!==workspaceEpoch)return;queueConfirmed=false;render();notice(helpfulError(e),true);});
 }
-async function openHospital(member){
+async function openHospital(member,resolved=null){
   stopSubscriptions();clearPrivateDesk();currentHospital=null;currentMember=null;show('dashboard',false);const epoch=workspaceEpoch;
-  const nextHospital=await getHospital(member.hospitalId);if(epoch!==workspaceEpoch||!auth.currentUser)return;
+  const nextHospital=resolved||await getHospital(member.hospitalId,{server:true});if(epoch!==workspaceEpoch||!auth.currentUser)return;
   currentMember=member;currentHospital=nextHospital;
   persistent.setItem('turnahead-hospital',member.hospitalId);
   $('public-board-link').href=boardLink(member.hospitalId,location.href);
@@ -169,23 +169,25 @@ async function routeCurrentUser(){
   const seq=++authEpoch;
   stopSubscriptions();clearPrivateDesk();currentHospital=null;currentMember=null;
   const user=auth?.currentUser;
-  if(!user){memberships=[];view('login-view');if(pendingSignOut){toast('You have been signed out successfully.');pendingSignOut=false;}return;}
+  if(!user){loadingLogin(false);memberships=[];view('login-view');if(pendingSignOut){toast('You have been signed out successfully.');pendingSignOut=false;}return;}
   show('logout',true);
   try{
     if(!user.emailVerified){$('verify-detail').textContent=`We sent a verification link to ${user.email}. Open the email, confirm your address, then return here.`;view('verify-view');return;}
-    memberships=await myMemberships(user);if(seq!==authEpoch)return;
+    loadingLogin(true,'Checking access');
+    const preferred=persistent.getItem('turnahead-hospital');
+    const session=await resolveWorkspace(user,preferred,m=>isStaffRole(m.role));if(seq!==authEpoch)return;
+    memberships=session.memberships;
     // Resolve only the selected hospital before showing the dashboard; other names are not blocking login.
     if(!memberships.some(m=>isStaffRole(m.role))){
       // Account login is NOT authorization. Never expose operational data to an unregistered email.
       $('no-access-detail').textContent='You are not registered as authorized hospital staff. Ask your hospital administrator to add your work email.';
       view('no-access-view');pendingSignIn=false;return;
     }
-    const preferred=persistent.getItem('turnahead-hospital');
-    const chosen=memberships.find(m=>m.hospitalId===preferred&&isStaffRole(m.role))||memberships.find(m=>isStaffRole(m.role));
+    const chosen=session.member;
     if(seq!==authEpoch)return;
-    await openHospital(chosen);
+    await openHospital(chosen,session.hospital);
   }catch(e){if(seq!==authEpoch)return;toast(helpfulError(e),true);view('no-access-view');}
-  finally{if(pendingSignIn && currentHospital){toast('Logged in successfully. Welcome back!');pendingSignIn=false;}if(!currentHospital)loadingLogin(false);}
+  finally{if(seq===authEpoch&&pendingSignIn && currentHospital){toast('Logged in successfully. Welcome back!');pendingSignIn=false;}if(seq===authEpoch&&!currentHospital)loadingLogin(false);}
 }
 $('login-form').addEventListener('submit',async e=>{
   e.preventDefault();if(loginButton.disabled)return;

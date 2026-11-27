@@ -1,6 +1,6 @@
 /** Browser API for verified hospital owners, staff invitations and per-hospital roles. */
 import {
-  collection, doc, getDoc, getDocs, getDocsFromServer, query, where, onSnapshot,
+  collection, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, query, where, onSnapshot,
   writeBatch, setDoc, updateDoc, serverTimestamp, Timestamp
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {
@@ -37,9 +37,9 @@ export async function myMemberships(user=auth.currentUser) {
   const result=await getDocsFromServer(query(collection(db,'memberships'),where('uid','==',user.uid)));
   return result.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.active);
 }
-export async function getHospital(id) {
+export async function getHospital(id,{server=false}={}) {
   if(!/^[A-Za-z0-9]{20}$/.test(id)) throw Error('Invalid hospital workspace.');
-  const snap=await getDoc(hospitalRef(id));
+  const snap=await (server?getDocFromServer:getDoc)(hospitalRef(id));
   if(!snap.exists() || snap.data().status!=='active') throw Error('Hospital workspace unavailable.');
   return {id:snap.id,...snap.data()};
 }
@@ -128,3 +128,16 @@ export async function updateHospitalCustomization(hospitalId,customization){
   const batch=writeBatch(db);batch.update(hospitalRef(hospitalId),{customization,updatedAt:serverTimestamp()});appendActivity(batch,hospitalId,'branding-updated');await batch.commit();
 }
 export function watchHospital(id,next,error){return onSnapshot(hospitalRef(id),snap=>{if(snap.exists()&&snap.data().status==='active')next({id:snap.id,...snap.data()});},error);}
+
+/** Overlap preferred workspace read with server-authoritative membership lookup.
+ * A remembered hospital ID is only a hint; never grants access or replaces membership validation.
+ */
+export async function resolveWorkspace(user,preferred,allowed){
+ const prefetch=/^[A-Za-z0-9]{20}$/.test(preferred||'')?getHospital(preferred,{server:true}).then(value=>({value}),error=>({error})):null;
+ const memberships=await myMemberships(user);
+ const member=memberships.find(m=>m.hospitalId===preferred&&allowed(m))||memberships.find(allowed);
+ if(!member)return {memberships,member:null,hospital:null};
+ const prefetched=prefetch&&member.hospitalId===preferred?await prefetch:null;
+ const hospital=prefetched?.value||await getHospital(member.hospitalId,{server:true});
+ return {memberships,member,hospital};
+}

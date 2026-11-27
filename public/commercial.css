@@ -4,3 +4,5 @@
 [data-admin-section="subscription"] .commercial-card{margin:14px 0}[data-admin-section="subscription"] .commercial-card h2{margin:8px 0}.commercial-stat{display:flex;flex-direction:column;gap:6px;padding:14px;background:var(--paper-soft);border:1px solid var(--line);border-radius:12px;min-width:0}.commercial-stat small{color:var(--muted);font-size:12px}.commercial-stat strong{font-size:18px;overflow-wrap:anywhere;color:var(--ink)}.commercial-notice{border-left:3px solid var(--blue);padding:10px 14px;margin:16px 0 0;background:var(--wash);border-radius:8px}[data-admin-section="subscription"] .commercial-card form{max-width:640px}
 
 #commercial-renewal-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap}#commercial-renewal-banner[hidden]{display:none!important}#commercial-renewal-banner p{margin:0;flex:1;min-width:180px}
+
+.plan-first-total{margin:0;padding:12px 0 0;border-top:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:700;line-height:1.5}
