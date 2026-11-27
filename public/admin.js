@@ -1,3 +1,4 @@
+import {bindSubscription} from './admin-subscription.js?v=4.0.0';
 import {readActivity} from './activity-store.js?v=3.3.0';
 import {configured,auth,helpfulError} from './firebase.js';
 import {observeAuth,login,logout,refreshVerification,requestVerification,myMemberships,getHospital,
@@ -21,7 +22,8 @@ function loadingLogin(busy){loginButton.disabled=busy;loginButton.classList.togg
 const show=(id,value)=>$(id).hidden=!value;
 function toast(message,error=false){const el=$('admin-toast');el.textContent=message;el.classList.toggle('error',error);show('admin-toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('admin-toast',false),4800);}
 const accountMenu=bindAccountMenu('admin');
-function stop(){accountMenu.show(false);fullHistoryGeneration++;resetV3();unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;editingMember=null;editingDoctor=null;doctors=[];members=[];invites=[];departments=[];tickets=[];historyDays=[];archiveCursors.clear();historyRecords.clear();
+const subscription=bindSubscription(()=>({hospital,departments,doctors,members}),toast);
+function stop(){subscription.stop();accountMenu.show(false);fullHistoryGeneration++;resetV3();unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;editingMember=null;editingDoctor=null;doctors=[];members=[];invites=[];departments=[];tickets=[];historyDays=[];archiveCursors.clear();historyRecords.clear();
   feedbackRecords=[];['history-detail-modal','doctor-edit-modal','staff-edit-modal'].forEach(id=>show(id,false));
   for(const id of ['patient-ticket-list','history-days','doctor-list','staff-list','invite-list','department-list','feedback-list','history-detail-body','history-detail-title','onboarding-list','admin-profile-avatar','activity-list'])$(id)?.replaceChildren();
   for(const id of ['invitation-url','invite-email','invite-name','staff-edit-name','staff-edit-email','doctor-edit-name']){const el=$(id);if(el){if('value' in el)el.value='';else el.textContent='';}}
@@ -29,7 +31,7 @@ function stop(){accountMenu.show(false);fullHistoryGeneration++;resetV3();unsubs
 /** Keep the signed-in landing view focused: only overview cards and the profile. */
 const adminNavigation=document.querySelector('.admin-section-nav');
 function showAdminSection(section,scroll=false){
-  const available=new Set(['overview','team','invites','departments','doctors','patients','history','feedback','settings','analytics','customization','onboarding','activity']);
+  const available=new Set(['overview','team','invites','departments','doctors','patients','history','feedback','settings','analytics','customization','onboarding','activity','subscription']);
   const selected=available.has(section)?section:'overview';
   $('admin-overview').hidden=selected!=='overview';
   document.querySelectorAll('[data-admin-section]').forEach(panel=>{panel.hidden=panel.dataset.adminSection!==selected;});
@@ -39,6 +41,7 @@ function showAdminSection(section,scroll=false){
     if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
   });
   if(selected==='activity')loadActivity();
+  if(selected==='subscription')subscription.open();
   if(selected==='onboarding')renderOnboarding({hospital,departments,doctors,members});
   if(scroll)adminNavigation.scrollIntoView({behavior:'smooth',block:'start'});
 }
@@ -60,6 +63,7 @@ function showGraceValue(minutes){
 }
 $('recall-grace').addEventListener('change',toggleCustomGrace);
 function displayMetrics(){
+  subscription.usage();
   const active=departments.filter(q=>q.dayKey===dayKey());
   const waiting=active.reduce((n,q)=>n+q.waiting,0),inService=active.reduce((n,q)=>n+(q.activeCount||0),0);
   const completed=active.reduce((n,q)=>n+q.served,0);
@@ -274,7 +278,7 @@ async function initialize(){
     persistent.setItem('turnahead-hospital',hospital.id);
     show('admin-guard',false);show('admin-content',true);show('admin-sign-out',true);accountMenu.show(true);loadingLogin(false);
     $('admin-hospital-name').textContent=`${hospital.name} · Live hospital operations`;
-    $('admin-role').textContent='ADMINISTRATOR';$('settings-name').value=hospital.name;showGraceValue(hospital.recallGraceMinutes||10);renderOwnAvatar();renderCustomization(hospital);showAdminSection('overview');
+    $('admin-role').textContent='ADMINISTRATOR';$('settings-name').value=hospital.name;showGraceValue(hospital.recallGraceMinutes||10);renderOwnAvatar();renderCustomization(hospital);subscription.start(hospital.id);showAdminSection('overview');
     $('open-reception').href=boardLink(hospital.id,location.href);
     if(pendingLogin){toast('Administrator logged in successfully.');pendingLogin=false;}
     const revoke=()=>{if(seq!==authEpoch)return;authEpoch++;stop();show('admin-content',false);show('admin-guard',true);$('guard-message').textContent='Administrator access changed. Sign in again or contact the hospital operator.';};
@@ -282,7 +286,7 @@ async function initialize(){
     // Start all four streams at once for a responsive admin dashboard.
     unsubs.push(watchHospitalMembers(hospital.id,data=>{if(seq!==authEpoch)return;members=data;me=data.find(m=>m.uid===auth.currentUser?.uid)||me;renderOwnAvatar();renderMembers();renderTickets();displayMetrics();},e=>toast(helpfulError(e),true)));
     unsubs.push(watchInvitations(hospital.id,data=>{if(seq!==authEpoch)return;invites=data;renderInvites();displayMetrics();},e=>toast(helpfulError(e),true)));
-    unsubs.push(watchDoctors(hospital.id,data=>{if(seq!==authEpoch)return;doctors=data;renderDoctors();},e=>toast(helpfulError(e),true)));
+    unsubs.push(watchDoctors(hospital.id,data=>{if(seq!==authEpoch)return;doctors=data;renderDoctors();subscription.usage();},e=>toast(helpfulError(e),true)));
     unsubs.push(observeQueues(hospital.id,data=>{if(seq!==authEpoch)return;departments=data;renderDepartments();renderDoctors();displayMetrics();if(historyDays.length&&!$('history-days').querySelector('[data-history-dept]'))renderHistory();},e=>toast(helpfulError(e),true)));
     unsubs.push(observeTickets(hospital.id,data=>{if(seq!==authEpoch)return;tickets=data;renderTickets();},e=>toast(helpfulError(e),true),100));
     unsubs.push(observeFeedback(hospital.id,data=>{if(seq!==authEpoch)return;feedbackRecords=data;renderFeedback();},e=>toast(helpfulError(e),true)));
