@@ -1,7 +1,8 @@
+import {reserveCommercialSlot} from './commercial-capacity.js';
 /** Browser API for verified hospital owners, staff invitations and per-hospital roles. */
 import {
   collection, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, query, where, onSnapshot,
-  writeBatch, setDoc, updateDoc, serverTimestamp, Timestamp
+  writeBatch, runTransaction, setDoc, updateDoc, serverTimestamp, Timestamp
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
@@ -59,17 +60,19 @@ export async function findInvitation(hospitalId,email) {
 export async function acceptInvitation(hospitalId,user=auth.currentUser) {
   if(!user?.emailVerified) throw Error('Verify your email before accepting an invitation.');
   const email=normalizeEmail(user.email), ref=inviteRef(hospitalId,email);
-  const invite=await getDoc(ref);
+  await runTransaction(db,async tx=>{
+  const invite=await tx.get(ref);
   if(!invite.exists()||invite.data().status!=='pending'||invite.data().expiresAt.toMillis()<Date.now())
     throw Error('No active invitation was found for your verified email. Ask your administrator to resend it.');
-  const data=invite.data(), batch=writeBatch(db);
-  batch.set(memberRef(hospitalId,user.uid),{
+  const data=invite.data();
+  await reserveCommercialSlot(tx,hospitalId,'staff',user.uid);
+  tx.set(memberRef(hospitalId,user.uid),{
     uid:user.uid,hospitalId,email,role:data.role,active:true,
     createdAt:serverTimestamp(),updatedAt:serverTimestamp(),invitedBy:data.createdBy,
     displayName:data.displayName||email.split('@')[0],gender:data.gender||'unspecified'
   });
-  batch.update(ref,{status:'accepted',acceptedUid:user.uid,acceptedAt:serverTimestamp()});
-  await batch.commit();
+  tx.update(ref,{status:'accepted',acceptedUid:user.uid,acceptedAt:serverTimestamp()});
+  });
   return await getHospital(hospitalId);
 }
 export async function inviteStaff(hospitalId,email,role,actorRole,name,gender,user=auth.currentUser) {

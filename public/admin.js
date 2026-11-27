@@ -305,6 +305,12 @@ $('admin-login-form').addEventListener('submit',async e=>{
   try{await login($('admin-email').value,$('admin-password').value);$('admin-password').value='';}
   catch(err){pendingLogin=false;loadingLogin(false);$('admin-login-error').textContent=helpfulError(err);}
 });
+$('admin-google-login')?.addEventListener('click',async()=>{
+ const button=$('admin-google-login');if(button.disabled||loginButton.disabled)return;button.disabled=true;loadingLogin(true);pendingLogin=true;$('admin-login-error').textContent='';
+ try{const {GoogleAuthProvider,signInWithPopup}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js');await signInWithPopup(auth,new GoogleAuthProvider());}
+ catch(e){pendingLogin=false;loadingLogin(false);$('admin-login-error').textContent=helpfulError(e);}
+ finally{button.disabled=false;}
+});
 $('admin-verify').addEventListener('click',async()=>{try{await requestVerification();if(await refreshVerification())await initialize();else toast('Verification email sent. Please open it and return here.');}catch(e){toast(helpfulError(e),true);}});
 $('admin-switch-account').addEventListener('click',async()=>{try{await logout();}catch(e){toast(helpfulError(e),true);}});
 $('invite-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('[type=submit]');btn.disabled=true;
