@@ -253,9 +253,10 @@ service cloud.firestore {
     }
     function capacityReserved(hid,kind,id) {
       let path = capacityPath(hid);
-      return !exists(commercialPath(hid)) ||
+      return !exists(/databases/$(database)/documents/commercialMigrationLocks/$(hid)) &&
+        (!exists(commercialPath(hid)) ||
         (exists(path) && getAfter(path).data[kind] == get(path).data[kind] + 1 &&
-         getAfter(path).data.lastKind == kind && getAfter(path).data.lastId == id);
+         getAfter(path).data.lastKind == kind && getAfter(path).data.lastId == id));
     }
     function capacityResource(hid,kind,id) {
       return kind == 'departments' ? queuePath(hid,id) :
@@ -528,10 +529,16 @@ service cloud.firestore {
         commercialSelection(request.resource.data) && request.resource.data.status == 'pending' && request.resource.data.createdAt == request.time;
       allow update, delete: if false;
     }
+    match /commercialOrders/{id} { allow read: if platformOperator(); allow write: if false; }
+    match /commercialAudit/{id} { allow read: if platformOperator(); allow write: if false; }
+    match /commercialMigrationLocks/{id} { allow read, write: if false; }
     match /commercialAccounts/{hid} {
       allow get: if platformOperator() || owner(hid);
       allow list: if platformOperator();
       allow write: if false;
+      match /payments/{id} { allow read: if platformOperator() || owner(hid); allow write: if false; }
+      match /notices/{id} { allow read: if platformOperator() || owner(hid); allow write: if false; }
+      match /requestHistory/{id} { allow read: if platformOperator() || owner(hid); allow write: if false; }
       match /invoices/{invoiceId} {
         allow get, list: if platformOperator() || owner(hid);
         allow write: if false;

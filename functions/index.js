@@ -53,3 +53,5 @@ export const deliverCalledTurnAlert=onDocumentUpdated({document:'hospitals/{hosp
     return /registration-token-not-registered|invalid-registration-token/.test(r.error?.code||'')?targets[i].ref.delete():Promise.resolve();
   }));
 });
+
+export {commercialOperator,commercialAnalytics,commercialRenewalSweep} from './commercial-endpoints.js';
