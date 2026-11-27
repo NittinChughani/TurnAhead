@@ -1,5 +1,5 @@
 import {configured,auth,helpfulError} from './firebase.js';
-import {observeAuth,register,login,logout,requestVerification,refreshVerification,findInvitation,acceptInvitation,getHospital} from './org-store.js?v=3.3.1';
+import {observeAuth,register,login,logout,requestVerification,refreshVerification,findInvitation,acceptInvitation,getHospital} from './org-store.js?v=4.0.0';
 import {normalizeEmail} from './org-model.js';
 const $=id=>document.getElementById(id);const show=(id,v)=>$(id).hidden=!v;
 const hospitalId=new URLSearchParams(location.search).get('invite');

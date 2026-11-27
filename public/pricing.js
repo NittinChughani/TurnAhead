@@ -1,6 +1,6 @@
 import {PLANS,quote,money} from './subscription-model.js';
 import {configured,auth,helpfulError} from './firebase.js';
-import {observeAuth,login,register,logout,requestVerification,refreshVerification} from './org-store.js?v=3.3.1';
+import {observeAuth,login,register,logout,requestVerification,refreshVerification} from './org-store.js?v=4.0.0';
 import {readLead,submitLead} from './commercial-store.js';
 const $=id=>document.getElementById(id);
 let cycle='monthly',generation=0,busy=false;

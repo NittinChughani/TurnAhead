@@ -200,3 +200,30 @@ test('commercial data: verified lead intake, immutable billing and tenant isolat
  await assertFails(updateDoc(doc(operator,'commercialAccounts',h),{plan:'enterprise'}));
  await assertFails(getDoc(archive(operator)));
 });
+
+test('managed capacity requires atomic unique resource reservations and protects existing queues',async()=>{
+ const db=user('owner'),cap=p(db,'capacity','managed'),account=doc(db,'commercialAccounts',h),newQueue='next-department',otherQueue='overflow-department',newDoctor='N'.repeat(20);
+ const queue=initialQueue('New department','NEW',day,now),docData={name:'New Doctor',departmentId:department,departmentName:'General OPD',roomNumber:'2',active:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
+ const seed=async(expires=now+86400000)=>env.withSecurityRulesDisabled(async c=>{const d=c.firestore();await setDoc(doc(d,'commercialAccounts',h),{status:'active',plan:'essential',expiresAt:Timestamp.fromMillis(expires)});await setDoc(p(d,'capacity','managed'),{departments:1,doctors:1,staff:3,limits:{departments:2,doctors:2,staff:4},lastKind:'',lastId:'',updatedAt:Timestamp.fromMillis(now)});});
+ await seed();
+ await assertFails(setDoc(p(db,'queues',newQueue),queue));
+ await assertFails(updateDoc(cap,{departments:0}));
+ await assertFails(updateDoc(cap,{limits:{departments:99,doctors:99,staff:99}}));
+ const add=async(kind,id,value)=>runTransaction(db,async tx=>{const s=await tx.get(cap);tx.update(cap,{[kind]:s.data()[kind]+1,lastKind:kind,lastId:id,updatedAt:serverTimestamp()});tx.set(p(db,kind==='departments'?'queues':'doctors',id),value);});
+ await assertSucceeds(add('departments',newQueue,queue));
+ await assertFails(add('departments',otherQueue,queue));
+ await assertFails(setDoc(p(db,'doctors',newDoctor),docData));
+ await assertSucceeds(add('doctors',newDoctor,docData));
+ await assertFails(add('doctors','Q'.repeat(20),docData));
+ await assertFails(updateDoc(cap,{doctors:2,lastKind:'doctors',lastId:'Q'.repeat(20),updatedAt:serverTimestamp()}));
+ await env.withSecurityRulesDisabled(async c=>{await updateDoc(doc(c.firestore(),'commercialAccounts',h),{expiresAt:Timestamp.fromMillis(now-1000)});});
+ await assertSucceeds(updateDoc(p(db,'queues',department),{updatedAt:now+100}));
+ await assertSucceeds(getDoc(archive(db)));
+ await assertFails(setDoc(p(db,'queues','more'),queue));
+});
+test('accepted staff invitation atomically consumes a permanent managed staff slot',async()=>{
+ const uid='newstaff',db=user(uid),email=uid+'@example.test',cap=p(db,'capacity','managed'),invite=p(db,'invites',email),ref=doc(db,'memberships',h+'_'+uid);
+ await env.withSecurityRulesDisabled(async c=>{const d=c.firestore(),stamp=Timestamp.fromMillis(now);await setDoc(doc(d,'commercialAccounts',h),{plan:'essential',status:'active',expiresAt:Timestamp.fromMillis(now+86400000)});await setDoc(p(d,'capacity','managed'),{departments:1,doctors:1,staff:2,limits:{departments:2,doctors:5,staff:3},lastKind:'',lastId:'',updatedAt:stamp});await setDoc(p(d,'invites',email),{email,role:'receptionist',status:'pending',createdBy:'owner',createdAt:stamp,expiresAt:Timestamp.fromMillis(now+86400000),acceptedUid:null,acceptedAt:null,displayName:'Test staff',gender:'male'});});
+ const accept=reserve=>runTransaction(db,async tx=>{const s=await tx.get(cap);if(reserve)tx.update(cap,{staff:s.data().staff+1,lastKind:'staff',lastId:uid,updatedAt:serverTimestamp()});tx.set(ref,{...member(uid,'receptionist'),gender:'male',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});tx.update(invite,{status:'accepted',acceptedUid:uid,acceptedAt:serverTimestamp()});});
+ await assertFails(accept(false));await assertSucceeds(accept(true));await assertFails(accept(true));
+});

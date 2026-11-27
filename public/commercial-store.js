@@ -6,6 +6,7 @@ const leadRef=uid=>doc(db,'commercialLeads',uid);
 export async function readLead(){const u=verifiedUser();const s=await getDocFromServer(leadRef(u.uid));return s.exists()?s.data():null;}
 export async function submitLead({organization,representative,phone,plan,cycle}){
  const u=verifiedUser();quote(plan,cycle);
+ if(!/^[+0-9 ().-]{5,30}$/.test(phone.trim()))throw Error('Enter a valid business contact number.');
  await setDoc(leadRef(u.uid),{uid:u.uid,email:u.email.toLowerCase(),organization:organization.trim(),representative:representative.trim(),phone:phone.trim(),plan,cycle,status:'pending',createdAt:serverTimestamp()});
 }
 export function watchSubscription(hid,next,error){
