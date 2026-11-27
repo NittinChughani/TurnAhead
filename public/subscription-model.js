@@ -24,3 +24,15 @@ export function renewalNotice(s,now=Date.now()){
  const days=Math.ceil((s.expiresAt.toMillis()-now)/86400000);
  return 'Renewal due in '+days+' day'+(days===1?'':'s')+'.';
 }
+
+export function hasAdvancedAnalytics(s,now=Date.now()){
+ return !!s && ['professional','enterprise'].includes(s.plan) && ['active','renewal-due','grace'].includes(subscriptionStatus(s,now));
+}
+export function reminderStage(s,now=Date.now()){
+ const state=subscriptionStatus(s,now);
+ if(state==='grace')return 'grace';
+ if(state==='expired')return 'expired';
+ if(state!=='renewal-due')return null;
+ const days=Math.ceil((s.expiresAt.toMillis()-now)/86400000);
+ return days<=1?'1':days<=7?'7':'30';
+}

@@ -1,4 +1,4 @@
-import {bindSubscription} from './admin-subscription.js?v=4.0.0';
+import {bindSubscription} from './admin-subscription.js?v=4.0.0-dev.2';
 import {readActivity} from './activity-store.js?v=3.3.0';
 import {configured,auth,helpfulError} from './firebase.js';
 import {observeAuth,login,logout,refreshVerification,requestVerification,myMemberships,getHospital,
@@ -12,7 +12,7 @@ import {bindAccountMenu} from './account-menu.js?v=3.3.2';
 import {patientReportRows,downloadPatientReport} from './patient-report.js?v=3.3.1';
 import {bindLanguage,t} from './locale.js?v=2.6.1';
 import {persistent} from './reliability.js?v=3.2.0';
-import {bindV3,resetV3,renderCustomization,renderOnboarding} from './admin-v3.js?v=3.3.2';
+import {bindV3,resetV3,renderCustomization,renderOnboarding} from './admin-v3.js?v=4.0.0-dev.2';
 const $=id=>document.getElementById(id),esc=window.turnahead.esc,fmt=window.turnahead.fmt;
 let hospital=null,me=null,members=[],invites=[],departments=[],tickets=[],unsubs=[],toastTimer,authEpoch=0,pendingLogin=false,pendingLogout=false;
 let fullHistoryGeneration=0;
@@ -22,7 +22,7 @@ function loadingLogin(busy){loginButton.disabled=busy;loginButton.classList.togg
 const show=(id,value)=>$(id).hidden=!value;
 function toast(message,error=false){const el=$('admin-toast');el.textContent=message;el.classList.toggle('error',error);show('admin-toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('admin-toast',false),4800);}
 const accountMenu=bindAccountMenu('admin');
-const subscription=bindSubscription(()=>({hospital,departments,doctors,members}),toast);
+const subscription=bindSubscription(()=>({hospital,departments,doctors,members}),toast,()=>showAdminSection('subscription',true),()=>resetV3());
 function stop(){subscription.stop();accountMenu.show(false);fullHistoryGeneration++;resetV3();unsubs.forEach(fn=>fn());unsubs=[];hospital=null;me=null;currentHistoryTicket=null;editingMember=null;editingDoctor=null;doctors=[];members=[];invites=[];departments=[];tickets=[];historyDays=[];archiveCursors.clear();historyRecords.clear();
   feedbackRecords=[];['history-detail-modal','doctor-edit-modal','staff-edit-modal'].forEach(id=>show(id,false));
   for(const id of ['patient-ticket-list','history-days','doctor-list','staff-list','invite-list','department-list','feedback-list','history-detail-body','history-detail-title','onboarding-list','admin-profile-avatar','activity-list'])$(id)?.replaceChildren();
@@ -316,7 +316,7 @@ $('grace-form').addEventListener('submit',async e=>{e.preventDefault();const b=e
 $('settings-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('[type=submit]');btn.disabled=true;
 try{await renameHospital(hospital.id,$('settings-name').value);hospital=await getHospital(hospital.id);$('admin-hospital-name').textContent=`${hospital.name} · Live hospital operations`;toast('Hospital name saved.');}catch(e){toast(helpfulError(e),true);}finally{btn.disabled=false;}});
 $('admin-sign-out').addEventListener('click',async()=>{pendingLogout=true;authEpoch++;stop();show('admin-content',false);show('admin-guard',true);try{await logout();}catch(e){pendingLogout=false;toast(helpfulError(e),true);}});
-bindV3(()=>({hospital,departments,doctors,members}),toast);
+bindV3(()=>({hospital,departments,doctors,members,analyticsAccess:subscription.analyticsAccess()}),toast);
 if(configured)observeAuth(()=>initialize());else initialize();
 
 $('admin-profile-file').addEventListener('change',async e=>{

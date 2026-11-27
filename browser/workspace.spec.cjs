@@ -104,3 +104,12 @@ test('hospital owner sees verified subscription, requests renewal and exports in
  const txt=execFileSync('pdftotext',[await pdf.path(),'-'],{encoding:'utf8'});for(const v of ['TurnAhead','TA-TEST-001','Fictional hospital','149,990','PAID'])expect(txt).toContain(v);
  await page.locator('#subscription-request button[type=submit]').click();await expect(page.locator('#subscription-request-status')).toContainText('Request recorded');await expect(page.locator('#subscription-requests')).toContainText('Renew · Pending');expect(errors).toEqual([]);
 });
+
+test('Essential retains basic analytics and receives renewal notice without premium exports',async({page})=>{
+ await mockWorkspace(page,'owner',{plan:'essential',daysRemaining:7});await page.goto('/admin.html');
+ await expect(page.locator('#commercial-renewal-banner')).toBeVisible();await expect(page.locator('#commercial-renewal-copy')).toContainText('Renewal due');
+ await page.locator('#commercial-renewal-open').click();await expect(page.locator('[data-admin-section=subscription]')).toBeVisible();
+ await page.locator('[data-admin-tab=analytics]').click();await expect(page.locator('#analytics-mode')).toHaveValue('basic');await expect(page.locator('#analytics-mode option[value=advanced]')).toBeDisabled();
+ await page.locator('#analytics-load').click();await expect(page.locator('#analytics-output')).toContainText('Basic operational overview');await expect(page.locator('#analytics-pdf')).toBeDisabled();await expect(page.locator('#analytics-csv')).toBeDisabled();
+ await page.locator('[data-admin-tab=history]').click();await expect(page.locator('[data-admin-section=history]')).toBeVisible();
+});

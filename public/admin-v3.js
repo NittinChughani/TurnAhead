@@ -1,4 +1,4 @@
-import {loadAnalytics} from './analytics-store.js?v=3.3.1';
+import {loadAnalytics} from './analytics-store.js?v=4.0.0-dev.2';
 import {buildAnalytics,reportRows,analyticsCSV} from './analytics-engine.js?v=3.1.0';
 import {hospitalCustomization,validateCustomization,compressHospitalLogo,applyHospitalBrand} from './hospital-custom.js?v=3.1.0';
 import {updateHospitalCustomization} from './org-store.js?v=4.0.0';
@@ -10,6 +10,7 @@ function exportReady(ready){$('analytics-csv').disabled=!ready;$('analytics-pdf'
 export function resetV3(){setupStep=0;generation++;customGeneration++;report=null;reportInfo=null;logo='';exportReady(false);$('analytics-output').replaceChildren();$('analytics-output').removeAttribute('aria-busy');$('analytics-state').textContent='Choose a period and generate a report.';$('analytics-load').disabled=false;$('analytics-cancel').hidden=true;$('custom-logo-preview').hidden=true;$('custom-logo-preview').removeAttribute('src');$('custom-logo-file').value='';}
 function bars(items){const max=Math.max(1,...items.map(x=>x.value));return '<div class="analytics-bars">'+items.map(x=>'<div class="analytics-bar"><span>'+esc(x.label)+'</span><div><i style="width:'+Math.max(0,x.value/max*100)+'%"></i></div><b>'+esc(num(x.value))+'</b></div>').join('')+'</div>';}
 function groupTable(rows){return '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Group</th><th>Issued</th><th>Completed</th><th>Missed</th><th>Recalled</th><th>Avg wait</th><th>Avg service</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+esc(r.label||r.date)+'</td>'+[r.issued,r.completed,r.missed,r.recalled,r.wait,r.service].map(v=>'<td>'+esc(num(v))+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';}
+function renderBasic(r){const t=r.total;const metrics=[['Issued',t.issued],['Completed',t.completed],['Missed',t.missed],['Unresolved',t.unresolved],['Average wait (min)',t.wait],['Average service (min)',t.service]];$('analytics-output').innerHTML='<div class="report-heading"><h2>Basic operational overview</h2><p>Aggregate queue totals for the selected period.</p></div><div class="report-kpis">'+metrics.map(([name,value])=>'<article class="report-kpi"><span>'+esc(name)+'</span><strong>'+esc(num(value))+'</strong></article>').join('')+'</div><p class="admin-section-note">Advanced comparisons, satisfaction trends and report exports are included in Professional and Enterprise. Individual attendance records and their export remain available.</p>';}
 function renderAnalytics(r){
  const t=r.total;
  const cards=items=>'<div class="report-kpis">'+items.map(([label,value,unit])=>'<article class="report-kpi"><span>'+esc(label)+'</span><strong>'+esc(num(value))+' <small>'+esc(unit||'')+'</small></strong></article>').join('')+'</div>';
@@ -97,13 +98,15 @@ export function bindV3(getContext,toast){
  $('analytics-load').addEventListener('click',async()=>{
   const h=context()?.hospital;if(!h)return;
   if(!navigator.onLine){$('analytics-state').textContent='Offline. Reconnect before generating a private report.';return;}
+  const access=context()?.analyticsAccess,advanced=$('analytics-mode').value==='advanced';
+  if(advanced&&!['legacy','advanced'].includes(access)){$('analytics-state').textContent='Advanced reports require Professional or Enterprise.';return;}
   const end=$('analytics-date').value,days=Number($('analytics-period').value),token=++generation;
   report=null;reportInfo=null;exportReady(false);$('analytics-output').innerHTML='<div class="report-skeleton" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>';$('analytics-output').setAttribute('aria-busy','true');$('analytics-state').textContent='Loading private archive totals…';$('analytics-load').disabled=true;$('analytics-cancel').hidden=false;
   try{
-   const data=await loadAnalytics(h.id,end,days,msg=>{if(token===generation)$('analytics-state').textContent=msg;},()=>token!==generation||context()?.hospital?.id!==h.id);
+   const data=await loadAnalytics(h.id,end,days,msg=>{if(token===generation)$('analytics-state').textContent=msg;},()=>token!==generation||context()?.hospital?.id!==h.id,{advanced,managed:access==='advanced'});
    if(token!==generation)return;
-   report=buildAnalytics(data.records,data.feedback,data.dates);reportInfo={name:h.name,start:data.dates[0],end,token};
-   renderAnalytics(report);$('analytics-state').textContent=reportInfo.start+' to '+end+' · '+report.total.issued+' archived tickets · generated '+new Date().toLocaleTimeString();exportReady(true);
+   report=data.report||buildAnalytics(data.records,data.feedback,data.dates);reportInfo={name:h.name,start:data.dates[0],end,token};
+   if(advanced)renderAnalytics(report);else renderBasic(report);$('analytics-state').textContent=reportInfo.start+' to '+end+' · '+report.total.issued+' archived tickets · generated '+new Date().toLocaleTimeString();exportReady(advanced);if(!advanced){report=null;reportInfo=null;}
   }catch(e){if(token===generation){$('analytics-output').replaceChildren();$('analytics-state').textContent='Unable to generate report: '+e.message;}}
   finally{if(token===generation){$('analytics-output').removeAttribute('aria-busy');$('analytics-load').disabled=false;$('analytics-cancel').hidden=true;}}
  });

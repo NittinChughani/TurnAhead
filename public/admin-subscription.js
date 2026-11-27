@@ -1,17 +1,21 @@
-import {PLANS,money,subscriptionStatus,renewalNotice} from './subscription-model.js';
+import {PLANS,money,subscriptionStatus,renewalNotice,hasAdvancedAnalytics} from './subscription-model.js';
 import {watchSubscription,billingHistory,readChanges,requestChange} from './commercial-store.js';
 const $=id=>document.getElementById(id);
 const label=s=>String(s||'unknown').replace(/-/g,' ').replace(/^./,c=>c.toUpperCase());
 const date=s=>Number.isFinite(s?.toMillis?.())?new Date(s.toMillis()).toLocaleDateString('en-PK',{day:'numeric',month:'short',year:'numeric'}):'—';
 function node(tag,text,cls){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;}
 function field(parent,name,value){const box=node('div',undefined,'commercial-stat');box.append(node('small',name),node('strong',value));parent.append(box);}
-export function bindSubscription(context,toast){
- let hid=null,sub=null,ready=false,unwatch=null,generation=0,invoices=[],requestBusy=false;
+export function bindSubscription(context,toast,openTab,accessChanged){
+ let hid=null,sub=null,ready=false,unwatch=null,generation=0,invoices=[],requestBusy=false,timer=null;
  const summary=$('subscription-summary'),meters=$('subscription-meters'),form=$('subscription-request'),result=$('subscription-request-status');
+ const banner=$('commercial-renewal-banner'),copy=$('commercial-renewal-copy');
+ function analyticsAccess(){return !ready?'unknown':!sub?'legacy':hasAdvancedAnalytics(sub)?'advanced':'basic';}
+ let lastAccess='unknown';
+ function syncAccess(){const access=analyticsAccess();if(access===lastAccess)return;lastAccess=access;accessChanged();const option=$('analytics-mode').querySelector('[value=advanced]');option.disabled=!['advanced','legacy'].includes(access);if(option.disabled)$('analytics-mode').value='basic';else $('analytics-mode').value='advanced';}
  function usage(){
   if(!hid||!ready)return;
   const {departments,doctors,members}=context(),p=Object.hasOwn(PLANS,sub?.plan)?PLANS[sub.plan]:null;
-  const counts=[['Departments',departments.length,p?.departments],['Doctors',doctors.length,p?.doctors],['Staff accounts',members.filter(m=>m.role!=='owner').length,p?.staff]];
+  const counts=[['Departments',departments.length,sub?.limits?.departments??p?.departments],['Doctors',doctors.length,sub?.limits?.doctors??p?.doctors],['Staff accounts',members.filter(m=>m.role!=='owner').length,sub?.limits?.staff??p?.staff]];
   meters.replaceChildren();
   for(const [name,count,max] of counts){const box=node('div',undefined,'commercial-stat');box.append(node('small',name),node('strong',count+' / '+(Number.isInteger(max)?max:'—')));if(Number.isInteger(max)){const bar=node('div',undefined,'commercial-meter');const fill=node('span');fill.style.width=Math.min(100,count/max*100)+'%';bar.append(fill);box.append(bar);if(count>=max)box.append(node('small','Plan capacity reached'));}meters.append(box);}
  }
@@ -20,13 +24,14 @@ export function bindSubscription(context,toast){
   summary.append(node('h2',!ready?'Subscription unavailable':sub&&Object.hasOwn(PLANS,sub.plan)?'TurnAhead '+PLANS[sub.plan].name:'No plan assigned'));
   summary.append(node('p',!ready?'Unable to verify billing information. Clinical operations are unaffected.':sub?label(status):'Existing workspace • awaiting commercial onboarding. Clinical operations are unaffected.'));
   if(sub&&ready){const grid=node('div',undefined,'commercial-metrics');field(grid,'Billing cycle',label(sub.cycle));field(grid,'Recurring amount',money(sub.recurringAmount));field(grid,'Activation date',date(sub.activatedAt));field(grid,'Renewal date',date(sub.expiresAt));summary.append(grid);const notice=renewalNotice(sub);if(notice)summary.append(node('p',notice,'commercial-notice'));}
-  usage();
+  const notice=ready?renewalNotice(sub):'';copy.textContent=notice;banner.hidden=!notice;syncAccess();usage();
  }
- function stop(){generation++;unwatch?.();unwatch=null;hid=null;sub=null;ready=false;invoices=[];requestBusy=false;summary.textContent='Loading subscription…';meters.replaceChildren();$('subscription-invoices').textContent='Select Subscription to load billing history.';$('subscription-requests').replaceChildren();form.reset();result.textContent='';form.querySelector('[type=submit]').disabled=false;}
- function start(id){stop();hid=id;const g=generation;unwatch=watchSubscription(id,s=>{if(g!==generation)return;sub=s;ready=true;render();if(Object.hasOwn(PLANS,s?.plan))$('subscription-plan').value=s.plan;if(['monthly','annual'].includes(s?.cycle))$('subscription-cycle').value=s.cycle;},()=>{if(g!==generation)return;sub=null;ready=false;render();});}
+ function stop(){clearInterval(timer);timer=null;banner.hidden=true;copy.textContent='';lastAccess='unknown';generation++;unwatch?.();unwatch=null;hid=null;sub=null;ready=false;invoices=[];requestBusy=false;summary.textContent='Loading subscription…';meters.replaceChildren();$('subscription-invoices').textContent='Select Subscription to load billing history.';$('subscription-requests').replaceChildren();form.reset();result.textContent='';form.querySelector('[type=submit]').disabled=false;}
+ function start(id){stop();hid=id;timer=setInterval(()=>{if(hid)render();},60000);const g=generation;unwatch=watchSubscription(id,s=>{if(g!==generation)return;sub=s;ready=true;render();if(Object.hasOwn(PLANS,s?.plan))$('subscription-plan').value=s.plan;if(['monthly','annual'].includes(s?.cycle))$('subscription-cycle').value=s.cycle;},()=>{if(g!==generation)return;sub=null;ready=false;render();});}
  async function open(){if(!hid)return;const id=hid,g=generation;render();const target=$('subscription-invoices');target.textContent='Loading verified invoices…';$('subscription-requests').textContent='Loading requests…';try{const [b,r]=await Promise.all([billingHistory(id),readChanges(id)]);if(g!==generation)return;invoices=b;target.replaceChildren();if(!b.length)target.append(node('p','No invoices have been issued.'));else for(const invoice of b){const row=node('div',undefined,'admin-person');const copy=node('div',undefined,'person-info');copy.append(node('strong',invoice.number||invoice.id),node('small',date(invoice.issuedAt)+' · '+money(invoice.total)+' · '+label(invoice.status)));row.append(copy);const btn=node('button','Download PDF','btn btn-small btn-outline');btn.type='button';btn.dataset.invoice=invoice.id;row.append(btn);target.append(row);}const requests=$('subscription-requests');requests.replaceChildren();for(const x of r)requests.append(node('p',label(x.kind)+' · '+label(x.status)));if(!r.length)requests.append(node('p','No requests recorded.'));}catch(e){if(g===generation){target.textContent='Billing history could not be verified. Try Refresh.';$('subscription-requests').textContent='Request history unavailable.';}}}
+ $('commercial-renewal-open').addEventListener('click',openTab);
  $('subscription-refresh').addEventListener('click',open);
  form.addEventListener('submit',async e=>{e.preventDefault();if(!hid||requestBusy)return;const g=generation,id=hid,btn=form.querySelector('[type=submit]');requestBusy=true;btn.disabled=true;result.textContent='Submitting…';try{await requestChange(id,$('subscription-kind').value,$('subscription-plan').value,$('subscription-cycle').value,$('subscription-message').value);if(g!==generation)return;result.textContent='Request recorded. No payment or plan change has occurred.';$('subscription-message').value='';await open();}catch(e){if(g===generation)result.textContent='Request could not be submitted. An existing request of this type may already be recorded; refresh your request history.';}finally{if(g===generation){requestBusy=false;btn.disabled=false;}}});
  $('subscription-invoices').addEventListener('click',async e=>{const b=e.target.closest('[data-invoice]');if(!b||!hid)return;const invoice=invoices.find(i=>i.id===b.dataset.invoice);if(!invoice)return;const g=generation,org=context().hospital?.name||'Organization';b.disabled=true;try{const [{jsPDF},{buildInvoice}]=await Promise.all([import('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm'),import('./commercial-invoice.js')]);if(g!==generation)return;const pdf=buildInvoice(jsPDF,invoice,org);pdf.save('TurnAhead-'+String(invoice.number||invoice.id).replace(/[^A-Za-z0-9_-]/g,'_')+'.pdf');}catch(e){if(g===generation)toast('Invoice download unavailable: '+e.message,true);}finally{if(g===generation)b.disabled=false;}});
- return {start,stop,open,usage};
+ return {start,stop,open,usage,analyticsAccess};
 }
