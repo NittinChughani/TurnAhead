@@ -18,8 +18,8 @@ Development branch only. The public MIT license remains intact. No owner dashboa
 `functions/commercial-endpoints.js` exports callable `commercialOperator` (requires verified email, server-assigned custom claim turnaheadPlatformOperator, live Auth account/claim and App Check) and `commercialAnalytics` (verified hospital owner, current managed Professional/Enterprise entitlement; never grants platform operator clinical access). `commercialRenewalSweep` is an optional daily scheduled function at 08:00 PKT; it creates idempotent notices for 30/7/1-day windows, grace and expiry. It does not send email/SMS; admin overview displays current renewal warning independently of the scheduler.
 
 Callable operator actions:
-- issue: orderId and hospitalId (20 alphanumeric chars each), ownerUid, kind initial/renew/change, plan, cycle, billTo, issuer, taxId, optional discount/tax, Enterprise custom {recurringAmount,setupAmount,limits}. One outstanding order per hospital. New workspaces must have a matching verified pending lead.
-- verifyPayment: orderId, exact amount, non-sensitive external payment reference. Manual operator attestation, NOT automatic bank verification. Duplicate and incorrect amounts rejected.
+- issue: orderId and hospitalId (20 alphanumeric chars each), ownerUid, kind initial/renew/change, plan, cycle, billTo, issuer, taxId, optional discount/tax, Enterprise custom {recurringAmount,setupAmount,limits}. One outstanding order per hospital and per unprovisioned lead. New workspaces must have a matching verified pending lead.
+- verifyPayment: orderId, exact amount, non-sensitive external payment reference. Manual operator attestation, NOT automatic bank verification. Duplicate order payment, reused normalized payment reference and incorrect amounts rejected.
 - activate: orderId, after verified payment. Server-side transaction provisions or migrates, initializes limits/counters, bumps revision, sets expiry and writes audit. Migration lock blocks expansion only; releases after completion/failure. If a process crashes leaving a lock, authorized operator must reconcile the order and verify no job is running before manual recovery. Never remove a commercial account as a suspension mechanism.
 - voidOrder: orderId, unpaid order only. Paid refunds/reconciliation require a separate approved workflow.
 - resolveRequest: hospitalId, kind, status resolved/declined, note. Archives request and allows resubmission.
@@ -32,7 +32,7 @@ Operator action errors are sanitized. No credentials in browser or public reposi
 `commercialAccounts/{hid}` owner/operator read; trusted writes only. plan, cycle, status, recurringAmount, limits, activatedAt, expiresAt, revision.
 Subcollections invoices, payments, notices, requestHistory: owner/operator read, no client writes.
 requests/{kind}: owner creates pending request, same tenant owner/operator reads; server resolves.
-`commercialOrders` and `commercialAudit`: operator read, trusted writes only. Migration locks and order slots are entirely server-only.
+`commercialOrders` and `commercialAudit`: operator read, trusted writes only. Migration locks, order slots, lead slots and hashed payment-reference reservations are entirely server-only.
 `hospitals/{hid}/capacity/managed`: trusted initialized counts and limits, client only atomic increment linked to creation of corresponding resource. Expansion denied during migration or when managed account is not active/unexpired.
 Customer JSON export covers latest 100 commercial records of each displayed category (not a full clinical export); owners can request a complete export. Existing patient record exports unaffected.
 

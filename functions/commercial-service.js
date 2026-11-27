@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 /** Trusted server only. No service credentials, payment credentials or patient data in commercial records. */
 import {Timestamp} from 'firebase-admin/firestore';
 import {PLANS,quote,hasAdvancedAnalytics,reminderStage} from './commercial-policy.js';
@@ -29,7 +30,7 @@ export function periodEnd(start,cycle){
 }
 export function createCommercialService(db,auth){
  const account=h=>db.doc('commercialAccounts/'+h),hospital=h=>db.doc('hospitals/'+h),order=id=>db.doc('commercialOrders/'+id),lead=uid=>db.doc('commercialLeads/'+uid),member=(h,u)=>db.doc('memberships/'+h+'_'+u),cap=h=>hospital(h).collection('capacity').doc('managed'),lock=h=>db.doc('commercialMigrationLocks/'+h);
- const slot=h=>db.doc('commercialOrderSlots/'+h);
+ const slot=h=>db.doc('commercialOrderSlots/'+h),leadSlot=u=>db.doc('commercialLeadSlots/'+u),paymentRef=ref=>db.doc('commercialPaymentReferences/'+createHash('sha256').update(ref.toLowerCase()).digest('hex'));
  const invoice=(h,id)=>account(h).collection('invoices').doc(id);
  function audit(tx,actor,kind,h,id){tx.create(db.collection('commercialAudit').doc(),{actorUid:actor,kind,hospitalId:h,reference:id,createdAt:now()});}
  async function operator(identity){const uid=uidValue(identity?.uid);if(identity.token?.email_verified!==true||identity.token?.turnaheadPlatformOperator!==true)throw Error('Access denied');const u=await auth.getUser(uid);if(u.disabled||!u.emailVerified||u.customClaims?.turnaheadPlatformOperator!==true)throw Error('Access denied');return uid;}
@@ -46,19 +47,19 @@ export function createCommercialService(db,auth){
   const ownerUid=uidValue(input.ownerUid),u=await auth.getUser(ownerUid);
   if(u.disabled||!u.emailVerified||!u.email)throw Error('Organization owner must have a verified account');
   return db.runTransaction(async tx=>{
-   const [os,hs,as,ls,ms,ss]=await Promise.all([tx.get(order(id)),tx.get(hospital(h)),tx.get(account(h)),tx.get(lead(ownerUid)),tx.get(member(h,ownerUid)),tx.get(slot(h))]);
+   const [os,hs,as,ls,ms,ss,leadReservation]=await Promise.all([tx.get(order(id)),tx.get(hospital(h)),tx.get(account(h)),tx.get(lead(ownerUid)),tx.get(member(h,ownerUid)),tx.get(slot(h)),tx.get(leadSlot(ownerUid))]);
    if(os.exists||ss.exists)throw Error('An outstanding order already exists');
    const a=exists(as),hr=exists(hs),m=exists(ms),l=exists(ls);
    if(hr){if(hr.ownerUid!==ownerUid||hr.status!=='active'||m?.role!=='owner'||m.active!==true)throw Error('Hospital owner mismatch');}
-   else if(kind!=='initial'||a||!l||l.status!=='pending'||l.uid!==ownerUid||l.email!==u.email.toLowerCase()||m)throw Error('Verified pending lead required for new organization');
+   else if(kind!=='initial'||a||!l||l.status!=='pending'||l.uid!==ownerUid||l.email!==u.email.toLowerCase()||m||leadReservation.exists)throw Error('Verified pending lead required for new organization');
    if(kind==='initial'&&a)throw Error('Account already managed');
    if(kind!=='initial'&&(!a||a.status!=='active'))throw Error('Active managed account required');
    if(kind==='renew'&&(a.plan!==terms.plan||a.cycle!==terms.cycle||a.recurringAmount!==terms.recurringAmount||JSON.stringify(a.limits,Object.keys(a.limits||{}).sort())!==JSON.stringify(terms.limits,Object.keys(terms.limits).sort())))throw Error('Renewal must match current plan and contracted terms');
    if(kind==='change'&&millis(a.expiresAt)>Date.now())throw Error('Plan changes are applied at or after the current period end; no automatic proration');
    const issuedAt=now(),number='TA-'+id,setup=kind==='initial'?terms.setupAmount:0;
    const record={number,billTo,issuer,taxId,description:PLANS[terms.plan].name+' / '+terms.cycle,setup,recurring:terms.recurringAmount,discount,tax,total,currency:'PKR',status:'issued',issuedAt};
-   tx.create(order(id),{hospitalId:h,ownerUid,kind,terms,billTo,status:'issued',total,expectedRevision:a?.revision??0,createdAt:issuedAt});
-   tx.create(slot(h),{orderId:id,createdAt:issuedAt});tx.create(invoice(h,id),record);audit(tx,actor,'invoice-issued',h,id);return {orderId:id,number,total};
+   tx.create(order(id),{hospitalId:h,ownerUid,kind,terms,billTo,status:'issued',total,expectedRevision:a?.revision??0,newWorkspace:!hr,createdAt:issuedAt});
+   tx.create(slot(h),{orderId:id,createdAt:issuedAt});if(!hr)tx.create(leadSlot(ownerUid),{orderId:id,hospitalId:h,createdAt:issuedAt});tx.create(invoice(h,id),record);audit(tx,actor,'invoice-issued',h,id);return {orderId:id,number,total};
   });
  }
  async function verifyPayment(identity,input){
@@ -66,8 +67,8 @@ export function createCommercialService(db,auth){
   const reference=clean(input.reference,3,100,'non-sensitive payment reference'),amount=integer(input.amount,1,300000000,'paid amount');
   return db.runTransaction(async tx=>{
    const os=await tx.get(order(id)),o=exists(os);if(!o||o.status!=='issued'||o.total!==amount)throw Error('Payment does not match an unpaid order');
-   const ir=invoice(o.hospitalId,id),inv=exists(await tx.get(ir));if(!inv||inv.status!=='issued'||inv.total!==amount)throw Error('Invoice mismatch');
-   const verifiedAt=now();tx.update(order(id),{status:'paid',verifiedAt,paymentReference:reference,verifiedBy:actor});tx.update(ir,{status:'paid',paidAt:verifiedAt});
+   const ir=invoice(o.hospitalId,id),pr=paymentRef(reference),[is,rs,ss]=await Promise.all([tx.get(ir),tx.get(pr),tx.get(slot(o.hospitalId))]),inv=exists(is);if(rs.exists||ss.data()?.orderId!==id||!inv||inv.status!=='issued'||inv.total!==amount)throw Error('Invoice mismatch');
+   const verifiedAt=now();tx.create(pr,{orderId:id,hospitalId:o.hospitalId,verifiedAt});tx.update(order(id),{status:'paid',verifiedAt,paymentReference:reference,verifiedBy:actor});tx.update(ir,{status:'paid',paidAt:verifiedAt});
    tx.create(account(o.hospitalId).collection('payments').doc(id),{invoiceNumber:inv.number,amount,currency:'PKR',status:'verified',verifiedAt});audit(tx,actor,'payment-verified',o.hospitalId,id);return {orderId:id,status:'paid'};
   });
  }
@@ -79,9 +80,9 @@ export function createCommercialService(db,auth){
   await lock(h).create({orderId:id,actorUid:actor,createdAt:now()});
   try{
    return await db.runTransaction(async tx=>{
-    const [os,hs,as,cs,ls,ms,lsLock,invS,qs,ds,staff]=await Promise.all([tx.get(order(id)),tx.get(hospital(h)),tx.get(account(h)),tx.get(cap(h)),tx.get(lead(u.uid)),tx.get(member(h,u.uid)),tx.get(lock(h)),tx.get(invoice(h,id)),tx.get(hospital(h).collection('queues').limit(10001)),tx.get(hospital(h).collection('doctors').limit(10001)),tx.get(db.collection('memberships').where('hospitalId','==',h).limit(10002))]);
+    const [os,hs,as,cs,ls,ms,lsLock,invS,qs,ds,staff,ss,leadReservation]=await Promise.all([tx.get(order(id)),tx.get(hospital(h)),tx.get(account(h)),tx.get(cap(h)),tx.get(lead(u.uid)),tx.get(member(h,u.uid)),tx.get(lock(h)),tx.get(invoice(h,id)),tx.get(hospital(h).collection('queues').limit(10001)),tx.get(hospital(h).collection('doctors').limit(10001)),tx.get(db.collection('memberships').where('hospitalId','==',h).limit(10002)),tx.get(slot(h)),tx.get(leadSlot(u.uid))]);
     const o=exists(os),hr=exists(hs),a=exists(as),l=exists(ls),m=exists(ms),iv=exists(invS);
-    if(!o||o.status!=='paid'||o.ownerUid!==u.uid||iv?.status!=='paid'||iv.total!==o.total||o.expectedRevision!==(a?.revision??0)||lsLock.data()?.orderId!==id)throw Error('Order or account changed; manual reconciliation required');
+    if(!o||o.status!=='paid'||o.ownerUid!==u.uid||iv?.status!=='paid'||iv.total!==o.total||o.expectedRevision!==(a?.revision??0)||lsLock.data()?.orderId!==id||ss.data()?.orderId!==id||o.newWorkspace!==!hr||(!hr&&leadReservation.data()?.orderId!==id))throw Error('Order or account changed; manual reconciliation required');
     if(hr&&(hr.ownerUid!==u.uid||hr.status!=='active'||m?.role!=='owner'||m.active!==true))throw Error('Owner mismatch');
     if(!hr&&(o.kind!=='initial'||a||l?.status!=='pending'||l.uid!==u.uid||l.email!==u.email.toLowerCase()||m||qs.size||ds.size||staff.size))throw Error('New workspace is not eligible');
     if(o.kind==='initial'&&a||o.kind!=='initial'&&a?.status!=='active')throw Error('Account changed');
@@ -93,7 +94,7 @@ export function createCommercialService(db,auth){
      const createdAt=now();tx.create(hospital(h),{name:o.billTo,ownerUid:u.uid,status:'active',createdAt,updatedAt:createdAt});
      tx.create(hospital(h).collection('meta').doc('sequence'),{nextPrefix:1});
      tx.create(member(h,u.uid),{uid:u.uid,hospitalId:h,email:u.email.toLowerCase(),role:'owner',active:true,displayName:clean(l.representative,2,80,'representative').slice(0,70),gender:'unspecified',invitedBy:actor,createdAt,updatedAt:createdAt});
-     tx.update(lead(u.uid),{status:'approved',hospitalId:h,resolvedAt:createdAt});
+     tx.update(lead(u.uid),{status:'approved',hospitalId:h,resolvedAt:createdAt});tx.delete(leadSlot(u.uid));
     }
     const expiry=periodEnd(start,t.cycle);
     tx.set(account(h),{plan:t.plan,cycle:t.cycle,status:'active',recurringAmount:t.recurringAmount,limits:t.limits,activatedAt:a?.activatedAt||stamp(at),expiresAt:stamp(expiry),revision:(a?.revision??0)+1,updatedAt:now()});
@@ -107,7 +108,7 @@ export function createCommercialService(db,auth){
  }
  async function voidOrder(identity,input){
   const actor=await operator(identity),id=ident(input.orderId,'order ID');
-  return db.runTransaction(async tx=>{const o=exists(await tx.get(order(id)));if(!o||o.status!=='issued')throw Error('Only an unpaid order may be voided');const ir=invoice(o.hospitalId,id),iv=exists(await tx.get(ir)),ss=exists(await tx.get(slot(o.hospitalId)));if(iv?.status!=='issued'||ss?.orderId!==id)throw Error('Order mismatch');tx.update(ir,{status:'void',voidedAt:now()});tx.update(order(id),{status:'void',voidedAt:now()});tx.delete(slot(o.hospitalId));audit(tx,actor,'invoice-voided',o.hospitalId,id);return {status:'void'};});
+  return db.runTransaction(async tx=>{const o=exists(await tx.get(order(id)));if(!o||o.status!=='issued')throw Error('Only an unpaid order may be voided');const ir=invoice(o.hospitalId,id),iv=exists(await tx.get(ir)),ss=exists(await tx.get(slot(o.hospitalId))),ls=o.newWorkspace?exists(await tx.get(leadSlot(o.ownerUid))):null;if(o.newWorkspace&&ls?.orderId!==id)throw Error('Lead reservation mismatch');if(iv?.status!=='issued'||ss?.orderId!==id)throw Error('Order mismatch');tx.update(ir,{status:'void',voidedAt:now()});tx.update(order(id),{status:'void',voidedAt:now()});tx.delete(slot(o.hospitalId));if(o.newWorkspace)tx.delete(leadSlot(o.ownerUid));audit(tx,actor,'invoice-voided',o.hospitalId,id);return {status:'void'};});
  }
  async function resolveRequest(identity,input){
   const actor=await operator(identity),h=ident(input.hospitalId),kind=input.kind;

@@ -16,7 +16,7 @@ test('approved prices, custom quote validation and PKT calendar boundaries',()=>
 test('operator role, invoice, manual verification, provisioning and renewal lifecycle',async()=>{
  await assert.rejects(svc.issue(owner,input));await assert.rejects(svc.issue({...op,uid:'outside'},input));
  const issued=await svc.issue(op,input);assert.equal(issued.total,49999);
- await assert.rejects(svc.issue(op,{...input,orderId:id2}));
+ await assert.rejects(svc.issue(op,{...input,orderId:id2}));await assert.rejects(svc.issue(op,{...input,hospitalId:h2,orderId:id2}));
  await assert.rejects(svc.activate(op,{orderId:id}));await assert.rejects(svc.verifyPayment(op,{orderId:id,amount:1,reference:'simulated test'}));
  await svc.verifyPayment(op,{orderId:id,amount:49999,reference:'simulated test'});
  await assert.rejects(svc.verifyPayment(op,{orderId:id,amount:49999,reference:'simulated duplicate'}));await assert.rejects(svc.voidOrder(op,{orderId:id}));
@@ -27,9 +27,9 @@ test('operator role, invoice, manual verification, provisioning and renewal life
  assert.equal((await db.doc('commercialAccounts/'+h+'/invoices/'+id).get()).data().status,'paid');await assert.rejects(svc.activate(op,{orderId:id}));
  const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Karachi',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
  await assert.rejects(svc.analytics(outside,{hospitalId:h,end:day,days:1}));await assert.rejects(svc.analytics(op,{hospitalId:h,end:day,days:1}));
- const report=await svc.analytics(owner,{hospitalId:h,end:day,days:1});assert.equal(report.report.total.issued,0);
+ await db.doc('hospitals/'+h+'/queues/general').set({name:'General'});await db.doc('hospitals/'+h+'/history/'+day).set({dayKey:day});await db.doc('hospitals/'+h+'/history/'+day+'/departments/general/records/fictional').set({dayKey:day,queueId:'general',queueName:'General',doctorName:'Test Doctor',status:'completed',issuedAt:Date.now()-120000,calledAt:Date.now()-60000,finishedAt:Date.now(),patientName:'Do not expose this name'});const report=await svc.analytics(owner,{hospitalId:h,end:day,days:1});assert.equal(report.report.total.issued,1);assert.ok(!JSON.stringify(report).includes('Do not expose this name'));
  const old=(await db.doc('commercialAccounts/'+h).get()).data().expiresAt.toMillis();
- await svc.issue(op,{...input,orderId:id2,kind:'renew'});await svc.verifyPayment(op,{orderId:id2,amount:14999,reference:'simulated renewal'});await svc.activate(op,{orderId:id2});
+ await svc.issue(op,{...input,orderId:id2,kind:'renew'});await assert.rejects(svc.verifyPayment(op,{orderId:id2,amount:14999,reference:'simulated test'}));await svc.verifyPayment(op,{orderId:id2,amount:14999,reference:'simulated renewal'});await svc.activate(op,{orderId:id2});
  assert.equal((await db.doc('commercialAccounts/'+h).get()).data().expiresAt.toMillis(),periodEnd(old,'monthly'));
  await svc.issue(op,{...input,orderId:id3,kind:'renew'});await svc.voidOrder(op,{orderId:id3});assert.equal((await db.doc('commercialAccounts/'+h+'/invoices/'+id3).get()).data().status,'void');
  await db.doc('commercialAccounts/'+h+'/requests/support').set({kind:'support',status:'pending',message:'Test'});
