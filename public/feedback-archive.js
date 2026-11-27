@@ -17,7 +17,7 @@ export function bindFeedbackArchive(){
  function valid(g){return active&&g===epoch;}
  function pause(){active=false;epoch++;off?.();off=null;clearInterval(timer);timer=null;}
  function stop(){pause();hid=null;day=null;todayHead=[];todayTail=[];monthPanels.clear();host.replaceChildren();}
- function paintToday(){const rows=new Map();for(const f of [...todayHead,...todayTail])rows.set(f.id,f);todayList.replaceChildren();for(const f of rows.values())todayList.append(entry(f));if(!rows.size)todayList.append(node('p','No feedback received today.','empty-state'));todayMore.hidden=!todayHasMore;todayMore.disabled=todayBusy;}
+ function paintToday(){const rows=new Map();for(const f of [...todayHead,...todayTail])rows.set(f.id,f);todayList.replaceChildren();for(const f of [...rows.values()].sort((a,b)=>(b.createdAt?.toDate?.()?.getTime()||0)-(a.createdAt?.toDate?.()?.getTime()||0)))todayList.append(entry(f));if(!rows.size)todayList.append(node('p','No feedback received today.','empty-state'));todayMore.hidden=!todayHasMore;todayMore.disabled=todayBusy;}
  async function moreToday(){if(todayBusy||!todayHasMore)return;const g=epoch;todayBusy=true;todayMore.disabled=true;try{const p=await readFeedbackPage(hid,day,null,todayCursor);if(!valid(g))return;todayTail.push(...p.records);todayCursor=p.cursor;todayHasMore=p.more;paintToday();}catch(e){if(valid(g)){todayMore.textContent='Retry loading more feedback';}}finally{if(valid(g)){todayBusy=false;todayMore.disabled=false;}}}
  function addMonth(month){
   if(monthPanels.has(month))return;
@@ -49,8 +49,8 @@ export function bindFeedbackArchive(){
   host.replaceChildren(todayHeading,todayList,todayMore,pastHeading,monthsList,olderButton);
   off=watchTodayFeedback(hid,day,p=>{if(!valid(g))return;
    // Keep previously paginated responses visible if a new live response shifts the first page.
-   if(!firstSnapshot&&todayTail.length){const ids=new Set(p.records.map(x=>x.id));todayTail=[...todayHead.filter(x=>!ids.has(x.id)),...todayTail];}
-   todayHead=p.records;if(firstSnapshot||!todayTail.length){todayCursor=p.cursor;todayHasMore=p.more;}firstSnapshot=false;paintToday();
+   if(!firstSnapshot&&(todayTail.length||todayBusy)){const ids=new Set(p.records.map(x=>x.id));todayTail=[...todayHead.filter(x=>!ids.has(x.id)),...todayTail];}
+   todayHead=p.records;if(firstSnapshot||(!todayTail.length&&!todayBusy)){todayCursor=p.cursor;todayHasMore=p.more;}firstSnapshot=false;paintToday();
   },()=>{if(valid(g)){todayList.replaceChildren(node('p','Today’s feedback is unavailable.','empty-state'),button('Retry',()=>{const id=hid;pause();open(id);}));}});
   moreMonths();timer=setInterval(()=>{if(active&&day!==feedbackDay())open(hid);},15000);
  }
