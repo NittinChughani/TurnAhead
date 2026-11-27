@@ -15,7 +15,7 @@ jobs:
   deploy:
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.retry_deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,8 @@ jobs:
           for attempt in {1..12}; do
             count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" --jq ".artifacts | map(select(.name == \"$ARTIFACT_NAME\" and .expired == false)) | length") || count=0
             if [ "$count" = 1 ]; then
-              echo "Deployment artifact is ready."
+              echo "Deployment artifact is ready; allowing metadata propagation."
+              sleep 15
               exit 0
             fi
             echo "Artifact not yet visible; checking again."
@@ -41,6 +42,15 @@ jobs:
           echo "::error::The unique Pages artifact did not become visible."
           exit 1
       - id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+        with:
+          artifact_name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Allow transient Pages metadata lookup to settle
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 15
+      - id: retry_deployment
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4
         with:
           artifact_name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
