@@ -28,7 +28,7 @@ test('owner workspace renders analytics, exports a real PDF, navigates setup and
  await page.locator('[data-admin-tab=onboarding]').click();await expect(page.locator('#onboarding-list')).toContainText('STEP 1 OF 6');
  await page.locator('#onboarding-list').getByRole('button',{name:'Next',exact:true}).click();await expect(page.locator('#onboarding-list')).toContainText('STEP 2 OF 6');
  await page.locator('[data-admin-tab=activity]').click();await expect(page.locator('#activity-list')).toContainText('Ticket issued');
- await page.locator('[data-admin-tab=history]').click();await page.locator('[data-history-day] summary').first().click();
+ await page.locator('[data-admin-tab=history]').click();await expect(page.locator('[data-history-day]').first()).toHaveAttribute('open','');
  await page.locator('[data-history-full]').first().click();await expect(page.locator('[data-history-results]').first()).toContainText('Fictional Patient');
  expect(errors).toEqual([]);
 });
@@ -86,17 +86,16 @@ test('patient downloads and prints a nonblank private ticket with the original s
  expect(errors).toEqual([]);
 });
 
-test('live pricing page displays packages and staged launch without creating an account',async({page})=>{
- await mockWorkspace(page,'owner');
+test('pricing is public-only, displays approved amounts, and contains no onboarding section',async({page})=>{
  await page.goto('/pricing.html');
  await expect(page.locator('#pricing-plans')).toContainText('PKR 4,999');
+ await expect(page.locator('#pricing-plans')).toContainText('PKR 19,999');
  await page.locator('[data-cycle=annual]').click();
  await expect(page.locator('#pricing-plans')).toContainText('PKR 149,990');
- await page.locator('[data-select-plan=professional]').click();
- await expect(page.locator('#pricing-launch-note')).toBeVisible();
- await expect(page.locator('#pricing-launch-total')).toContainText('184,990');
- await expect(page.locator('#pricing-auth')).toBeHidden();
- await expect(page.locator('#pricing-request')).toBeHidden();
+ await expect(page.locator('#pricing-plans')).toContainText('PKR 184,990');
+ await expect(page.locator('#request')).toHaveCount(0);
+ await expect(page.locator('#pricing-auth')).toHaveCount(0);
+ await expect(page.locator('main')).not.toContainText('COMING SOON');
 });
 test('staged subscription tab preserves legacy analytics and does not enable commercial writes',async({page})=>{
  await mockWorkspace(page,'owner');
@@ -109,4 +108,31 @@ test('staged subscription tab preserves legacy analytics and does not enable com
  await expect(page.locator('#analytics-mode')).toHaveValue('advanced');
  await page.locator('#analytics-load').click();
  await expect(page.locator('#analytics-output')).toContainText('Operational overview');
+});
+
+test('both workspaces use a centered queue loader during permission checks',async({page})=>{
+ for(const [role,url,content] of [['owner','/admin.html','#admin-content'],['receptionist','/desk.html','#dashboard']]){
+  await mockWorkspace(page,role,{loginDelay:650});
+  await page.goto(url);
+  const loader=page.locator('.ta-signin-overlay');await expect(loader).toBeVisible();
+  await expect(loader).toContainText('Checking access');const box=await loader.boundingBox();expect(box.x).toBe(0);expect(box.y).toBe(0);
+  await expect(page.locator(content)).toBeVisible();await expect(loader).toBeHidden();
+  await page.unrouteAll({behavior:'wait'});
+ }
+});
+test('archive defaults to current month and latest expanded; date finder reaches older months',async({page})=>{
+ await mockWorkspace(page,'owner',{archiveDates:true});
+ await page.goto('/admin.html');await expect(page.locator('#admin-content')).toBeVisible();
+ await expect(page.locator('#history-days [data-history-day]')).toHaveCount(0);
+ await page.locator('[data-admin-tab=history]').click();
+ const dates=page.locator('[data-history-day]');await expect(dates).toHaveCount(2);
+ await expect(dates.first()).toHaveAttribute('open','');
+ await expect(dates.nth(1)).not.toHaveAttribute('open','');
+ await expect(dates.first().locator('[data-history-results]')).toContainText('Fictional Patient');
+ await dates.nth(1).locator('summary').click();await expect(dates.nth(1)).toHaveAttribute('open','');
+ await expect(dates.nth(1).locator('[data-history-results]')).toContainText('Fictional Patient');
+ await page.locator('#history-date').fill('2020-01-01');await page.locator('#history-open-date').click();
+ const custom=page.locator('[data-history-day="2020-01-01"]');await expect(custom).toHaveAttribute('open','');await expect(custom.locator('summary')).toContainText('Date search');
+ await expect(custom.locator('[data-history-results]')).toContainText('Fictional Patient');
+ await page.locator('#refresh-history').click();await expect(custom).toHaveCount(0);await expect(dates).toHaveCount(2);
 });
