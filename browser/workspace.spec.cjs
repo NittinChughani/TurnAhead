@@ -129,10 +129,10 @@ test('archive defaults to current month and latest expanded; date finder reaches
  await expect(dates.first()).toHaveAttribute('open','');
  await expect(dates.nth(1)).not.toHaveAttribute('open','');await expect(dates.nth(1).locator('.history-body')).toBeHidden();expect((await dates.nth(1).boundingBox()).height).toBeLessThan(80);await expect(dates.first().locator('.history-filter-tools')).toBeHidden();
  await expect(dates.first().locator('[data-history-results]')).toContainText('Fictional Patient');
- await dates.nth(1).locator('summary').click();await expect(dates.nth(1)).toHaveAttribute('open','');await expect(dates.first()).not.toHaveAttribute('open','');await dates.nth(1).locator('.history-advanced summary').click();await expect(dates.nth(1).locator('.history-filter-tools')).toBeVisible();
+ await dates.nth(1).locator(':scope > summary').click();await expect(dates.nth(1)).toHaveAttribute('open','');await expect(dates.first()).not.toHaveAttribute('open','');await dates.nth(1).locator('.history-advanced summary').click();await expect(dates.nth(1).locator('.history-filter-tools')).toBeVisible();
  await expect(dates.nth(1).locator('[data-history-results]')).toContainText('Fictional Patient');
  await page.locator('#history-date').fill('2020-01-01');await page.locator('#history-open-date').click();
- const custom=page.locator('[data-history-day="2020-01-01"]');await expect(custom).toHaveAttribute('open','');await expect(custom.locator('summary')).toContainText('Date search');
+ const custom=page.locator('[data-history-day="2020-01-01"]');await expect(custom).toHaveAttribute('open','');await expect(custom.locator(':scope > summary')).toContainText('Date search');
  await expect(custom.locator('[data-history-results]')).toContainText('Fictional Patient');
  await page.locator('#refresh-history').click();await expect(custom).toHaveCount(0);await expect(dates).toHaveCount(2);
 });
