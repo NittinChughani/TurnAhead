@@ -1,3 +1,4 @@
+import {reserveCapacity} from './capacity-store.js';
 /** Hospital-scoped Firestore queues, atomic ticket transitions and private dated history. */
 import {
   collection,doc,getDocs,getDocsFromServer,getDocFromServer,onSnapshot,runTransaction,query,orderBy,limit,where,startAfter,deleteField,setDoc,serverTimestamp
@@ -35,6 +36,7 @@ export async function bootstrap(hid){
   await runTransaction(db,async tx=>{
     const mr=metaDoc(hid),meta=await tx.get(mr);
     if(meta.exists())return;
+    await reserveCapacity(tx,hid,'departments','general-opd');
     const now=Date.now();
     tx.set(mr,{nextPrefix:1});
     tx.set(qDoc(hid,'general-opd'),initialQueue('General OPD','GEN',dayKey(),now));
@@ -95,6 +97,7 @@ export async function createQueue(hid,name){
     const [meta,reserved]=await Promise.all([tx.get(mr),tx.get(pr)]);
     if(!meta.exists())throw Error('Organization setup is incomplete. Contact an administrator.');
     if(reserved.exists())throw Error(`Department prefix ${prefix} is already registered.`);
+    await reserveCapacity(tx,hid,'departments',id);
     tx.update(mr,{nextPrefix:(meta.data().nextPrefix||1)+1});
     tx.set(pr,{queueId:id});
     const now=Date.now();tx.set(qDoc(hid,id),initialQueue(name,prefix,dayKey(),now));

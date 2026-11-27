@@ -1,4 +1,5 @@
-import {collection,doc,writeBatch,onSnapshot,serverTimestamp} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+import {reserveCapacity} from './capacity-store.js';
+import {collection,doc,writeBatch,onSnapshot,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {db} from './firebase.js';
 import {appendActivity} from './activity-store.js?v=3.3.0';
 import {cleanDoctorName,cleanRoomNumber} from './doctor-model.js';
@@ -8,7 +9,7 @@ export function watchDoctors(hid,next,error){
 }
 export async function addDoctor(hid,{name,departmentId,departmentName,roomNumber}){
   if(!departmentId||!departmentName)throw Error('Select a department for this doctor.');
-  const ref=doc(root(hid)),batch=writeBatch(db);batch.set(ref,{name:cleanDoctorName(name),departmentId,departmentName,roomNumber:cleanRoomNumber(roomNumber),active:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});appendActivity(batch,hid,'doctor-created');await batch.commit();return ref;
+  const ref=doc(root(hid));await runTransaction(db,async tx=>{await reserveCapacity(tx,hid,'doctors',ref.id);tx.set(ref,{name:cleanDoctorName(name),departmentId,departmentName,roomNumber:cleanRoomNumber(roomNumber),active:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});appendActivity(tx,hid,'doctor-created');});return ref;
 }
 export async function changeDoctor(hid,id,{name,departmentId,departmentName,roomNumber,active}){
   if(!id||!departmentId||!departmentName)throw Error('Doctor or department is missing.');

@@ -242,6 +242,41 @@ service cloud.firestore {
           matchesDoctor(hid,t) && validDepartmentTransfer(hid,old,t,id)));
     }
 
+    // Managed capacity is initialized by a trusted operator after counting every existing
+    // resource. Inactive records still occupy slots; no counters can be reset by clients.
+    function commercialPath(hid) { return /databases/$(database)/documents/commercialAccounts/$(hid); }
+    function capacityPath(hid) { return /databases/$(database)/documents/hospitals/$(hid)/capacity/managed; }
+    function pendingInvite(hid) {
+      return verified() && exists(invitePath(hid,email())) &&
+        get(invitePath(hid,email())).data.status == 'pending' &&
+        get(invitePath(hid,email())).data.expiresAt > request.time;
+    }
+    function capacityReserved(hid,kind,id) {
+      let path = capacityPath(hid);
+      return !exists(commercialPath(hid)) ||
+        (exists(path) && getAfter(path).data[kind] == get(path).data[kind] + 1 &&
+         getAfter(path).data.lastKind == kind && getAfter(path).data.lastId == id);
+    }
+    function capacityResource(hid,kind,id) {
+      return kind == 'departments' ? queuePath(hid,id) :
+        kind == 'doctors' ? doctorPath(hid,id) : memberPath(hid,id);
+    }
+    function validCapacityIncrement(hid) {
+      let old = resource.data;
+      let next = request.resource.data;
+      let kind = next.lastKind;
+      let id = next.lastId;
+      let target = capacityResource(hid,kind,id);
+      let account = get(commercialPath(hid)).data;
+      return kind in ['departments','doctors','staff'] && id is string &&
+        ((kind == 'departments' && manager(hid)) || (kind == 'doctors' && owner(hid)) ||
+         (kind == 'staff' && verified() && id == request.auth.uid && pendingInvite(hid))) &&
+        account.status == 'active' && account.expiresAt > request.time &&
+        next.diff(old).affectedKeys().hasOnly([kind,'lastKind','lastId','updatedAt']) &&
+        old[kind] is int && old[kind] >= 0 && old.limits[kind] is int &&
+        next[kind] == old[kind] + 1 && next[kind] <= old.limits[kind] &&
+        next.updatedAt == request.time && !exists(target) && existsAfter(target);
+    }
     match /hospitals/{hid} {
       // Public landing/board can fetch a *known* hospital ID, never enumerate hospitals.
       allow get: if true;
@@ -251,6 +286,12 @@ service cloud.firestore {
       allow update: if admin(hid) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','updatedAt','recallGraceMinutes','customization']) &&
         validHospital(request.resource.data) && request.resource.data.updatedAt == request.time;
+
+      match /capacity/{key} {
+        allow get: if key == 'managed' && (isMember(hid) || pendingInvite(hid));
+        allow update: if key == 'managed' && validCapacityIncrement(hid);
+        allow list, create, delete: if false;
+      }
 
       match /invites/{mail} {
         allow get: if admin(hid) || (verified() && email() == mail);
@@ -279,7 +320,7 @@ service cloud.firestore {
 
       match /queues/{queueId} {
         allow get, list: if true;
-        allow create: if manager(hid) && validQueue(request.resource.data);
+        allow create: if manager(hid) && validQueue(request.resource.data) && capacityReserved(hid,'departments',queueId);
         allow update: if isMember(hid) && validQueue(request.resource.data);
         allow delete: if false;
       }
@@ -293,7 +334,7 @@ service cloud.firestore {
       match /doctors/{doctorId} {
         // Patient tickets embed doctor snapshots, but browsing the doctor directory requires staff membership.
         allow get, list: if isMember(hid);
-        allow create: if owner(hid) && validDoctor(request.resource.data) &&
+        allow create: if owner(hid) && validDoctor(request.resource.data) && capacityReserved(hid,'doctors',doctorId) &&
           request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
         allow update: if owner(hid) && validDoctor(request.resource.data) &&
           request.resource.data.createdAt == resource.data.createdAt &&
@@ -421,7 +462,8 @@ service cloud.firestore {
         get(invitePath(request.resource.data.hospitalId,email())).data.get('gender',request.resource.data.get('gender','unspecified')) == request.resource.data.get('gender','unspecified') &&
         get(invitePath(request.resource.data.hospitalId,email())).data.expiresAt > request.time &&
         getAfter(invitePath(request.resource.data.hospitalId,email())).data.status == 'accepted' &&
-        getAfter(invitePath(request.resource.data.hospitalId,email())).data.acceptedUid == request.auth.uid;
+        getAfter(invitePath(request.resource.data.hospitalId,email())).data.acceptedUid == request.auth.uid &&
+        capacityReserved(request.resource.data.hospitalId,'staff',request.auth.uid);
 
       allow update: if (verified() && request.auth.uid == resource.data.uid &&
         isMember(resource.data.hospitalId) && validAvatar(request.resource.data) &&

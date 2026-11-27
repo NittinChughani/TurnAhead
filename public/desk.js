@@ -1,11 +1,11 @@
 import {configured, auth, helpfulError} from './firebase.js';
 import {observeAuth, login, logout, requestVerification, refreshVerification,
-  myMemberships, getHospital, watchMembership,updateOwnProfilePhoto,watchHospital} from './org-store.js?v=3.3.1';
+  myMemberships, getHospital, watchMembership,updateOwnProfilePhoto,watchHospital} from './org-store.js?v=4.0.0';
 import {canManageStaff, canManageDepartments, boardLink, isStaffRole, staffGreeting} from './org-model.js';
 import {bootstrap, rollOverAll, observeQueues, observeTickets,
-  issueTicket, createQueue, performAction,recallMissedTicket,setDoctorDelay,changeWaitingTicket} from './store.js?v=3.3.1';
+  issueTicket, createQueue, performAction,recallMissedTicket,setDoctorDelay,changeWaitingTicket} from './store.js?v=4.0.0';
 import {dayKey,patientDisplayName,getDoctorLane,doctorActiveCodes,ticketStatusLabel} from './queue-engine.js?v=2.6.2';
-import {watchDoctors} from './doctors.js?v=3.3.1';
+import {watchDoctors} from './doctors.js?v=4.0.0';
 import {doctorAvailable} from './doctor-model.js';
 import {avatarContents,compressProfilePhoto} from './profile-photo.js';
 import {bindAccountMenu} from './account-menu.js?v=3.3.2';

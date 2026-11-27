@@ -2,11 +2,11 @@ import {bindSubscription} from './admin-subscription.js?v=4.0.0';
 import {readActivity} from './activity-store.js?v=3.3.0';
 import {configured,auth,helpfulError} from './firebase.js';
 import {observeAuth,login,logout,refreshVerification,requestVerification,myMemberships,getHospital,
-  watchMembership,watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,updateRecallGrace,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js?v=3.3.1';
-import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory,observeFeedback,readTicketChanges,searchHistoryDate} from './store.js?v=3.3.1';
+  watchMembership,watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,updateRecallGrace,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js?v=4.0.0';
+import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory,observeFeedback,readTicketChanges,searchHistoryDate} from './store.js?v=4.0.0';
 import {canChangeRole,normalizeEmail,invitationLink,boardLink,staffGreeting} from './org-model.js';
 import {dayKey,patientDisplayName,ticketStatusLabel} from './queue-engine.js?v=2.6.2';
-import {watchDoctors,addDoctor,changeDoctor} from './doctors.js?v=3.3.1';
+import {watchDoctors,addDoctor,changeDoctor} from './doctors.js?v=4.0.0';
 import {avatarHTML,avatarContents,compressProfilePhoto} from './profile-photo.js';
 import {bindAccountMenu} from './account-menu.js?v=3.3.2';
 import {patientReportRows,downloadPatientReport} from './patient-report.js?v=3.3.1';

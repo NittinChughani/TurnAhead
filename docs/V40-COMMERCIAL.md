@@ -23,10 +23,14 @@ All provisioning, approval, invoices, payment verification and operator activity
 
 ## Remaining release blockers
 
-- Secure atomic capacity reservations/counters for existing resource creation paths, pending invitations and concurrency, reconciliation/backfill and policy for inactive resources. Client usage displays are not enforcement.
+- Atomic capacity reservations are implemented for department, doctor and accepted staff-account creation; pending invites do not reserve capacity. Before activating a managed account, the trusted operator must provision and reconcile counters, test concurrency, and handle over-limit legacy tenants. Inactive records occupy permanent slots. Existing clinical actions are not restricted by billing.
 - Feature-level backend enforcement, reliable renewals/notifications, trusted commercial write service, formal invoice issuer/tax fields, audit logs, retention and cancellation/export workflows.
 - Enterprise limits and multi-location infrastructure not implemented.
 - Complete browser tests, emulator rules tests, regression checks and joint Control Center integration; no production rules changes or merge before verification.
 - Existing named QR tickets are bearer-secret links; commercial launch requires privacy/security and hosting capacity review.
 - One verified lead per account mitigates repeat submissions but does not prevent account farming; production anti-abuse and data retention review required.
 - No real payments until authorized business arrangements and appropriate review.
+
+## Managed capacity migration contract
+
+Trusted operator must pause resource provisioning during migration and atomically initialize the commercial account and `hospitals/{hid}/capacity/managed` record: `departments`, `doctors`, `staff` integer counts (all retained docs, staff excludes owner), `limits` map with those same three integer keys, `lastKind` and `lastId` empty strings, `updatedAt` server timestamp. Limits must match the agreed plan. No client can create or delete this record, change limits, or reset counts. Resource creation requires an atomic counter increment linked to the new record ID. Expired/paused subscriptions cannot expand capacity but existing queues, records and basic operations remain available. Missing commercial account is legacy-unassigned; managed account without counters fails closed on resource creation. Trusted backend must never delete a commercial account as a suspension mechanism.
