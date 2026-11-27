@@ -174,3 +174,29 @@ test('activity events are owner-readable, immutable, restricted by actor and rol
  await assertFails(updateDoc(path(owner),{kind:'ticket-called'}));await assertFails(deleteDoc(path(owner)));
  await assertSucceeds(setDoc(p(owner,'activity','B'.repeat(20)),{kind:'staff-updated',actorUid:'owner',createdAt:serverTimestamp()}));
 });
+
+test('commercial data: verified lead intake, immutable billing and tenant isolation',async()=>{
+ const db=user('prospect'),anon=env.unauthenticatedContext().firestore(),owner=user('owner'),outside=user('otherowner'),staff=user('staff');
+ const lead={uid:'prospect',email:'prospect@example.test',organization:'Example clinic',representative:'Test contact',phone:'03001234567',plan:'essential',cycle:'annual',status:'pending',createdAt:serverTimestamp()};
+ await assertFails(setDoc(doc(anon,'commercialLeads','prospect'),lead));
+ await assertFails(setDoc(doc(db,'commercialLeads','someone'),lead));
+ await assertFails(setDoc(doc(db,'commercialLeads','prospect'),{...lead,status:'active'}));
+ await assertSucceeds(setDoc(doc(db,'commercialLeads','prospect'),lead));
+ await assertSucceeds(getDoc(doc(db,'commercialLeads','prospect')));
+ await assertFails(getDoc(doc(owner,'commercialLeads','prospect')));
+ await assertFails(getDocs(collection(db,'commercialLeads')));
+ await assertFails(updateDoc(doc(db,'commercialLeads','prospect'),{status:'active'}));
+ await env.withSecurityRulesDisabled(async c=>{await setDoc(doc(c.firestore(),'commercialAccounts',h),{plan:'essential',cycle:'annual',status:'active'});});
+ await assertSucceeds(getDoc(doc(owner,'commercialAccounts',h)));
+ for(const x of [anon,outside,staff])await assertFails(getDoc(doc(x,'commercialAccounts',h)));
+ await assertFails(updateDoc(doc(owner,'commercialAccounts',h),{plan:'enterprise'}));
+ const req={uid:'owner',kind:'renew',plan:'essential',cycle:'annual',message:'',status:'pending',createdAt:serverTimestamp()};
+ await assertSucceeds(setDoc(doc(owner,'commercialAccounts',h,'requests','renew'),req));
+ await assertFails(setDoc(doc(outside,'commercialAccounts',h,'requests','renew'),req));
+ await assertFails(updateDoc(doc(owner,'commercialAccounts',h,'requests','renew'),{status:'approved'}));
+ const operator=env.authenticatedContext('operator',{...claims('operator'),turnaheadPlatformOperator:true}).firestore();
+ await assertSucceeds(getDocs(collection(operator,'commercialLeads')));
+ await assertSucceeds(getDoc(doc(operator,'commercialAccounts',h)));
+ await assertFails(updateDoc(doc(operator,'commercialAccounts',h),{plan:'enterprise'}));
+ await assertFails(getDoc(archive(operator)));
+});

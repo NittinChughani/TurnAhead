@@ -1,0 +1,5 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {quote,subscriptionStatus,renewalNotice} from '../public/subscription-model.js';
+test('approved PKR prices and annual discount',()=>{assert.deepEqual(quote('essential','annual'),{recurring:49990,setup:15000,total:64990});assert.deepEqual(quote('professional','monthly'),{recurring:14999,setup:35000,total:49999});assert.equal(quote('enterprise','annual').total,null);assert.throws(()=>quote('__proto__','annual'));assert.throws(()=>quote('essential','week'));});
+test('safe lifecycle boundaries',()=>{const now=10000000000,day=86400000,s=n=>({status:'active',expiresAt:{toMillis:()=>now+n*day}});assert.equal(subscriptionStatus(null,now),'unassigned');assert.equal(subscriptionStatus(s(31),now),'active');assert.equal(subscriptionStatus(s(30),now),'renewal-due');assert.equal(subscriptionStatus(s(0),now),'grace');assert.equal(subscriptionStatus(s(-15),now),'expired');assert.match(renewalNotice(s(1),now),/1 day\./);});

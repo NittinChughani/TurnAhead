@@ -470,6 +470,43 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly(['nextPrefix']) &&
         request.resource.data.nextPrefix is int && request.resource.data.nextPrefix >= 1;
     }
+    // Commercial records are separate from public hospital documents.
+    // Only a trusted Admin SDK process can provision platform roles or mutate billing records.
+    function platformOperator() { return verified() && request.auth.token.get('turnaheadPlatformOperator', false) == true; }
+    function commercialSelection(d) { return d.plan in ['essential','professional','enterprise'] && d.cycle in ['monthly','annual']; }
+    match /commercialLeads/{uid} {
+      allow get: if verified() && (request.auth.uid == uid || platformOperator());
+      allow list: if platformOperator();
+      allow create: if verified() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['uid','email','organization','representative','phone','plan','cycle','status','createdAt']) &&
+        request.resource.data.uid == uid && request.resource.data.email == email() &&
+        request.resource.data.organization is string && request.resource.data.organization.size() >= 2 && request.resource.data.organization.size() <= 120 &&
+        request.resource.data.representative is string && request.resource.data.representative.size() >= 2 && request.resource.data.representative.size() <= 80 &&
+        request.resource.data.phone is string && request.resource.data.phone.matches('^[+0-9 ().-]{5,30}
+  }
+}
+) &&
+        commercialSelection(request.resource.data) && request.resource.data.status == 'pending' && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+    match /commercialAccounts/{hid} {
+      allow get: if owner(hid) || platformOperator();
+      allow list: if platformOperator();
+      allow write: if false;
+      match /invoices/{invoiceId} {
+        allow get, list: if owner(hid) || platformOperator();
+        allow write: if false;
+      }
+      match /requests/{kind} {
+        allow get, list: if owner(hid) || platformOperator();
+        allow create: if owner(hid) && kind in ['upgrade','downgrade','renew','billing-cycle','support','cancel','export'] &&
+          request.resource.data.keys().hasOnly(['uid','kind','plan','cycle','message','status','createdAt']) &&
+          request.resource.data.uid == request.auth.uid && request.resource.data.kind == kind &&
+          commercialSelection(request.resource.data) && request.resource.data.message is string && request.resource.data.message.size() <= 1000 &&
+          request.resource.data.status == 'pending' && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
     match /{document=**} { allow read, write: if false; }
   }
 }
