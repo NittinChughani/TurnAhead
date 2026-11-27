@@ -1,36 +1,45 @@
 # TurnAhead v4.0 commercial development candidate
 
-This branch preserves the MIT license and existing clinical workflow. It is not a deployed commercial release. No owner dashboard belongs in this repository.
+Development branch only. The public MIT license remains intact. No owner dashboard in this repository. Live v3.3.3 and production Firebase must remain unchanged until joint release review.
 
 ## Commercial contract
 
 - Essential: PKR 4,999 monthly / 49,990 annual; setup 15,000; 2 departments, 5 doctors, 3 non-owner staff accounts.
 - Professional: PKR 14,999 monthly / 149,990 annual; setup 35,000; 15 departments, 50 doctors, 30 non-owner staff accounts.
-- Enterprise: custom quote. All prices before applicable taxes.
-- Patient access and demo remain free; no payment gateway or automatic charges.
-- Verified email required for lead requests. One lead per UID; one request per organization and request kind. Trusted operator workflow must archive/resolve these before resubmission.
-- Existing organization without commercial account remains unassigned and operational. Missing or unreadable billing data must not block clinical workflows.
-- Subscription lifecycle is derived for display; 15-day grace period. No automatic suspension or deletion.
+- Enterprise: negotiated amounts and per-workspace integer limits. Multi-location agreement uses separately provisioned workspaces; a single multi-location dashboard is not implemented.
+- Patient access and demo free. No payment gateway or automatic charges. Setup only on initial order. Discount and tax amounts explicitly recorded in integer PKR. Issuer/tax details need authorized business review.
+- Verified email required for intake; one lead per UID; one open request per organization and kind. Resolved requests are archived and pending slot released. Contact information is private; never include patient data or payment credentials.
+- Existing unassigned organizations remain fully operational. Managed accounts reserve permanent capacity atomically on department, doctor and accepted staff creation. Inactive entries consume capacity; pending invitations do not reserve slots. No automatic deletion or lockout of clinical workflows.
+- 15-day grace period for premium reports. Expired or cancelled subscriptions stop managed capacity expansion and advanced reports, not ongoing clinical services or record access. Raw attendance records remain owner-readable for continuity; open-source clients can independently calculate statistics.
+- New organizations provision only after verified payment and a verified pending lead; existing ones migrate without deletion. Renewals extend from later of current expiry or current date; new plan changes apply only after the previous term ends. No automatic proration or refunds.
 
-## Firestore contract for the independent Control Center
+## Trusted service and TCC integration
 
-`commercialLeads/{uid}`: verified user creates once, only self and verified platform operator can read. Operator decisions require trusted backend.
-`commercialAccounts/{hid}`: private owner/platform-operator readable record with plan, cycle, status, recurringAmount (integer PKR), activatedAt, expiresAt (timestamps). Clients cannot write.
-`commercialAccounts/{hid}/requests/{kind}`: verified organization owner creates once, same tenant owner and platform operator read. Trusted service resolves/archives.
-`commercialAccounts/{hid}/invoices/{invoiceId}`: owner/operator read only, trusted writer assigns number, total, status (issued/paid/void), issuedAt, billTo, description. Do not store payment credentials or patient data.
-The boolean custom claim turnaheadPlatformOperator must be set exclusively using trusted Firebase Admin credentials. Claim alone grants commercial read access, not write access or access to private patient collections.
-All provisioning, approval, invoices, payment verification and operator activity logs require trusted server-side implementation; never embed Admin SDK credentials in browser or public GitHub.
+`functions/commercial-endpoints.js` exports callable `commercialOperator` (requires verified email, server-assigned custom claim turnaheadPlatformOperator, live Auth account/claim and App Check) and `commercialAnalytics` (verified hospital owner, current managed Professional/Enterprise entitlement; never grants platform operator clinical access). `commercialRenewalSweep` is an optional daily scheduled function at 08:00 PKT; it creates idempotent notices for 30/7/1-day windows, grace and expiry. It does not send email/SMS; admin overview displays current renewal warning independently of the scheduler.
 
-## Remaining release blockers
+Callable operator actions:
+- issue: orderId and hospitalId (20 alphanumeric chars each), ownerUid, kind initial/renew/change, plan, cycle, billTo, issuer, taxId, optional discount/tax, Enterprise custom {recurringAmount,setupAmount,limits}. One outstanding order per hospital. New workspaces must have a matching verified pending lead.
+- verifyPayment: orderId, exact amount, non-sensitive external payment reference. Manual operator attestation, NOT automatic bank verification. Duplicate and incorrect amounts rejected.
+- activate: orderId, after verified payment. Server-side transaction provisions or migrates, initializes limits/counters, bumps revision, sets expiry and writes audit. Migration lock blocks expansion only; releases after completion/failure. If a process crashes leaving a lock, authorized operator must reconcile the order and verify no job is running before manual recovery. Never remove a commercial account as a suspension mechanism.
+- voidOrder: orderId, unpaid order only. Paid refunds/reconciliation require a separate approved workflow.
+- resolveRequest: hospitalId, kind, status resolved/declined, note. Archives request and allows resubmission.
+- cancel: hospitalId, reason; no outstanding order; retains data and existing patient service.
+Operator action errors are sanitized. No credentials in browser or public repository. No calls to production made.
 
-- Atomic capacity reservations are implemented for department, doctor and accepted staff-account creation; pending invites do not reserve capacity. Before activating a managed account, the trusted operator must provision and reconcile counters, test concurrency, and handle over-limit legacy tenants. Inactive records occupy permanent slots. Existing clinical actions are not restricted by billing.
-- Feature-level backend enforcement, reliable renewals/notifications, trusted commercial write service, formal invoice issuer/tax fields, audit logs, retention and cancellation/export workflows.
-- Enterprise limits and multi-location infrastructure not implemented.
-- Complete browser tests, emulator rules tests, regression checks and joint Control Center integration; no production rules changes or merge before verification.
-- Existing named QR tickets are bearer-secret links; commercial launch requires privacy/security and hosting capacity review.
-- One verified lead per account mitigates repeat submissions but does not prevent account farming; production anti-abuse and data retention review required.
-- No real payments until authorized business arrangements and appropriate review.
+### Firestore records
 
-## Managed capacity migration contract
+`commercialLeads/{uid}` verified self-create, own/operator read; trusted decisions only.
+`commercialAccounts/{hid}` owner/operator read; trusted writes only. plan, cycle, status, recurringAmount, limits, activatedAt, expiresAt, revision.
+Subcollections invoices, payments, notices, requestHistory: owner/operator read, no client writes.
+requests/{kind}: owner creates pending request, same tenant owner/operator reads; server resolves.
+`commercialOrders` and `commercialAudit`: operator read, trusted writes only. Migration locks and order slots are entirely server-only.
+`hospitals/{hid}/capacity/managed`: trusted initialized counts and limits, client only atomic increment linked to creation of corresponding resource. Expansion denied during migration or when managed account is not active/unexpired.
+Customer JSON export covers latest 100 commercial records of each displayed category (not a full clinical export); owners can request a complete export. Existing patient record exports unaffected.
 
-Trusted operator must pause resource provisioning during migration and atomically initialize the commercial account and `hospitals/{hid}/capacity/managed` record: `departments`, `doctors`, `staff` integer counts (all retained docs, staff excludes owner), `limits` map with those same three integer keys, `lastKind` and `lastId` empty strings, `updatedAt` server timestamp. Limits must match the agreed plan. No client can create or delete this record, change limits, or reset counts. Resource creation requires an atomic counter increment linked to the new record ID. Expired/paused subscriptions cannot expand capacity but existing queues, records and basic operations remain available. Missing commercial account is legacy-unassigned; managed account without counters fails closed on resource creation. Trusted backend must never delete a commercial account as a suspension mechanism.
+## Testing and integration gates
+
+- CI quality, browser, rules emulator and Admin SDK service emulator tests with fictional records; no real credentials or actual payment. Policy/analytics parity tests ensure server copies match browser logic.
+- TCC must still be built separately, configure App Check, trusted owner claims and deploy matching Functions only with explicit hosting/billing approval. Firebase Functions and scheduler may require Blaze billing; evaluate alternative hosting first. No paid services enabled.
+- Production Auth / callable / App Check / scheduled delivery and joint browser workflow not verified by emulator service tests. Verify in nonproduction project before merge. Anti-abuse, quota/load, backup/restore, legal/privacy review, tax/retention policy, provider arrangements and authorized business payment procedures required before real commercial use.
+- Operator service is not an external payment processor. Full clinical export, paid refund reconciliation, automatic email/SMS, multi-location orchestration and enterprise integrations require separately approved scope. Legacy bearer ticket URLs require privacy/security review.
+- Deploy matching rules only at final integration, with backup, compatibility check, safe migration and live fictional-data smoke tests. Never expose Admin SDK keys or use actual patient data during testing.

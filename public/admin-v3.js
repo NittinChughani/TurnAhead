@@ -7,7 +7,8 @@ const $=id=>document.getElementById(id),esc=window.turnahead.esc;
 let generation=0,report=null,reportInfo=null,logo='',context=()=>null,notify=()=>{},customGeneration=0,setupStep=0;
 const num=n=>n==null?'—':String(n);
 function exportReady(ready){$('analytics-csv').disabled=!ready;$('analytics-pdf').disabled=!ready;}
-export function resetV3(){setupStep=0;generation++;customGeneration++;report=null;reportInfo=null;logo='';exportReady(false);$('analytics-output').replaceChildren();$('analytics-output').removeAttribute('aria-busy');$('analytics-state').textContent='Choose a period and generate a report.';$('analytics-load').disabled=false;$('analytics-cancel').hidden=true;$('custom-logo-preview').hidden=true;$('custom-logo-preview').removeAttribute('src');$('custom-logo-file').value='';}
+export function resetAnalytics(){generation++;report=null;reportInfo=null;exportReady(false);$('analytics-output').replaceChildren();$('analytics-output').removeAttribute('aria-busy');$('analytics-state').textContent='Choose a period and generate a report.';$('analytics-load').disabled=false;$('analytics-cancel').hidden=true;}
+export function resetV3(){setupStep=0;customGeneration++;logo='';resetAnalytics();$('custom-logo-preview').hidden=true;$('custom-logo-preview').removeAttribute('src');$('custom-logo-file').value='';}
 function bars(items){const max=Math.max(1,...items.map(x=>x.value));return '<div class="analytics-bars">'+items.map(x=>'<div class="analytics-bar"><span>'+esc(x.label)+'</span><div><i style="width:'+Math.max(0,x.value/max*100)+'%"></i></div><b>'+esc(num(x.value))+'</b></div>').join('')+'</div>';}
 function groupTable(rows){return '<div class="analytics-table-wrap"><table class="analytics-table"><thead><tr><th>Group</th><th>Issued</th><th>Completed</th><th>Missed</th><th>Recalled</th><th>Avg wait</th><th>Avg service</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+esc(r.label||r.date)+'</td>'+[r.issued,r.completed,r.missed,r.recalled,r.wait,r.service].map(v=>'<td>'+esc(num(v))+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';}
 function renderBasic(r){const t=r.total;const metrics=[['Issued',t.issued],['Completed',t.completed],['Missed',t.missed],['Unresolved',t.unresolved],['Average wait (min)',t.wait],['Average service (min)',t.service]];$('analytics-output').innerHTML='<div class="report-heading"><h2>Basic operational overview</h2><p>Aggregate queue totals for the selected period.</p></div><div class="report-kpis">'+metrics.map(([name,value])=>'<article class="report-kpi"><span>'+esc(name)+'</span><strong>'+esc(num(value))+'</strong></article>').join('')+'</div><p class="admin-section-note">Advanced comparisons, satisfaction trends and report exports are included in Professional and Enterprise. Individual attendance records and their export remain available.</p>';}
@@ -95,6 +96,7 @@ export function bindV3(getContext,toast){
  context=getContext;notify=toast;
  $('onboarding-list').addEventListener('click',e=>{const b=e.target.closest('[data-wizard-step]');if(!b)return;setupStep=Number(b.dataset.wizardStep);renderOnboarding(context());});
  $('analytics-date').value=dayKey();$('analytics-date').max=dayKey();
+ $('analytics-mode').addEventListener('change',resetAnalytics);
  $('analytics-load').addEventListener('click',async()=>{
   const h=context()?.hospital;if(!h)return;
   if(!navigator.onLine){$('analytics-state').textContent='Offline. Reconnect before generating a private report.';return;}

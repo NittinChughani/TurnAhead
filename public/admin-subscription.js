@@ -11,7 +11,7 @@ export function bindSubscription(context,toast,openTab,accessChanged){
  const banner=$('commercial-renewal-banner'),copy=$('commercial-renewal-copy');
  function analyticsAccess(){return !ready?'unknown':!sub?'legacy':hasAdvancedAnalytics(sub)?'advanced':'basic';}
  let lastAccess='unknown';
- function syncAccess(){const access=analyticsAccess();if(access===lastAccess)return;lastAccess=access;if(access!=='unknown')accessChanged();const option=$('analytics-mode').querySelector('[value=advanced]');option.disabled=!['advanced','legacy'].includes(access);if(option.disabled)$('analytics-mode').value='basic';else $('analytics-mode').value='advanced';}
+ function syncAccess(){const access=analyticsAccess();if(access===lastAccess)return;lastAccess=access;accessChanged();const option=$('analytics-mode').querySelector('[value=advanced]');option.disabled=!['advanced','legacy'].includes(access);if(option.disabled)$('analytics-mode').value='basic';else $('analytics-mode').value='advanced';}
  function usage(){
   if(!hid||!ready)return;
   const {departments,doctors,members}=context(),p=Object.hasOwn(PLANS,sub?.plan)?PLANS[sub.plan]:null;

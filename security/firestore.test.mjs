@@ -227,3 +227,11 @@ test('accepted staff invitation atomically consumes a permanent managed staff sl
  const accept=reserve=>runTransaction(db,async tx=>{const s=await tx.get(cap);if(reserve)tx.update(cap,{staff:s.data().staff+1,lastKind:'staff',lastId:uid,updatedAt:serverTimestamp()});tx.set(ref,{...member(uid,'receptionist'),gender:'male',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});tx.update(invite,{status:'accepted',acceptedUid:uid,acceptedAt:serverTimestamp()});});
  await assertFails(accept(false));await assertSucceeds(accept(true));await assertFails(accept(true));
 });
+
+test('commercial operator audit and payment records are read-only and isolated; migration locks do not halt queues',async()=>{
+ const own=user('owner'),out=user('otherowner'),staff=user('staff'),operator=env.authenticatedContext('operator',{...claims('operator'),turnaheadPlatformOperator:true}).firestore();
+ await env.withSecurityRulesDisabled(async ctx=>{const d=ctx.firestore();await setDoc(doc(d,'commercialAccounts',h,'payments','test'),{amount:4999,status:'verified'});await setDoc(doc(d,'commercialAccounts',h,'notices','test'),{stage:'7'});await setDoc(doc(d,'commercialAudit','test'),{kind:'payment-verified'});await setDoc(doc(d,'commercialMigrationLocks',h),{orderId:'test'});});
+ for(const key of ['payments','notices']){const ref=db=>doc(db,'commercialAccounts',h,key,'test');await assertSucceeds(getDoc(ref(own)));await assertSucceeds(getDoc(ref(operator)));await assertFails(getDoc(ref(out)));await assertFails(getDoc(ref(staff)));await assertFails(updateDoc(ref(own),{status:'paid'}));await assertFails(updateDoc(ref(operator),{status:'paid'}));}
+ await assertFails(getDoc(doc(own,'commercialAudit','test')));await assertSucceeds(getDoc(doc(operator,'commercialAudit','test')));await assertFails(updateDoc(doc(operator,'commercialAudit','test'),{kind:'modified'}));
+ await assertFails(setDoc(p(own,'queues','new-department'),initialQueue('New department','NEW',day,now)));await assertSucceeds(updateDoc(p(own,'queues',department),{updatedAt:now+100}));await assertSucceeds(getDoc(archive(own)));
+});
