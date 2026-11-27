@@ -85,3 +85,22 @@ test('patient downloads and prints a nonblank private ticket with the original s
  await page.emulateMedia({media:'screen'});await expect(page.locator('#patient-print-ticket')).toBeHidden();
  expect(errors).toEqual([]);
 });
+
+test('pricing toggles approved annual amounts and submits a verified fictional request',async({page})=>{
+ await mockWorkspace(page,'owner');const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('/pricing.html');await expect(page.locator('#pricing-plans')).toContainText('PKR 4,999');await expect(page.locator('#pricing-plans')).toContainText('PKR 14,999');
+ await page.locator('[data-cycle=annual]').click();await expect(page.locator('#pricing-plans')).toContainText('PKR 49,990');await expect(page.locator('#pricing-plans')).toContainText('PKR 149,990');
+ await page.locator('[data-select-plan=professional]').click();await expect(page.locator('#pricing-request')).toBeVisible();await expect(page.locator('#pricing-total')).toContainText('PKR 184,990');
+ await page.locator('#pricing-org').fill('Fictional clinic');await page.locator('#pricing-rep').fill('Test contact');await page.locator('#pricing-phone').fill('03001234567');await page.locator('#pricing-consent').check();await page.locator('#pricing-request button[type=submit]').click();await expect(page.locator('#pricing-status')).toContainText('pending');
+ await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);expect(errors).toEqual([]);
+});
+test('hospital owner sees verified subscription, requests renewal and exports invoice PDF',async({page})=>{
+ await mockWorkspace(page,'owner');const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('/admin.html');
+ await expect(page.locator('#admin-content')).toBeVisible();await page.locator('[data-admin-tab=subscription]').click();
+ await expect(page.locator('#subscription-summary')).toContainText('TurnAhead Professional');await expect(page.locator('#subscription-summary')).toContainText('PKR 149,990');
+ await expect(page.locator('#subscription-meters')).toContainText('2 / 15');
+ await expect(page.locator('#subscription-invoices')).toContainText('TA-TEST-001');
+ const download=page.waitForEvent('download');await page.locator('[data-invoice=invoice-1]').click();const pdf=await download;expect(pdf.suggestedFilename()).toBe('TurnAhead-TA-TEST-001.pdf');
+ const txt=execFileSync('pdftotext',[await pdf.path(),'-'],{encoding:'utf8'});for(const v of ['TurnAhead','TA-TEST-001','Fictional hospital','149,990','PAID'])expect(txt).toContain(v);
+ await page.locator('#subscription-request button[type=submit]').click();await expect(page.locator('#subscription-request-status')).toContainText('Request recorded');await expect(page.locator('#subscription-requests')).toContainText('Renew · Pending');expect(errors).toEqual([]);
+});
