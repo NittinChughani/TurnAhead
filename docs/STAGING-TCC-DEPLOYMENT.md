@@ -16,3 +16,7 @@ The GitHub workflow "TurnAhead isolated TCC staging" builds and uploads a verifi
 The TCC worker's operational provisioning, automatic sync and managed policy publication still require their separate staging-only runtime credentials. The deployment key is not a runtime credential. Keep every optional feature disabled until authorized. The synthetic staging hospital ID created before this release is not a valid operational workspace ID; create a new approved synthetic application via the new provisioning flow instead of changing existing commercial IDs. Verify using synthetic patients only. No production merge or rules publication is part of this workflow.
 
 No production backup or live integration is implied by this build. Same-database recovery snapshots do not replace offsite backup.
+
+## Activation
+
+Deployment authorization configured by the project operator; trigger the staging-only workflow. The workflow independently checks the credential and verifies the hosted configuration before reporting success.
