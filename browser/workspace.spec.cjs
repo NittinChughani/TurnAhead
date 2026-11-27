@@ -145,9 +145,27 @@ test('feedback is today-only outside collapsed monthly archive; old dates load o
  await months.nth(1).locator('summary').click();await expect(months.first()).not.toHaveAttribute('open','');await expect(months.nth(1).locator('.feedback-month-body')).toContainText('Older response');
  await page.locator('[data-admin-tab=overview]').click();await page.locator('[data-admin-tab=feedback]').click();await expect(page.locator('.feedback-today')).toContainText('Today response');
 });
-test('sign-in loader uses original logo on a neutral field and updated copy in dark theme',async({page})=>{
- await mockWorkspace(page,'owner',{loginDelay:1200});await page.addInitScript(()=>localStorage.setItem('turnahead-theme','dark'));await page.goto('/admin.html');
- const overlay=page.locator('.ta-signin-overlay');await expect(overlay).toBeVisible();await expect(overlay).toContainText('Verifying your credentials');
- const logo=overlay.locator('img');await expect(logo).toHaveAttribute('src','./assets/brand-light.webp');await expect(logo).toHaveCSS('mix-blend-mode','multiply');await expect(overlay.locator('.ta-loader-brand')).toHaveCSS('background-color','rgb(255, 255, 255)');
- await expect(page.locator('#admin-content')).toBeVisible();await expect(overlay).toBeHidden();
+for(const theme of ['light','dark'])for(const [role,url,content] of [['owner','/admin.html','#admin-content'],['receptionist','/desk.html','#dashboard']]){
+ test('sign-in loader blends navbar logo in '+theme+' theme for '+role,async({page})=>{
+  await mockWorkspace(page,role,{loginDelay:2500});await page.addInitScript(t=>localStorage.setItem('turnahead-theme',t),theme);await page.goto(url);
+  const overlay=page.locator('.ta-signin-overlay');await expect(overlay).toBeVisible();await expect(overlay).toContainText('Verifying your credentials');
+  const brand=overlay.locator('.ta-loader-brand'),active=brand.locator(theme==='dark'?'.logo-night':'.logo-day'),inactive=brand.locator(theme==='dark'?'.logo-day':'.logo-night');
+  await expect(active).toBeVisible();await expect(inactive).toBeHidden();await expect(active).toHaveAttribute('src','./assets/brand-'+theme+'-blended.webp');
+  expect(await active.getAttribute('src')).toBe(await page.locator('.site-header .brand img:visible').getAttribute('src'));
+  await expect(brand).toHaveCSS('background-color','rgba(0, 0, 0, 0)');await expect(brand).toHaveCSS('border-top-width','0px');await expect(brand).toHaveCSS('box-shadow','none');await expect(active).toHaveCSS('mix-blend-mode','normal');
+  await expect(overlay.locator('.ta-signin-card')).toHaveCSS('background-color',await page.locator('.site-header').evaluate(e=>getComputedStyle(e).backgroundColor));
+  await expect(page.locator(content)).toBeVisible();await expect(overlay).toBeHidden();
+ });
+}
+test('today and expanded months show three compact cards on desktop and reflow on smaller screens',async({page})=>{
+ await page.setViewportSize({width:1280,height:900});await mockWorkspace(page,'owner',{feedbackGrid:true});await page.goto('/admin.html');await expect(page.locator('#admin-content')).toBeVisible();await page.locator('[data-admin-tab=feedback]').click();
+ const today=page.locator('.feedback-today'),months=page.locator('[data-feedback-month]');await expect(today.locator('.feedback-entry')).toHaveCount(3);await expect(months).toHaveCount(2);await expect(months.first()).not.toHaveAttribute('open','');
+ await months.first().locator('summary').click();const earlier=months.first().locator('.feedback-month-list');await expect(earlier.locator('.feedback-entry')).toHaveCount(3);
+ for(const grid of [today,earlier]){
+  const cards=grid.locator('.feedback-entry');const boxes=await Promise.all([0,1,2].map(i=>cards.nth(i).boundingBox()));
+  expect(boxes[0].y).toBe(boxes[1].y);expect(boxes[1].y).toBe(boxes[2].y);expect(boxes[0].x).toBeLessThan(boxes[1].x);expect(boxes[1].x).toBeLessThan(boxes[2].x);
+  await expect(cards.first().locator('time')).toBeVisible();await expect(cards.first().locator('.feedback-stars')).toBeVisible();await expect(cards.first().locator('p')).toBeVisible();
+ }
+ for(const [width,columns] of [[800,2],[390,1]]){await page.setViewportSize({width,height:900});for(const grid of [today,earlier]){expect((await grid.evaluate(e=>getComputedStyle(e).gridTemplateColumns)).split(' ').length).toBe(columns);}}
+ await expect(months.nth(1)).not.toHaveAttribute('open','');
 });

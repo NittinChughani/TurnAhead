@@ -1,7 +1,7 @@
 /** Shared login screen. No artificial minimum animation duration. */
 export function bindSignInLoader(button){
  const el=document.createElement('div');el.className='ta-signin-overlay';el.hidden=true;el.setAttribute('role','status');el.setAttribute('aria-live','polite');
- el.innerHTML='<div class="ta-signin-card"><div class="ta-loader-brand"><img src="./assets/brand-light.webp" alt="TurnAhead"></div><div class="ta-queue-loader" aria-hidden="true"><i></i><i></i><i></i><i></i><span>✓</span></div><h2 id="ta-loader-title">Signing in</h2><p id="ta-loader-detail">Connecting securely to your workspace</p><div class="ta-loader-track" aria-hidden="true"><span></span></div><small id="ta-loader-slow" hidden>This connection is taking longer than usual.</small></div>';
+ el.innerHTML='<div class="ta-signin-card"><div class="ta-loader-brand"><img class="logo-day" src="./assets/brand-light-blended.webp" alt="TurnAhead"><img class="logo-night" src="./assets/brand-dark-blended.webp" alt="TurnAhead"></div><div class="ta-queue-loader" aria-hidden="true"><i></i><i></i><i></i><i></i><span>✓</span></div><h2 id="ta-loader-title">Signing in</h2><p id="ta-loader-detail">Connecting securely to your workspace</p><div class="ta-loader-track" aria-hidden="true"><span></span></div><small id="ta-loader-slow" hidden>This connection is taking longer than usual.</small></div>';
  document.body.append(el);
  let timer=null,active=false,blocked=[];
  return (busy,stage='Signing in')=>{
