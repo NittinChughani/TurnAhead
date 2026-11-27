@@ -1,5 +1,5 @@
 import {archiveMonth,monthDates} from './archive-month.js';
-import {bindSignInLoader} from './signin-loader.js?v=4.0.1';
+import {bindSignInLoader} from './signin-loader.js?v=4.0.2';
 import {bindSubscription} from './admin-subscription.js?v=4.0.0-ui.1';
 import {readActivity} from './activity-store.js?v=3.3.0';
 import {configured,auth,helpfulError} from './firebase.js';
