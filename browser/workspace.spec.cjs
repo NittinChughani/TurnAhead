@@ -29,7 +29,7 @@ test('owner workspace renders analytics, exports a real PDF, navigates setup and
  await page.locator('#onboarding-list').getByRole('button',{name:'Next',exact:true}).click();await expect(page.locator('#onboarding-list')).toContainText('STEP 2 OF 6');
  await page.locator('[data-admin-tab=activity]').click();await expect(page.locator('#activity-list')).toContainText('Ticket issued');
  await page.locator('[data-admin-tab=history]').click();await expect(page.locator('[data-history-day]').first()).toHaveAttribute('open','');
- await page.locator('[data-history-full]').first().click();await expect(page.locator('[data-history-results]').first()).toContainText('Fictional Patient');
+ await page.locator('.history-advanced summary').first().click();await page.locator('[data-history-full]').first().click();await expect(page.locator('[data-history-results]').first()).toContainText('Fictional Patient');
  expect(errors).toEqual([]);
 });
 test('reception workspace edits waiting ticket, selects another department and uses guide',async({page})=>{
@@ -127,12 +127,27 @@ test('archive defaults to current month and latest expanded; date finder reaches
  await page.locator('[data-admin-tab=history]').click();
  const dates=page.locator('[data-history-day]');await expect(dates).toHaveCount(2);
  await expect(dates.first()).toHaveAttribute('open','');
- await expect(dates.nth(1)).not.toHaveAttribute('open','');
+ await expect(dates.nth(1)).not.toHaveAttribute('open','');await expect(dates.nth(1).locator('.history-body')).toBeHidden();expect((await dates.nth(1).boundingBox()).height).toBeLessThan(80);await expect(dates.first().locator('.history-filter-tools')).toBeHidden();
  await expect(dates.first().locator('[data-history-results]')).toContainText('Fictional Patient');
- await dates.nth(1).locator('summary').click();await expect(dates.nth(1)).toHaveAttribute('open','');
+ await dates.nth(1).locator('summary').click();await expect(dates.nth(1)).toHaveAttribute('open','');await expect(dates.first()).not.toHaveAttribute('open','');await dates.nth(1).locator('.history-advanced summary').click();await expect(dates.nth(1).locator('.history-filter-tools')).toBeVisible();
  await expect(dates.nth(1).locator('[data-history-results]')).toContainText('Fictional Patient');
  await page.locator('#history-date').fill('2020-01-01');await page.locator('#history-open-date').click();
  const custom=page.locator('[data-history-day="2020-01-01"]');await expect(custom).toHaveAttribute('open','');await expect(custom.locator('summary')).toContainText('Date search');
  await expect(custom.locator('[data-history-results]')).toContainText('Fictional Patient');
  await page.locator('#refresh-history').click();await expect(custom).toHaveCount(0);await expect(dates).toHaveCount(2);
+});
+
+test('feedback is today-only outside collapsed monthly archive; old dates load on demand',async({page})=>{
+ await mockWorkspace(page,'owner',{feedbackArchive:true});await page.goto('/admin.html');await expect(page.locator('#admin-content')).toBeVisible();await page.locator('[data-admin-tab=feedback]').click();
+ await expect(page.locator('.feedback-today')).toContainText('Today response');await expect(page.locator('.feedback-today')).not.toContainText('Earlier response');
+ const months=page.locator('[data-feedback-month]');await expect(months).toHaveCount(2);await expect(months.first()).not.toHaveAttribute('open','');await expect(months.first().locator('.feedback-month-body')).toBeHidden();
+ await months.first().locator('summary').click();await expect(months.first().locator('.feedback-month-body')).toContainText('Earlier response');await expect(months.first().locator('time')).toBeVisible();
+ await months.nth(1).locator('summary').click();await expect(months.first()).not.toHaveAttribute('open','');await expect(months.nth(1).locator('.feedback-month-body')).toContainText('Older response');
+ await page.locator('[data-admin-tab=overview]').click();await page.locator('[data-admin-tab=feedback]').click();await expect(page.locator('.feedback-today')).toContainText('Today response');
+});
+test('sign-in loader uses original logo on a neutral field and updated copy in dark theme',async({page})=>{
+ await mockWorkspace(page,'owner',{loginDelay:1200});await page.addInitScript(()=>localStorage.setItem('turnahead-theme','dark'));await page.goto('/admin.html');
+ const overlay=page.locator('.ta-signin-overlay');await expect(overlay).toBeVisible();await expect(overlay).toContainText('Verifying your credentials');
+ const logo=overlay.locator('img');await expect(logo).toHaveAttribute('src','./assets/brand-light.webp');await expect(logo).toHaveCSS('mix-blend-mode','multiply');await expect(overlay.locator('.ta-loader-brand')).toHaveCSS('background-color','rgb(255, 255, 255)');
+ await expect(page.locator('#admin-content')).toBeVisible();await expect(overlay).toBeHidden();
 });

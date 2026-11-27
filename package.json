@@ -1,6 +1,6 @@
 {
   "name": "turnahead-web",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "private": true,
   "type": "module",
   "description": "TurnAhead v3.3 development candidate",
