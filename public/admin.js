@@ -1,8 +1,9 @@
+import {bindSignInLoader} from './signin-loader.js?v=4.0.1';
 import {bindSubscription} from './admin-subscription.js?v=4.0.0-ui.1';
 import {readActivity} from './activity-store.js?v=3.3.0';
 import {configured,auth,helpfulError} from './firebase.js';
-import {observeAuth,login,logout,refreshVerification,requestVerification,myMemberships,getHospital,
-  watchMembership,watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,updateRecallGrace,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js?v=3.3.1';
+import {observeAuth,login,logout,refreshVerification,requestVerification,resolveWorkspace,getHospital,
+  watchMembership,watchHospitalMembers,watchInvitations,inviteStaff,revokeInvitation,updateStaff,renameHospital,updateRecallGrace,sendStaffPasswordReset,updateOwnProfilePhoto} from './org-store.js?v=4.0.1';
 import {observeQueues,observeTickets,createQueue,listHistoryDays,readHistory,observeFeedback,readTicketChanges,searchHistoryDate} from './store.js?v=3.3.1';
 import {canChangeRole,normalizeEmail,invitationLink,boardLink,staffGreeting} from './org-model.js';
 import {dayKey,patientDisplayName,ticketStatusLabel} from './queue-engine.js?v=2.6.2';
@@ -17,8 +18,8 @@ const $=id=>document.getElementById(id),esc=window.turnahead.esc,fmt=window.turn
 let hospital=null,me=null,members=[],invites=[],departments=[],tickets=[],unsubs=[],toastTimer,authEpoch=0,pendingLogin=false,pendingLogout=false;
 let fullHistoryGeneration=0;
 let feedbackRecords=[],currentHistoryTicket=null,editingMember=null,editingDoctor=null,doctors=[],historyDays=[],archiveCursors=new Map(),historyRecords=new Map();
-const loginButton=$('admin-login-form').querySelector('[type=submit]'),loginLabel=loginButton.textContent;
-function loadingLogin(busy){loginButton.disabled=busy;loginButton.classList.toggle('is-loading',busy);loginButton.textContent=busy?'Checking access…':loginLabel;}
+const loginButton=$('admin-login-form').querySelector('[type=submit]');
+const loadingLogin=bindSignInLoader(loginButton);
 const show=(id,value)=>$(id).hidden=!value;
 function toast(message,error=false){const el=$('admin-toast');el.textContent=message;el.classList.toggle('error',error);show('admin-toast',true);clearTimeout(toastTimer);toastTimer=setTimeout(()=>show('admin-toast',false),4800);}
 const accountMenu=bindAccountMenu('admin');
@@ -262,17 +263,18 @@ function renderFeedback(){
 bindLanguage(()=>{renderFeedback();});
 async function initialize(){
   const seq=++authEpoch;stop();show('admin-guard',true);show('admin-content',false);show('admin-sign-out',false);
-  if(!configured){$('guard-message').textContent='Firebase is not configured yet.';return;}
+  if(!configured){$('guard-message').textContent='Firebase is not configured yet.';loadingLogin(false);return;}
   const user=auth.currentUser;
   show('admin-login-form',true);show('admin-verify',Boolean(user&&!user.emailVerified));show('admin-switch-account',Boolean(user));
   if(!user){$('guard-message').textContent='Sign in with your designated hospital administrator account.';loadingLogin(false);if(pendingLogout){toast('You have been signed out successfully.');pendingLogout=false;}return;}
   if(!user.emailVerified){$('guard-message').textContent='Please verify your administrator email before proceeding.';loadingLogin(false);return;}
   try{
-    const accounts=await myMemberships(user);if(seq!==authEpoch)return;
+    loadingLogin(true,'Checking access');
     const preferred=new URLSearchParams(location.search).get('hospital')||persistent.getItem('turnahead-hospital');
-    me=accounts.find(m=>m.hospitalId===preferred&&m.role==='owner')||accounts.find(m=>m.role==='owner');
+    const session=await resolveWorkspace(user,preferred,m=>m.role==='owner');if(seq!==authEpoch)return;
+    me=session.member;
     if(!me){$('guard-message').textContent='Access denied. This email is not registered as the designated hospital administrator. Contact your organization owner.';pendingLogin=false;loadingLogin(false);return;}
-    const resolved=await getHospital(me.hospitalId);if(seq!==authEpoch)return;
+    const resolved=session.hospital;if(seq!==authEpoch)return;
     if(resolved.ownerUid!==user.uid)throw Error('Access denied. Only the designated owner may use administration.');
     hospital=resolved;
     persistent.setItem('turnahead-hospital',hospital.id);
