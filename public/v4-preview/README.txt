@@ -1,0 +1,1 @@
+Interactive v4.0 UI snapshot from b7052b09d20a6d1312dc689623c57a0b5c5bae8b. All backend modules are in-memory fixtures; no real authentication or database access. Original root website is unchanged. This is not a commercial release.

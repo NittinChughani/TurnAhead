@@ -1,0 +1,27 @@
+import {PLANS,quote,money} from './subscription-model.js';
+import {configured,auth,helpfulError} from './firebase.js';
+import {observeAuth,login,register,logout,requestVerification,refreshVerification} from './org-store.js?v=4.0.0';
+import {readLead,submitLead} from './commercial-store.js';
+const $=id=>document.getElementById(id);
+let cycle='monthly',generation=0,busy=false;
+const benefits={essential:['2 departments','5 doctors','3 staff accounts','Live patient tracking','QR tickets & printing','Basic analytics','Standard support'],professional:['15 departments','50 doctors','30 staff accounts','All Essential features','Advanced analytics & PDF reports','Department comparisons','Priority support & onboarding'],enterprise:['Custom capacity','Multiple locations by agreement','Dedicated infrastructure options','Custom branding & integrations','Dedicated support arrangements']};
+function render(){
+ $('pricing-plans').innerHTML=Object.entries(PLANS).map(([key,p])=>{const q=quote(key,cycle);return '<article class="commercial-card plan-card '+(key==='professional'?'plan-featured':'')+'"><span class="kicker">'+(key==='essential'?'SMALL PRACTICES':key==='professional'?'HOSPITALS & CENTERS':'HEALTHCARE NETWORKS')+'</span><h2>'+p.name+'</h2><strong class="plan-price">'+money(q.recurring)+'</strong><small>'+(q.recurring===null?'Tailored proposal':cycle==='annual'?'per year':'per month')+'</small><p class="plan-setup">'+money(q.setup)+' · '+(q.setup===null?'implementation by agreement':'one-time setup')+'</p><ul>'+benefits[key].map(x=>'<li>'+x+'</li>').join('')+'</ul><button type="button" class="btn '+(key==='professional'?'btn-primary':'btn-outline')+'" data-select-plan="'+key+'">'+(key==='enterprise'?'Request quotation':'Request subscription')+' ↗</button></article>';}).join('');
+ document.querySelectorAll('[data-cycle]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.cycle===cycle)));
+}
+const rows=[['Locations','1','1','By agreement'],['Departments','2','15','Custom'],['Doctors','5','50','Custom'],['Staff accounts','3','30','Custom'],['Live queues, QR tickets and public board','Included','Included','Included'],['Basic analytics','Included','Included','Included'],['Advanced analytics & reports','—','Included','Included'],['Department & feedback comparisons','—','Included','Included'],['Activity logs','Core safeguards','Included','Included'],['Support','Standard','Priority','Dedicated'],['Integrations','Separate quote','Separate quote','By agreement']];
+$('pricing-comparison').innerHTML=rows.map(r=>'<tr><th scope="row">'+r[0]+'</th>'+r.slice(1).map(x=>'<td>'+x+'</td>').join('')+'</tr>').join('');
+function total(){const q=quote($('pricing-plan').value,$('pricing-cycle').value);$('pricing-total').textContent=q.total===null?'Custom quotation; no charge today.':'First billing period + setup: '+money(q.total)+' before applicable taxes. No charge today.';}
+function status(s){$('pricing-status').textContent=s;}
+document.querySelectorAll('[data-cycle]').forEach(b=>b.addEventListener('click',()=>{cycle=b.dataset.cycle;$('pricing-cycle').value=cycle;render();total();}));
+$('pricing-plans').addEventListener('click',e=>{const b=e.target.closest('[data-select-plan]');if(!b)return;$('pricing-plan').value=b.dataset.selectPlan;$('pricing-cycle').value=cycle;total();$('request').scrollIntoView({block:'start'});});
+for(const id of ['pricing-plan','pricing-cycle'])$(id).addEventListener('change',total);
+async function refresh(){const g=++generation,u=auth?.currentUser;$('pricing-request').hidden=true;$('pricing-auth').hidden=!!u;$('pricing-identity').hidden=!u;$('pricing-verify').hidden=!!u?.emailVerified;$('pricing-refresh').hidden=!!u?.emailVerified;$('pricing-signed-in').textContent=u?u.email:'';if(!u){status('');return;}if(!u.emailVerified){status('Verify your email before submitting.');return;}try{const lead=await readLead();if(g!==generation)return;if(lead){status('Your request is recorded: '+lead.status+'. No payment has been collected.');}else{$('pricing-request').hidden=false;status('');}}catch(e){if(g===generation)status(helpfulError(e));}}
+async function act(fn){if(busy)return;busy=true;try{await fn();}catch(e){status(helpfulError(e));}finally{busy=false;}}
+$('pricing-login').addEventListener('submit',e=>{e.preventDefault();act(async()=>{await login($('pricing-email').value,$('pricing-password').value);$('pricing-password').value='';});});
+$('pricing-register').addEventListener('click',()=>{if(!$('pricing-login').reportValidity())return;act(async()=>{await register($('pricing-email').value,$('pricing-password').value);$('pricing-password').value='';await requestVerification();status('Verification email sent.');});});
+$('pricing-verify').addEventListener('click',()=>act(async()=>{await requestVerification();status('Verification email sent.');}));
+$('pricing-refresh').addEventListener('click',()=>act(async()=>{await refreshVerification();await refresh();}));
+$('pricing-logout').addEventListener('click',()=>act(async()=>{await logout();$('pricing-request').reset();}));
+$('pricing-request').addEventListener('submit',e=>{e.preventDefault();act(async()=>{await submitLead({organization:$('pricing-org').value,representative:$('pricing-rep').value,phone:$('pricing-phone').value,plan:$('pricing-plan').value,cycle:$('pricing-cycle').value});$('pricing-request').reset();await refresh();});});
+render();total();if(configured)observeAuth(refresh);else{$('pricing-auth').hidden=true;status('Subscription requests are unavailable until Firebase is configured.');}

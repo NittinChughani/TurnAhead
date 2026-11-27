@@ -1,0 +1,10 @@
+export const hid='H'.repeat(20),did='D'.repeat(20),target='E'.repeat(20),tid='T'.repeat(20),today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Karachi',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),now=Date.now();
+ export const hospital={id:hid,name:'TurnAhead Preview Clinic',ownerUid:'owner',status:'active'};
+ export const member={uid:'owner',role:'owner',hospitalId:hid,active:true,email:'fictional@example.test',displayName:'Demo administrator',gender:'unspecified'};
+ export const doctors=[{id:did,departmentId:'general-opd',departmentName:'General OPD',name:'Demo Doctor',roomNumber:'1',active:true},{id:target,departmentId:'radiology',departmentName:'Radiology',name:'Second Doctor',roomNumber:'2',active:true}];
+ const lane={waitingNumbers:[1],active:null,served:0,avgMinutes:8,paused:false,pauseReason:'',updatedAt:now};
+ export const queues=[{id:'general-opd',name:'General OPD',prefix:'GEN',dayKey:today,waitingNumbers:[1],waiting:1,activeCount:0,active:null,served:0,avgMinutes:8,paused:false,lanes:{[did]:lane},lastNumber:1},{id:'radiology',name:'Radiology',prefix:'RAD',dayKey:today,waitingNumbers:[],waiting:0,activeCount:0,active:null,served:0,avgMinutes:8,paused:false,lanes:{},lastNumber:0}];
+ export const ticket={id:tid,ticketId:tid,queueId:'general-opd',queueName:'General OPD',number:1,code:'GEN-001',doctorId:did,doctorName:'Demo Doctor',patientName:'Fictional Patient',patientGender:'male',roomNumber:'1',dayKey:today,createdAt:now,issuedAt:now,issuedBy:'staff',issuedCounter:'Counter 1',status:'waiting',attendance:'pending',calledAt:null,finishedAt:null};
+ export const stream=(callback,data,meta)=>{const handle=setTimeout(()=>callback(data,meta),10);return ()=>clearTimeout(handle)};
+ export const stamp={toMillis:()=>now,toDate:()=>new Date(now)};
+ 
