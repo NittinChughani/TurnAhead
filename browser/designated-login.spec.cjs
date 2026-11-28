@@ -15,7 +15,7 @@ for(const [route,prefix,password] of [['admin.html','admin','admin-password'],['
 }
 test('pricing sends the chosen plan and billing cycle to registration',async({page})=>{
  await page.goto('/pricing.html');
- await expect(page.getByRole('link',{name:'Select Professional ↗'})).toHaveAttribute('href',/plan=professional&cycle=monthly$/);
+ await expect(page.getByRole('link',{name:'Select Professional ↗'})).toHaveAttribute('href',/^https:\/\/tcc-production\.turnahead\.workers\.dev\/register\.html\?plan=professional&cycle=monthly$/);
  await page.locator('[data-cycle=annual]').click();
- await expect(page.getByRole('link',{name:'Select Professional ↗'})).toHaveAttribute('href',/plan=professional&cycle=annual$/);
+ await expect(page.getByRole('link',{name:'Select Professional ↗'})).toHaveAttribute('href',/^https:\/\/tcc-production\.turnahead\.workers\.dev\/register\.html\?plan=professional&cycle=annual$/);
 });
