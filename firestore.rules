@@ -455,6 +455,12 @@ service cloud.firestore {
       }
     }
 
+    // Customer-facing commercial projection, written exclusively by TCC's staging service.
+    match /commercialAccounts/{hid} {
+      allow get: if owner(hid);
+      allow list, create, update, delete: if false;
+    }
+
     match /memberships/{memberId} {
       allow get: if verified() &&
         (resource.data.uid == request.auth.uid || admin(resource.data.hospitalId));
