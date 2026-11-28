@@ -1,4 +1,4 @@
-import {commercialEnabled} from './commercial-config.js';
+import {commercialEnabled,subscriptionDisplayEnabled} from './commercial-config.js';
 import {doc,collection,getDocFromServer,getDocsFromServer,setDoc,serverTimestamp,onSnapshot,query,orderBy,limit} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {db,auth} from './firebase.js';
 import {PLANS,quote} from './subscription-model.js';
@@ -12,7 +12,7 @@ export async function submitLead({organization,representative,phone,plan,cycle})
  await setDoc(leadRef(u.uid),{uid:u.uid,email:u.email.toLowerCase(),organization:organization.trim(),representative:representative.trim(),phone:phone.trim(),plan,cycle,status:'pending',createdAt:serverTimestamp()});
 }
 export function watchSubscription(hid,next,error){
- if(!commercialEnabled){const t=setTimeout(()=>next(null),0);return ()=>clearTimeout(t);}
+ if(!commercialEnabled&&!subscriptionDisplayEnabled){const t=setTimeout(()=>next(null),0);return ()=>clearTimeout(t);}
  return onSnapshot(doc(db,'commercialAccounts',hid),{includeMetadataChanges:true},s=>{if(!s.metadata.fromCache)next(s.exists()?s.data():null);},error);
 }
 export async function billingHistory(hid){
