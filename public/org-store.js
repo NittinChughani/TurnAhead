@@ -140,7 +140,9 @@ export async function resolveWorkspace(user,preferred,allowed){
  return withWorkspaceTimeout(async()=>{
  const prefetch=/^[A-Za-z0-9]{20}$/.test(preferred||'')?getHospital(preferred,{server:true}).then(value=>({value}),error=>({error})):null;
  const memberships=await myMemberships(user);
- const member=memberships.find(m=>m.hospitalId===preferred&&allowed(m))||memberships.find(allowed);
+ // Earlier synthetic staging records may have non-operational IDs. Never select them.
+ const eligible=m=>m.uid===user.uid&&m.active===true&&/^[A-Za-z0-9]{20}$/.test(m.hospitalId)&&allowed(m);
+ const member=memberships.find(m=>m.hospitalId===preferred&&eligible(m))||memberships.find(eligible);
  if(!member)return {memberships,member:null,hospital:null};
  const prefetched=prefetch&&member.hospitalId===preferred?await prefetch:null;
  const hospital=prefetched?.value||await getHospital(member.hospitalId,{server:true});
