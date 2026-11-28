@@ -279,7 +279,7 @@ async function initialize(){
     const preferred=new URLSearchParams(location.search).get('hospital')||persistent.getItem('turnahead-hospital');
     const session=await resolveWorkspace(user,preferred,m=>m.role==='owner');if(seq!==authEpoch)return;
     me=session.member;
-    if(!me){$('guard-message').textContent='Google/email authentication succeeded, but no active administrator workspace was found for this account. Contact your TurnAhead operator to complete organization provisioning, then check access again.';pendingLogin=false;loadingLogin(false);return;}
+    if(!me){$('guard-message').textContent='Your email is verified, but your administrator workspace is not active yet. If you have submitted an application, wait for approval or contact the TurnAhead operator, then check access again.';pendingLogin=false;loadingLogin(false);return;}
     const resolved=session.hospital;if(seq!==authEpoch)return;
     if(resolved.ownerUid!==user.uid)throw Error('Access denied. Only the designated owner may use administration.');
     hospital=resolved;
