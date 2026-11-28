@@ -27,6 +27,50 @@ service cloud.firestore {
     function manager(hid) { return isMember(hid) && role(hid) in ['owner','supervisor']; }
     function admin(hid) { return owner(hid); }
     function owner(hid) { return isMember(hid) && role(hid) == 'owner' && get(hospitalPath(hid)).data.ownerUid == request.auth.uid; }
+    // Managed commercial capacity applies to NEW allocations only.
+    // An absent policy preserves existing unmanaged workspaces. Existing patient
+    // operations, updates, profile changes and queue processing are never gated.
+    function commercialPolicyPath(hid) {
+      return /databases/$(database)/documents/hospitals/$(hid)/commercialPolicy/current;
+    }
+    function commercialUsagePath(hid,kind) {
+      return /databases/$(database)/documents/hospitals/$(hid)/commercialUsage/$(kind);
+    }
+    function commercialTarget(hid,kind,target) {
+      return kind == 'staff' ? memberPath(hid,target) :
+        (kind == 'doctors' ? doctorPath(hid,target) :
+          /databases/$(database)/documents/hospitals/$(hid)/queues/$(target));
+    }
+    function commercialRoom(hid,kind,count) {
+      let policy = get(commercialPolicyPath(hid)).data;
+      let cap = policy.limits[kind];
+      return policy.expansionAllowed == true && policy.validUntil is timestamp &&
+        policy.validUntil > request.time && policy.limits is map &&
+        kind in policy.limits && (cap == null || (cap is int && cap >= 0 && count <= cap));
+    }
+    function commercialAllocation(hid,kind,target) {
+      let usage = commercialUsagePath(hid,kind);
+      return !exists(commercialPolicyPath(hid)) ||
+        (exists(usage) && get(usage).data.count is int &&
+          getAfter(usage).data.count == get(usage).data.count + 1 &&
+          getAfter(usage).data.lastId == target &&
+          commercialRoom(hid,kind,getAfter(usage).data.count));
+    }
+    function validCommercialUsage(hid,kind) {
+      let next = request.resource.data;
+      let target = commercialTarget(hid,kind,next.lastId);
+      return verified() && kind in ['departments','doctors','staff'] &&
+        exists(commercialPolicyPath(hid)) &&
+        next.keys().hasOnly(['count','lastId']) && next.keys().hasAll(['count','lastId']) &&
+        next.lastId is string && next.lastId.matches('^[-_a-zA-Z0-9]{1,128}$') &&
+        resource.data.count is int && resource.data.count >= 0 &&
+        next.count is int && next.count == resource.data.count + 1 &&
+        commercialRoom(hid,kind,next.count) &&
+        !exists(target) && existsAfter(target) &&
+        ((kind == 'staff' && next.lastId == request.auth.uid) ||
+         (kind == 'departments' && manager(hid)) ||
+         (kind == 'doctors' && owner(hid)));
+    }
     // Public hospital branding; only the verified owner may update it.
     function validCustomization(c) {
       return c is map &&
@@ -252,6 +296,22 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','updatedAt','recallGraceMinutes','customization']) &&
         validHospital(request.resource.data) && request.resource.data.updatedAt == request.time;
 
+      // A verified pending invitee needs the policy and staff counter before atomic membership acceptance.
+      function pendingCapacityInvite() {
+        return verified() && exists(invitePath(hid,email())) &&
+          get(invitePath(hid,email())).data.status == 'pending' &&
+          get(invitePath(hid,email())).data.expiresAt > request.time;
+      }
+      match /commercialPolicy/{key} {
+        allow get: if key == 'current' && (isMember(hid) || pendingCapacityInvite());
+        allow list, write: if false;
+      }
+      match /commercialUsage/{kind} {
+        allow get: if kind in ['departments','doctors','staff'] &&
+          (isMember(hid) || (kind == 'staff' && pendingCapacityInvite()));
+        allow update: if validCommercialUsage(hid,kind);
+        allow create, delete, list: if false;
+      }
       match /invites/{mail} {
         allow get: if admin(hid) || (verified() && email() == mail);
         allow list: if admin(hid);
@@ -279,7 +339,7 @@ service cloud.firestore {
 
       match /queues/{queueId} {
         allow get, list: if true;
-        allow create: if manager(hid) && validQueue(request.resource.data);
+        allow create: if manager(hid) && validQueue(request.resource.data) && commercialAllocation(hid,'departments',queueId);
         allow update: if isMember(hid) && validQueue(request.resource.data);
         allow delete: if false;
       }
@@ -293,7 +353,7 @@ service cloud.firestore {
       match /doctors/{doctorId} {
         // Patient tickets embed doctor snapshots, but browsing the doctor directory requires staff membership.
         allow get, list: if isMember(hid);
-        allow create: if owner(hid) && validDoctor(request.resource.data) &&
+        allow create: if owner(hid) && validDoctor(request.resource.data) && commercialAllocation(hid,'doctors',doctorId) &&
           request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
         allow update: if owner(hid) && validDoctor(request.resource.data) &&
           request.resource.data.createdAt == resource.data.createdAt &&
@@ -402,6 +462,12 @@ service cloud.firestore {
       }
     }
 
+    // Customer-facing commercial projection, written exclusively by the authorized TCC service.
+    match /commercialAccounts/{hid} {
+      allow get: if owner(hid);
+      allow list, create, update, delete: if false;
+    }
+
     match /memberships/{memberId} {
       allow get: if verified() &&
         (resource.data.uid == request.auth.uid || admin(resource.data.hospitalId));
@@ -414,6 +480,7 @@ service cloud.firestore {
         request.resource.data.createdAt == request.time &&
         // Self-activation requires a pending invitation for this verified email.
         request.resource.data.role in ['supervisor','receptionist'] &&
+        commercialAllocation(request.resource.data.hospitalId,'staff',request.auth.uid) &&
         get(invitePath(request.resource.data.hospitalId,email())).data.status == 'pending' &&
         get(invitePath(request.resource.data.hospitalId,email())).data.role == request.resource.data.role &&
         get(invitePath(request.resource.data.hospitalId,email())).data.createdBy == request.resource.data.invitedBy &&

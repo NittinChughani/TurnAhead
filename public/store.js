@@ -1,3 +1,4 @@
+import {reserveCommercialSlot} from './commercial-capacity.js';
 import {archiveMonth} from './archive-month.js';
 /** Hospital-scoped Firestore queues, atomic ticket transitions and private dated history. */
 import {
@@ -36,6 +37,7 @@ export async function bootstrap(hid){
   await runTransaction(db,async tx=>{
     const mr=metaDoc(hid),meta=await tx.get(mr);
     if(meta.exists())return;
+    await reserveCommercialSlot(tx,hid,'departments','general-opd');
     const now=Date.now();
     tx.set(mr,{nextPrefix:1});
     tx.set(qDoc(hid,'general-opd'),initialQueue('General OPD','GEN',dayKey(),now));
@@ -94,9 +96,12 @@ export async function createQueue(hid,name){
   await runTransaction(db,async tx=>{
     const mr=metaDoc(hid),pr=prefixDoc(hid,prefix);
     const [meta,reserved]=await Promise.all([tx.get(mr),tx.get(pr)]);
-    if(!meta.exists())throw Error('Organization setup is incomplete. Contact an administrator.');
     if(reserved.exists())throw Error(`Department prefix ${prefix} is already registered.`);
-    tx.update(mr,{nextPrefix:(meta.data().nextPrefix||1)+1});
+    await reserveCommercialSlot(tx,hid,'departments',id);
+    // First administrator-created department initializes the sequence atomically.
+    // No extra default department is created or counted against the plan.
+    if(meta.exists())tx.update(mr,{nextPrefix:(meta.data().nextPrefix||1)+1});
+    else tx.set(mr,{nextPrefix:1});
     tx.set(pr,{queueId:id});
     const now=Date.now();tx.set(qDoc(hid,id),initialQueue(name,prefix,dayKey(),now));
     tx.set(controlDoc(hid,id),initialControl());appendActivity(tx,hid,'department-created');

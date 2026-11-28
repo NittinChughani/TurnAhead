@@ -271,7 +271,7 @@ async function initialize(){
   const seq=++authEpoch;stop();show('admin-guard',true);show('admin-content',false);show('admin-sign-out',false);
   if(!configured){$('guard-message').textContent='Firebase is not configured yet.';loadingLogin(false);return;}
   const user=auth.currentUser;
-  show('admin-login-form',true);show('admin-verify',Boolean(user&&!user.emailVerified));show('admin-switch-account',Boolean(user));
+  show('admin-login-form',true);show('admin-verify',Boolean(user&&!user.emailVerified));show('admin-switch-account',Boolean(user));show('admin-check-access',Boolean(user?.emailVerified));
   if(!user){$('guard-message').textContent='Sign in with your designated hospital administrator account.';loadingLogin(false);if(pendingLogout){toast('You have been signed out successfully.');pendingLogout=false;}return;}
   if(!user.emailVerified){$('guard-message').textContent='Please verify your administrator email before proceeding.';loadingLogin(false);return;}
   try{
@@ -279,7 +279,7 @@ async function initialize(){
     const preferred=new URLSearchParams(location.search).get('hospital')||persistent.getItem('turnahead-hospital');
     const session=await resolveWorkspace(user,preferred,m=>m.role==='owner');if(seq!==authEpoch)return;
     me=session.member;
-    if(!me){$('guard-message').textContent='Access denied. This email is not registered as the designated hospital administrator. Contact your organization owner.';pendingLogin=false;loadingLogin(false);return;}
+    if(!me){$('guard-message').textContent='Google/email authentication succeeded, but no active administrator workspace was found for this account. Contact your TurnAhead operator to complete organization provisioning, then check access again.';pendingLogin=false;loadingLogin(false);return;}
     const resolved=session.hospital;if(seq!==authEpoch)return;
     if(resolved.ownerUid!==user.uid)throw Error('Access denied. Only the designated owner may use administration.');
     hospital=resolved;
@@ -305,7 +305,14 @@ $('admin-login-form').addEventListener('submit',async e=>{
   try{await login($('admin-email').value,$('admin-password').value);$('admin-password').value='';}
   catch(err){pendingLogin=false;loadingLogin(false);$('admin-login-error').textContent=helpfulError(err);}
 });
+$('admin-google-login')?.addEventListener('click',async()=>{
+ const button=$('admin-google-login');if(button.disabled||loginButton.disabled)return;button.disabled=true;loadingLogin(true,'Opening Google sign-in');pendingLogin=true;$('admin-login-error').textContent='';
+ try{const {GoogleAuthProvider,signInWithPopup}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js');await signInWithPopup(auth,new GoogleAuthProvider());}
+ catch(e){pendingLogin=false;loadingLogin(false);$('admin-login-error').textContent=helpfulError(e);}
+ finally{button.disabled=false;}
+});
 $('admin-verify').addEventListener('click',async()=>{try{await requestVerification();if(await refreshVerification())await initialize();else toast('Verification email sent. Please open it and return here.');}catch(e){toast(helpfulError(e),true);}});
+$('admin-check-access')?.addEventListener('click',()=>initialize());
 $('admin-switch-account').addEventListener('click',async()=>{try{await logout();}catch(e){toast(helpfulError(e),true);}});
 $('invite-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('[type=submit]');btn.disabled=true;
 try{const email=normalizeEmail($('invite-email').value),role=$('invite-role').value;

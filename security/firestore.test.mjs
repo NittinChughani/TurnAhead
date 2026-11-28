@@ -174,3 +174,133 @@ test('activity events are owner-readable, immutable, restricted by actor and rol
  await assertFails(updateDoc(path(owner),{kind:'ticket-called'}));await assertFails(deleteDoc(path(owner)));
  await assertSucceeds(setDoc(p(owner,'activity','B'.repeat(20)),{kind:'staff-updated',actorUid:'owner',createdAt:serverTimestamp()}));
 });
+
+async function seedCommercialPolicy(limits={departments:2,doctors:2,staff:4},allowed=true){
+ await env.withSecurityRulesDisabled(async ctx=>{
+  const db=ctx.firestore();
+  await Promise.all([
+   setDoc(p(db,'commercialPolicy','current'),{expansionAllowed:allowed,validUntil:Timestamp.fromMillis(Date.now()+86400000),limits}),
+   setDoc(p(db,'commercialUsage','departments'),{count:1,lastId:department}),
+   setDoc(p(db,'commercialUsage','doctors'),{count:1,lastId:doctor}),
+   setDoc(p(db,'commercialUsage','staff'),{count:3,lastId:'disabled'})
+  ]);
+ });
+}
+async function allocateDepartment(db,id){
+ const usage=p(db,'commercialUsage','departments');
+ return runTransaction(db,async tx=>{
+  const u=await tx.get(usage);
+  tx.update(usage,{count:u.data().count+1,lastId:id});
+  tx.set(p(db,'queues',id),initialQueue('New OPD','NEW',day,now));
+ });
+}
+test('managed department limits are enforced against direct writes and concurrent allocations',async()=>{
+ await seedCommercialPolicy();
+ const db=user('owner'),outsider=user('otherowner');
+ await assertFails(setDoc(p(db,'queues','no-reservation'),initialQueue('New OPD','NEW',day,now)));
+ await assertFails(updateDoc(p(db,'commercialPolicy','current'),{expansionAllowed:true}));
+ await assertFails(updateDoc(p(db,'commercialUsage','departments'),{count:0,lastId:'fake'}));
+ await assertFails(updateDoc(p(db,'commercialUsage','departments'),{count:2,lastId:'missing'}));
+ await assertFails(allocateDepartment(outsider,'outside'));
+ const results=await Promise.allSettled([allocateDepartment(db,'new-one'),allocateDepartment(user('supervisor'),'new-two')]);
+ assert.equal(results.filter(x=>x.status==='fulfilled').length,1);
+ assert.equal((await getDoc(p(db,'commercialUsage','departments'))).data().count,2);
+ await assertFails(allocateDepartment(db,'over-limit'));
+});
+test('managed doctor capacity requires an atomic reservation and does not block existing changes',async()=>{
+ await seedCommercialPolicy();
+ const db=user('owner'),id='Z'.repeat(20),usage=p(db,'commercialUsage','doctors');
+ const record={name:'New Doctor',departmentId:department,departmentName:'General OPD',roomNumber:'2',active:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
+ await assertFails(setDoc(p(db,'doctors',id),record));
+ await assertSucceeds(runTransaction(db,async tx=>{
+  const u=await tx.get(usage);tx.update(usage,{count:u.data().count+1,lastId:id});tx.set(p(db,'doctors',id),record);
+ }));
+ await assertFails(runTransaction(db,async tx=>{
+  const u=await tx.get(usage);tx.update(usage,{count:u.data().count+1,lastId:'Y'.repeat(20)});tx.set(p(db,'doctors','Y'.repeat(20)),record);
+ }));
+ await assertSucceeds(updateDoc(p(db,'doctors',doctor),{active:false,updatedAt:serverTimestamp()}));
+});
+test('suspended expansion does not interrupt existing clinical access or updates',async()=>{
+ await seedCommercialPolicy({departments:2,doctors:5,staff:3},false);
+ const db=user('owner'),staff=user('staff');
+ await assertFails(allocateDepartment(db,'blocked'));
+ await assertSucceeds(getDoc(p(staff,'controls',department)));
+ await assertSucceeds(getDoc(p(staff,'tickets',tid)));
+ await assertSucceeds(updateDoc(p(db,'queues',department),{paused:true,updatedAt:now+100}));
+ await assertSucceeds(updateDoc(p(db,'doctors',doctor),{active:false,updatedAt:serverTimestamp()}));
+});
+test('managed staff invitation acceptance requires one atomic seat and invite',async()=>{
+ await seedCommercialPolicy();
+ const db=user('owner'),uid='newstaff',email=uid+'@example.test',invite=p(db,'invites',email);
+ await assertSucceeds(setDoc(invite,{email,role:'receptionist',status:'pending',createdBy:'owner',createdAt:serverTimestamp(),expiresAt:Timestamp.fromMillis(Date.now()+86400000),acceptedUid:null,acceptedAt:null}));
+ const invitee=user(uid),ref=p(invitee,'invites',email),m=doc(invitee,'memberships',h+'_'+uid),usage=p(invitee,'commercialUsage','staff');
+ const accept=reserve=>runTransaction(invitee,async tx=>{
+  const u=await tx.get(usage);
+  if(reserve)tx.update(usage,{count:u.data().count+1,lastId:uid});
+  tx.set(m,{...member(uid,'receptionist'),createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+  tx.update(ref,{status:'accepted',acceptedUid:uid,acceptedAt:serverTimestamp()});
+ });
+ await assertFails(accept(false));
+ await assertSucceeds(accept(true));
+ assert.equal((await getDoc(usage)).data().count,4);
+});
+
+test('customer subscription is readable only by its verified owner and never writable by browser users',async()=>{
+ const subscription={plan:'professional',cycle:'monthly',status:'active',recurringAmount:14999,expiresAt:Timestamp.fromMillis(now+86400000),limits:{departments:15,doctors:50,staff:30}};
+ await env.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'commercialAccounts',h),subscription));
+ const ref=db=>doc(db,'commercialAccounts',h);
+ const owner=user('owner');
+ await assertSucceeds(getDoc(ref(owner)));
+ for(const db of [user('staff'),user('supervisor'),user('disabled'),user('otherowner'),env.unauthenticatedContext().firestore(),env.authenticatedContext('owner',{email:'owner@example.test',email_verified:false}).firestore()])await assertFails(getDoc(ref(db)));
+ await assertFails(getDocs(collection(owner,'commercialAccounts')));
+ await assertFails(updateDoc(ref(owner),{recurringAmount:1}));
+ await assertFails(deleteDoc(ref(owner)));
+ await assertFails(setDoc(doc(owner,'commercialAccounts',other),subscription));
+ await assertFails(setDoc(doc(owner,'commercialAccounts',h,'invoices','fake'),{total:1}));
+});
+
+test('first administrator department initializes sequence atomically without consuming an extra slot',async()=>{
+ await env.withSecurityRulesDisabled(async ctx=>{
+  const db=ctx.firestore(),tenant=other;
+  await setDoc(p(db,'commercialPolicy','current',tenant),{expansionAllowed:true,validUntil:Timestamp.fromMillis(Date.now()+86400000),limits:{departments:1,doctors:5,staff:3}});
+  await setDoc(p(db,'commercialUsage','departments',tenant),{count:0,lastId:''});
+ });
+ const db=user('otherowner'),tenant=other,meta=p(db,'meta','sequence',tenant),usage=p(db,'commercialUsage','departments',tenant);
+ const create=(id,prefix)=>runTransaction(db,async tx=>{
+  const pr=p(db,'prefixes',prefix,tenant),[m,r,u]=await Promise.all([tx.get(meta),tx.get(pr),tx.get(usage)]);
+  if(r.exists())throw Error('Duplicate prefix');
+  tx.update(usage,{count:u.data().count+1,lastId:id});
+  if(m.exists())tx.update(meta,{nextPrefix:m.data().nextPrefix+1});else tx.set(meta,{nextPrefix:1});
+  tx.set(pr,{queueId:id});
+  tx.set(p(db,'queues',id,tenant),initialQueue(prefix+' Department',prefix,day,now));
+  tx.set(p(db,'controls',id,tenant),initialControl());
+ });
+ assert.equal((await getDoc(meta)).exists(),false);
+ await assertSucceeds(create('first-department','CAR'));
+ assert.equal((await getDoc(meta)).data().nextPrefix,1);
+ assert.equal((await getDoc(usage)).data().count,1);
+ assert.equal((await getDoc(p(db,'queues','general-opd',tenant))).exists(),false);
+ await assertFails(create('second-department','NEU'));
+ assert.equal((await getDoc(usage)).data().count,1);
+ assert.equal((await getDoc(meta)).data().nextPrefix,1);
+ assert.equal((await getDoc(p(db,'queues','second-department',tenant))).exists(),false);
+});
+
+test('commercial capacity reads are isolated to active members and valid staff invitees',async()=>{
+ await seedCommercialPolicy();
+ const owner=user('owner'),outsider=user('otherowner'),invitee=user('capacityinvite'),email='capacityinvite@example.test';
+ for(const db of [outsider,user('disabled'),env.unauthenticatedContext().firestore()]){
+  await assertFails(getDoc(p(db,'commercialPolicy','current')));
+  for(const kind of ['departments','doctors','staff'])await assertFails(getDoc(p(db,'commercialUsage',kind)));
+ }
+ await assertSucceeds(getDoc(p(owner,'commercialPolicy','current')));
+ await assertSucceeds(getDoc(p(owner,'commercialUsage','staff')));
+ await assertFails(getDoc(p(invitee,'commercialUsage','staff')));
+ await assertSucceeds(setDoc(p(owner,'invites',email),{email,role:'receptionist',status:'pending',createdBy:'owner',createdAt:serverTimestamp(),expiresAt:Timestamp.fromMillis(Date.now()+86400000),acceptedUid:null,acceptedAt:null}));
+ await assertSucceeds(getDoc(p(invitee,'commercialPolicy','current')));
+ await assertSucceeds(getDoc(p(invitee,'commercialUsage','staff')));
+ await assertFails(getDoc(p(invitee,'commercialUsage','departments')));
+ await assertSucceeds(updateDoc(p(owner,'invites',email),{status:'revoked'}));
+ await assertFails(getDoc(p(invitee,'commercialPolicy','current')));
+ await assertFails(getDoc(p(invitee,'commercialUsage','staff')));
+});

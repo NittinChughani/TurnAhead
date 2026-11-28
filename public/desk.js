@@ -198,6 +198,12 @@ $('login-form').addEventListener('submit',async e=>{
     $('login-error').textContent=invalid?'You are not registered for staff access or these credentials are incorrect. Ask your hospital administrator to confirm your account.':helpfulError(err);
   }
 });
+$('staff-google-login')?.addEventListener('click',async()=>{
+ const button=$('staff-google-login');if(button.disabled||loginButton.disabled)return;button.disabled=true;loadingLogin(true,'Opening Google sign-in');pendingSignIn=true;$('login-error').textContent='';
+ try{const {GoogleAuthProvider,signInWithPopup}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js');await signInWithPopup(auth,new GoogleAuthProvider());}
+ catch(e){pendingSignIn=false;loadingLogin(false);$('login-error').textContent=helpfulError(e);}
+ finally{button.disabled=false;}
+});
 $('verify-send').addEventListener('click',async()=>{try{await requestVerification();toast('Verification email sent. Check your inbox.');}catch(e){toast(helpfulError(e),true);}});
 $('verify-refresh').addEventListener('click',async()=>{try{if(await refreshVerification())await routeCurrentUser();else toast('Email is not verified yet. Please open the link in your inbox.',true);}catch(e){toast(helpfulError(e),true);}});
 $('access-signout').addEventListener('click',async()=>{try{await logout();}catch(e){toast(helpfulError(e),true);}});

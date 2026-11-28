@@ -1,7 +1,9 @@
+import {reserveCommercialSlot} from './commercial-capacity.js';
+import {withWorkspaceTimeout} from './signin-loader.js?v=4.0.3';
 /** Browser API for verified hospital owners, staff invitations and per-hospital roles. */
 import {
   collection, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, query, where, onSnapshot,
-  writeBatch, setDoc, updateDoc, serverTimestamp, Timestamp
+  writeBatch, runTransaction, setDoc, updateDoc, serverTimestamp, Timestamp
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
@@ -59,17 +61,19 @@ export async function findInvitation(hospitalId,email) {
 export async function acceptInvitation(hospitalId,user=auth.currentUser) {
   if(!user?.emailVerified) throw Error('Verify your email before accepting an invitation.');
   const email=normalizeEmail(user.email), ref=inviteRef(hospitalId,email);
-  const invite=await getDoc(ref);
+  await runTransaction(db,async tx=>{
+  const invite=await tx.get(ref);
   if(!invite.exists()||invite.data().status!=='pending'||invite.data().expiresAt.toMillis()<Date.now())
     throw Error('No active invitation was found for your verified email. Ask your administrator to resend it.');
-  const data=invite.data(), batch=writeBatch(db);
-  batch.set(memberRef(hospitalId,user.uid),{
+  const data=invite.data();
+  await reserveCommercialSlot(tx,hospitalId,'staff',user.uid);
+  tx.set(memberRef(hospitalId,user.uid),{
     uid:user.uid,hospitalId,email,role:data.role,active:true,
     createdAt:serverTimestamp(),updatedAt:serverTimestamp(),invitedBy:data.createdBy,
     displayName:data.displayName||email.split('@')[0],gender:data.gender||'unspecified'
   });
-  batch.update(ref,{status:'accepted',acceptedUid:user.uid,acceptedAt:serverTimestamp()});
-  await batch.commit();
+  tx.update(ref,{status:'accepted',acceptedUid:user.uid,acceptedAt:serverTimestamp()});
+  });
   return await getHospital(hospitalId);
 }
 export async function inviteStaff(hospitalId,email,role,actorRole,name,gender,user=auth.currentUser) {
@@ -133,11 +137,15 @@ export function watchHospital(id,next,error){return onSnapshot(hospitalRef(id),s
  * A remembered hospital ID is only a hint; never grants access or replaces membership validation.
  */
 export async function resolveWorkspace(user,preferred,allowed){
+ return withWorkspaceTimeout(async()=>{
  const prefetch=/^[A-Za-z0-9]{20}$/.test(preferred||'')?getHospital(preferred,{server:true}).then(value=>({value}),error=>({error})):null;
  const memberships=await myMemberships(user);
- const member=memberships.find(m=>m.hospitalId===preferred&&allowed(m))||memberships.find(allowed);
+ // Only select valid operational hospital IDs.
+ const eligible=m=>m.uid===user.uid&&m.active===true&&/^[A-Za-z0-9]{20}$/.test(m.hospitalId)&&allowed(m);
+ const member=memberships.find(m=>m.hospitalId===preferred&&eligible(m))||memberships.find(eligible);
  if(!member)return {memberships,member:null,hospital:null};
  const prefetched=prefetch&&member.hospitalId===preferred?await prefetch:null;
  const hospital=prefetched?.value||await getHospital(member.hospitalId,{server:true});
  return {memberships,member,hospital};
+ });
 }
