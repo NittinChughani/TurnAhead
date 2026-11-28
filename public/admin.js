@@ -279,7 +279,7 @@ async function initialize(){
     const preferred=new URLSearchParams(location.search).get('hospital')||persistent.getItem('turnahead-hospital');
     const session=await resolveWorkspace(user,preferred,m=>m.role==='owner');if(seq!==authEpoch)return;
     me=session.member;
-    if(!me){$('guard-message').textContent='Google/email authentication succeeded, but no active administrator workspace was found for this account. Contact your TurnAhead operator to complete organization provisioning, then check access again.';pendingLogin=false;loadingLogin(false);return;}
+    if(!me){$('guard-message').textContent='Your email is verified, but your administrator workspace is not active yet. If you have submitted an application, wait for approval or contact the TurnAhead operator, then check access again.';pendingLogin=false;loadingLogin(false);return;}
     const resolved=session.hospital;if(seq!==authEpoch)return;
     if(resolved.ownerUid!==user.uid)throw Error('Access denied. Only the designated owner may use administration.');
     hospital=resolved;
@@ -305,12 +305,9 @@ $('admin-login-form').addEventListener('submit',async e=>{
   try{await login($('admin-email').value,$('admin-password').value);$('admin-password').value='';}
   catch(err){pendingLogin=false;loadingLogin(false);$('admin-login-error').textContent=helpfulError(err);}
 });
-$('admin-google-login')?.addEventListener('click',async()=>{
- const button=$('admin-google-login');if(button.disabled||loginButton.disabled)return;button.disabled=true;loadingLogin(true,'Opening Google sign-in');pendingLogin=true;$('admin-login-error').textContent='';
- try{const {GoogleAuthProvider,signInWithPopup}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js');await signInWithPopup(auth,new GoogleAuthProvider());}
- catch(e){pendingLogin=false;loadingLogin(false);$('admin-login-error').textContent=helpfulError(e);}
- finally{button.disabled=false;}
-});
+$('admin-show-password').addEventListener('click',()=>{const field=$('admin-password'),button=$('admin-show-password'),visible=field.type==='password';field.type=visible?'text':'password';button.setAttribute('aria-pressed',String(visible));button.textContent=visible?'Hide password':'Show password';});
+$('admin-forgot-password').addEventListener('click',async()=>{const field=$('admin-email'),button=$('admin-forgot-password');if(!field.reportValidity()||!auth)return;button.disabled=true;try{const {sendPasswordResetEmail}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js');await sendPasswordResetEmail(auth,field.value.trim());$('admin-login-error').textContent='If the account exists, a password reset email has been sent.';}catch(e){$('admin-login-error').textContent=e?.code==='auth/user-not-found'?'If the account exists, a password reset email has been sent.':helpfulError(e);}finally{button.disabled=false;}});
+
 $('admin-verify').addEventListener('click',async()=>{try{await requestVerification();if(await refreshVerification())await initialize();else toast('Verification email sent. Please open it and return here.');}catch(e){toast(helpfulError(e),true);}});
 $('admin-check-access')?.addEventListener('click',()=>initialize());
 $('admin-switch-account').addEventListener('click',async()=>{try{await logout();}catch(e){toast(helpfulError(e),true);}});
