@@ -1,3 +1,4 @@
+import {startStagingGoogle,finishStagingGoogle} from './staging-google.js';
 import {bindFeedbackArchive} from './feedback-archive.js?v=4.0.3';
 import {archiveMonth,monthDates} from './archive-month.js';
 import {bindSignInLoader} from './signin-loader.js?v=4.0.3';
@@ -306,8 +307,8 @@ $('admin-login-form').addEventListener('submit',async e=>{
   catch(err){pendingLogin=false;loadingLogin(false);$('admin-login-error').textContent=helpfulError(err);}
 });
 $('admin-google-login')?.addEventListener('click',async()=>{
- const button=$('admin-google-login');if(button.disabled||loginButton.disabled)return;button.disabled=true;loadingLogin(true);pendingLogin=true;$('admin-login-error').textContent='';
- try{const {GoogleAuthProvider,signInWithPopup}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js');await signInWithPopup(auth,new GoogleAuthProvider());}
+ const button=$('admin-google-login');if(button.disabled||loginButton.disabled)return;button.disabled=true;loadingLogin(true,'Opening Google sign-in');pendingLogin=true;$('admin-login-error').textContent='';
+ try{await startStagingGoogle(auth);}
  catch(e){pendingLogin=false;loadingLogin(false);$('admin-login-error').textContent=helpfulError(e);}
  finally{button.disabled=false;}
 });
@@ -330,6 +331,7 @@ try{await renameHospital(hospital.id,$('settings-name').value);hospital=await ge
 $('admin-sign-out').addEventListener('click',async()=>{pendingLogout=true;authEpoch++;stop();show('admin-content',false);show('admin-guard',true);try{await logout();}catch(e){pendingLogout=false;toast(helpfulError(e),true);}});
 bindV3(()=>({hospital,departments,doctors,members,analyticsAccess:subscription.analyticsAccess()}),toast);
 if(configured)observeAuth(()=>initialize());else initialize();
+if(configured)finishStagingGoogle(auth).catch(e=>{if(auth.currentUser)return;pendingLogin=false;loadingLogin(false);$('admin-login-error').textContent=helpfulError(e);});
 
 $('admin-profile-file').addEventListener('change',async e=>{
  if(!hospital||!me)return;const file=e.target.files?.[0];if(!file)return;
