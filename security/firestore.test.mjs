@@ -285,3 +285,22 @@ test('first administrator department initializes sequence atomically without con
  assert.equal((await getDoc(meta)).data().nextPrefix,1);
  assert.equal((await getDoc(p(db,'queues','second-department',tenant))).exists(),false);
 });
+
+test('commercial capacity reads are isolated to active members and valid staff invitees',async()=>{
+ await seedCommercialPolicy();
+ const owner=user('owner'),outsider=user('otherowner'),invitee=user('capacityinvite'),email='capacityinvite@example.test';
+ for(const db of [outsider,user('disabled'),env.unauthenticatedContext().firestore()]){
+  await assertFails(getDoc(p(db,'commercialPolicy','current')));
+  for(const kind of ['departments','doctors','staff'])await assertFails(getDoc(p(db,'commercialUsage',kind)));
+ }
+ await assertSucceeds(getDoc(p(owner,'commercialPolicy','current')));
+ await assertSucceeds(getDoc(p(owner,'commercialUsage','staff')));
+ await assertFails(getDoc(p(invitee,'commercialUsage','staff')));
+ await assertSucceeds(setDoc(p(owner,'invites',email),{email,role:'receptionist',status:'pending',createdBy:'owner',createdAt:serverTimestamp(),expiresAt:Timestamp.fromMillis(Date.now()+86400000),acceptedUid:null,acceptedAt:null}));
+ await assertSucceeds(getDoc(p(invitee,'commercialPolicy','current')));
+ await assertSucceeds(getDoc(p(invitee,'commercialUsage','staff')));
+ await assertFails(getDoc(p(invitee,'commercialUsage','departments')));
+ await assertSucceeds(updateDoc(p(owner,'invites',email),{status:'revoked'}));
+ await assertFails(getDoc(p(invitee,'commercialPolicy','current')));
+ await assertFails(getDoc(p(invitee,'commercialUsage','staff')));
+});
