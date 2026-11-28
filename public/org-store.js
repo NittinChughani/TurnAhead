@@ -1,4 +1,5 @@
 import {reserveCommercialSlot} from './commercial-capacity.js';
+import {withWorkspaceTimeout} from './signin-loader.js?v=4.0.3';
 /** Browser API for verified hospital owners, staff invitations and per-hospital roles. */
 import {
   collection, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, query, where, onSnapshot,
@@ -136,6 +137,7 @@ export function watchHospital(id,next,error){return onSnapshot(hospitalRef(id),s
  * A remembered hospital ID is only a hint; never grants access or replaces membership validation.
  */
 export async function resolveWorkspace(user,preferred,allowed){
+ return withWorkspaceTimeout(async()=>{
  const prefetch=/^[A-Za-z0-9]{20}$/.test(preferred||'')?getHospital(preferred,{server:true}).then(value=>({value}),error=>({error})):null;
  const memberships=await myMemberships(user);
  const member=memberships.find(m=>m.hospitalId===preferred&&allowed(m))||memberships.find(allowed);
@@ -143,4 +145,5 @@ export async function resolveWorkspace(user,preferred,allowed){
  const prefetched=prefetch&&member.hospitalId===preferred?await prefetch:null;
  const hospital=prefetched?.value||await getHospital(member.hospitalId,{server:true});
  return {memberships,member,hospital};
+ });
 }
