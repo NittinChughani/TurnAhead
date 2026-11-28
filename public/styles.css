@@ -490,3 +490,5 @@
 @media(max-width:590px){.workspace .nav-actions{max-width:100%;flex:1 1 100%;margin-left:0;justify-content:flex-end}.workspace .account-trigger{max-width:180px}.account-panel{position:absolute;right:0;width:min(300px,calc(100vw - 36px))}.desk-hero .desk-live-status{margin-top:16px;margin-bottom:8px}.delay-notice-controls{flex-direction:column}.delay-notice-controls select,.delay-notice-controls .btn{width:100%}}
 
 @media(max-width:590px){.workspace .nav-actions{position:relative}.workspace .account-menu{position:static}.workspace .account-panel{right:0;top:calc(100% + 12px)}}
+
+.login-password-actions{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:4px 0 8px}.login-password-actions .btn{font-size:.84rem;min-height:34px}.plan-card .btn.full{margin-top:12px}
