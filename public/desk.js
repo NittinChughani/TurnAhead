@@ -199,7 +199,7 @@ $('login-form').addEventListener('submit',async e=>{
   }
 });
 $('staff-google-login')?.addEventListener('click',async()=>{
- const button=$('staff-google-login');if(button.disabled||loginButton.disabled)return;button.disabled=true;loadingLogin(true);pendingSignIn=true;$('login-error').textContent='';
+ const button=$('staff-google-login');if(button.disabled||loginButton.disabled)return;button.disabled=true;loadingLogin(true,'Opening Google sign-in');pendingSignIn=true;$('login-error').textContent='';
  try{const {GoogleAuthProvider,signInWithPopup}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js');await signInWithPopup(auth,new GoogleAuthProvider());}
  catch(e){pendingSignIn=false;loadingLogin(false);$('login-error').textContent=helpfulError(e);}
  finally{button.disabled=false;}
