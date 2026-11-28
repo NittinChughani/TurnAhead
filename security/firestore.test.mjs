@@ -244,3 +244,17 @@ test('managed staff invitation acceptance requires one atomic seat and invite',a
  await assertSucceeds(accept(true));
  assert.equal((await getDoc(usage)).data().count,4);
 });
+
+test('customer subscription is readable only by its verified owner and never writable by browser users',async()=>{
+ const subscription={plan:'professional',cycle:'monthly',status:'active',recurringAmount:14999,expiresAt:Timestamp.fromMillis(now+86400000),limits:{departments:15,doctors:50,staff:30}};
+ await env.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'commercialAccounts',h),subscription));
+ const ref=db=>doc(db,'commercialAccounts',h);
+ const owner=user('owner');
+ await assertSucceeds(getDoc(ref(owner)));
+ for(const db of [user('staff'),user('supervisor'),user('disabled'),user('otherowner'),env.unauthenticatedContext().firestore(),env.authenticatedContext('owner',{email:'owner@example.test',email_verified:false}).firestore()])await assertFails(getDoc(ref(db)));
+ await assertFails(getDocs(collection(owner,'commercialAccounts')));
+ await assertFails(updateDoc(ref(owner),{recurringAmount:1}));
+ await assertFails(deleteDoc(ref(owner)));
+ await assertFails(setDoc(doc(owner,'commercialAccounts',other),subscription));
+ await assertFails(setDoc(doc(owner,'commercialAccounts',h,'invoices','fake'),{total:1}));
+});
