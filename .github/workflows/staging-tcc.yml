@@ -1,0 +1,74 @@
+name: TurnAhead isolated TCC staging
+on:
+  push:
+    branches: ['staging/tcc-v1']
+  pull_request:
+    branches: ['release/tcc-plan-enforcement']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: turnahead-tcc-staging-${{ github.event_name }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/staging/tcc-v1' || github.head_ref == 'staging/tcc-v1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm run check
+      - run: npm test
+      - run: node scripts/build-staging.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: turnahead-staging-static
+          path: staging-dist
+          retention-days: 7
+  deploy:
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/staging/tcc-v1'
+    runs-on: ubuntu-latest
+    environment: turnahead-staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: turnahead-staging-static
+          path: staging-dist
+      - name: Authorize only the isolated staging project
+        id: auth
+        env:
+          DEPLOY_KEY: ${{ secrets.STAGING_FIREBASE_DEPLOY_KEY }}
+        run: |
+          if [ -z "$DEPLOY_KEY" ]; then
+            echo "::error::STAGING_FIREBASE_DEPLOY_KEY is missing from the staging environment."
+            exit 1
+          fi
+          node --input-type=module <<'JS'
+          import {writeFileSync} from 'node:fs';
+          const key=JSON.parse(process.env.DEPLOY_KEY);
+          if(key.type!=='service_account'||key.project_id!=='turnahead-staging'||!key.client_email?.endsWith('@turnahead-staging.iam.gserviceaccount.com')||!key.private_key)throw Error('Refusing a non-staging service account.');
+          writeFileSync(process.env.RUNNER_TEMP+'/turnahead-staging-key.json',JSON.stringify(key),{mode:0o600});
+          JS
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+      - name: Deploy staging Hosting and Firestore rules only
+        if: steps.auth.outputs.configured == 'true'
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/turnahead-staging-key.json
+        run: npx --yes firebase-tools@14.12.0 deploy --project turnahead-staging --config firebase.staging.json --only hosting,firestore:rules --non-interactive
+      - name: Verify deployed public configuration
+        if: steps.auth.outputs.configured == 'true'
+        run: |
+          curl --fail --silent --show-error --retry 4 https://turnahead-staging.web.app/config.js -o "$RUNNER_TEMP/staging-config.js"
+          grep -q 'turnahead-staging' "$RUNNER_TEMP/staging-config.js"
+          if grep -q 'turnahead-b34f9' "$RUNNER_TEMP/staging-config.js"; then exit 1; fi
+          curl --fail --silent --show-error https://turnahead-staging.web.app/admin.html | grep -q 'STAGING ONLY'
+      - name: Remove temporary credential
+        if: always()
+        run: rm -f "$RUNNER_TEMP/turnahead-staging-key.json"

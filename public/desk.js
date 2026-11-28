@@ -1,3 +1,4 @@
+import {startStagingGoogle,finishStagingGoogle} from './staging-google.js';
 import {bindSignInLoader} from './signin-loader.js?v=4.0.3';
 import {configured, auth, helpfulError} from './firebase.js';
 import {observeAuth, login, logout, requestVerification, refreshVerification,
@@ -199,8 +200,8 @@ $('login-form').addEventListener('submit',async e=>{
   }
 });
 $('staff-google-login')?.addEventListener('click',async()=>{
- const button=$('staff-google-login');if(button.disabled||loginButton.disabled)return;button.disabled=true;loadingLogin(true);pendingSignIn=true;$('login-error').textContent='';
- try{const {GoogleAuthProvider,signInWithPopup}=await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js');await signInWithPopup(auth,new GoogleAuthProvider());}
+ const button=$('staff-google-login');if(button.disabled||loginButton.disabled)return;button.disabled=true;loadingLogin(true,'Opening Google sign-in');pendingSignIn=true;$('login-error').textContent='';
+ try{await startStagingGoogle(auth);}
  catch(e){pendingSignIn=false;loadingLogin(false);$('login-error').textContent=helpfulError(e);}
  finally{button.disabled=false;}
 });
@@ -269,6 +270,7 @@ let lastSeenDay=dayKey();
 setInterval(()=>{const today=dayKey();if(today!==lastSeenDay){lastSeenDay=today;if(currentHospital)rollOverAll(currentHospital.id).catch(e=>notice(helpfulError(e),true));}},15000);
 if(!configured){$('login-error').textContent='Firebase is not configured yet. See the repository setup guide.';view('login-view');}
 else observeAuth(()=>routeCurrentUser());
+if(configured)finishStagingGoogle(auth).catch(e=>{if(auth.currentUser)return;pendingSignIn=false;loadingLogin(false);$('login-error').textContent=helpfulError(e);});
 
 $('staff-profile-file').addEventListener('change',async e=>{
  if(!currentHospital||!currentMember)return;const file=e.target.files?.[0];if(!file)return;

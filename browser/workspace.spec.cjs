@@ -97,13 +97,23 @@ test('pricing is public-only, displays approved amounts, and contains no onboard
  await expect(page.locator('#pricing-auth')).toHaveCount(0);
  await expect(page.locator('main')).not.toContainText('COMING SOON');
 });
-test('staged subscription tab preserves legacy analytics and does not enable commercial writes',async({page})=>{
- await mockWorkspace(page,'owner');
+test('staging subscription displays plan, verified billing and submits pending customer requests',async({page})=>{
+ await mockWorkspace(page,'owner',{subscription:true});
  await page.goto('/admin.html');await expect(page.locator('#admin-content')).toBeVisible();
  await page.locator('[data-admin-tab=subscription]').click();
- await expect(page.locator('#subscription-summary')).toContainText('Commercial onboarding coming soon');
- await expect(page.locator('#subscription-request button[type=submit]')).toBeDisabled();
- await expect(page.locator('#subscription-invoices')).toContainText('Available after commercial activation.');
+ await expect(page.locator('#subscription-summary')).toContainText('TurnAhead Professional');
+ await expect(page.locator('#subscription-summary')).toContainText('PKR 14,999');
+ await expect(page.locator('#subscription-summary')).toContainText('Monthly');
+ await expect(page.locator('#subscription-meters')).toContainText('/ 50');
+ await expect(page.locator('#subscription-request button[type=submit]')).toBeEnabled();
+ await expect(page.locator('#subscription-invoices')).toContainText('TA-TEST');
+ await expect(page.locator('#subscription-payments')).toContainText('Verified');
+ await expect(page.locator('#subscription-notices')).toContainText('Accepted by email provider');
+ await page.locator('#subscription-kind').selectOption('support');
+ await page.locator('#subscription-message').fill('Synthetic billing question');
+ await page.locator('#subscription-request button[type=submit]').click();
+ await expect(page.locator('#subscription-request-status')).toContainText('Request recorded');
+ await expect(page.locator('#subscription-requests')).toContainText('Support · Pending');
  await page.locator('[data-admin-tab=analytics]').click();
  await expect(page.locator('#analytics-mode')).toHaveValue('advanced');
  await page.locator('#analytics-load').click();

@@ -2,10 +2,10 @@
 importScripts('https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/12.19.0/firebase-messaging-compat.js');
 firebase.initializeApp({
-  apiKey:'AIzaSyB4TDbj_yjmWr-ArmRtat9cbR2LuixRbAs',
-  authDomain:'turnahead-b34f9.firebaseapp.com',
-  projectId:'turnahead-b34f9',
-  appId:'1:348690841921:web:4a091271d11a618258e1c0'
+  apiKey:'AIzaSyBQU1xHc6o92ZD02HOgTrh_Fe6UXm0O7ko',
+  authDomain:'turnahead-staging.firebaseapp.com',
+  projectId:'turnahead-staging',
+  appId:'1:528112784622:web:7a2dababac531e0a254fff'
 });
 const messaging=firebase.messaging();
 messaging.onBackgroundMessage(payload=>{
