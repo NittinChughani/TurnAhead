@@ -2,7 +2,7 @@ import {commercialEnabled,subscriptionDisplayEnabled,customerPortalEnabled} from
 import {doc,collection,getDocFromServer,getDocsFromServer,setDoc,serverTimestamp,Timestamp,onSnapshot,query,orderBy,limit} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {db,auth} from './firebase.js';
 import {PLANS,quote} from './subscription-model.js';
-const endpoint='https://tcc-production.kumarnittin511.workers.dev/api/customer/';
+const endpoint='https://tcc-production.turnahead.workers.dev/api/customer/';
 const pending=new Map();
 async function customerCall(hid,action,body){
  if(!/^[a-f0-9]{20}$/.test(hid)||!auth?.currentUser?.emailVerified)throw Error('Verified administrator sign-in required.');
