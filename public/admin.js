@@ -272,7 +272,7 @@ async function initialize(){
   const seq=++authEpoch;stop();show('admin-guard',true);show('admin-content',false);show('admin-sign-out',false);
   if(!configured){$('guard-message').textContent='Firebase is not configured yet.';loadingLogin(false);return;}
   const user=auth.currentUser;
-  show('admin-login-form',true);show('admin-verify',Boolean(user&&!user.emailVerified));show('admin-switch-account',Boolean(user));
+  show('admin-login-form',true);show('admin-verify',Boolean(user&&!user.emailVerified));show('admin-switch-account',Boolean(user));show('admin-check-access',Boolean(user?.emailVerified));
   if(!user){$('guard-message').textContent='Sign in with your designated hospital administrator account.';loadingLogin(false);if(pendingLogout){toast('You have been signed out successfully.');pendingLogout=false;}return;}
   if(!user.emailVerified){$('guard-message').textContent='Please verify your administrator email before proceeding.';loadingLogin(false);return;}
   try{
@@ -280,7 +280,7 @@ async function initialize(){
     const preferred=new URLSearchParams(location.search).get('hospital')||persistent.getItem('turnahead-hospital');
     const session=await resolveWorkspace(user,preferred,m=>m.role==='owner');if(seq!==authEpoch)return;
     me=session.member;
-    if(!me){$('guard-message').textContent='Access denied. This email is not registered as the designated hospital administrator. Contact your organization owner.';pendingLogin=false;loadingLogin(false);return;}
+    if(!me){$('guard-message').textContent='Google/email authentication succeeded, but no active administrator workspace was found for this account. In TCC, finish Provision staging hospital for the approved registration, then check access again.';pendingLogin=false;loadingLogin(false);return;}
     const resolved=session.hospital;if(seq!==authEpoch)return;
     if(resolved.ownerUid!==user.uid)throw Error('Access denied. Only the designated owner may use administration.');
     hospital=resolved;
@@ -313,6 +313,7 @@ $('admin-google-login')?.addEventListener('click',async()=>{
  finally{button.disabled=false;}
 });
 $('admin-verify').addEventListener('click',async()=>{try{await requestVerification();if(await refreshVerification())await initialize();else toast('Verification email sent. Please open it and return here.');}catch(e){toast(helpfulError(e),true);}});
+$('admin-check-access')?.addEventListener('click',()=>initialize());
 $('admin-switch-account').addEventListener('click',async()=>{try{await logout();}catch(e){toast(helpfulError(e),true);}});
 $('invite-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('[type=submit]');btn.disabled=true;
 try{const email=normalizeEmail($('invite-email').value),role=$('invite-role').value;
@@ -331,7 +332,7 @@ try{await renameHospital(hospital.id,$('settings-name').value);hospital=await ge
 $('admin-sign-out').addEventListener('click',async()=>{pendingLogout=true;authEpoch++;stop();show('admin-content',false);show('admin-guard',true);try{await logout();}catch(e){pendingLogout=false;toast(helpfulError(e),true);}});
 bindV3(()=>({hospital,departments,doctors,members,analyticsAccess:subscription.analyticsAccess()}),toast);
 if(configured)observeAuth(()=>initialize());else initialize();
-if(configured)finishStagingGoogle(auth).catch(e=>{if(auth.currentUser)return;pendingLogin=false;loadingLogin(false);$('admin-login-error').textContent=helpfulError(e);});
+if(configured)finishStagingGoogle(auth).then(result=>{if(result?.user&&auth.currentUser?.uid===result.user.uid)return initialize();}).catch(e=>{if(auth.currentUser)return;pendingLogin=false;loadingLogin(false);$('admin-login-error').textContent=helpfulError(e);});
 
 $('admin-profile-file').addEventListener('change',async e=>{
  if(!hospital||!me)return;const file=e.target.files?.[0];if(!file)return;
