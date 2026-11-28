@@ -296,12 +296,19 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','updatedAt','recallGraceMinutes','customization']) &&
         validHospital(request.resource.data) && request.resource.data.updatedAt == request.time;
 
+      // A verified pending invitee needs the policy and staff counter before atomic membership acceptance.
+      function pendingCapacityInvite() {
+        return verified() && exists(invitePath(hid,email())) &&
+          get(invitePath(hid,email())).data.status == 'pending' &&
+          get(invitePath(hid,email())).data.expiresAt > request.time;
+      }
       match /commercialPolicy/{key} {
-        allow get: if verified() && key == 'current';
+        allow get: if key == 'current' && (isMember(hid) || pendingCapacityInvite());
         allow list, write: if false;
       }
       match /commercialUsage/{kind} {
-        allow get: if verified() && kind in ['departments','doctors','staff'];
+        allow get: if kind in ['departments','doctors','staff'] &&
+          (isMember(hid) || (kind == 'staff' && pendingCapacityInvite()));
         allow update: if validCommercialUsage(hid,kind);
         allow create, delete, list: if false;
       }
@@ -455,7 +462,7 @@ service cloud.firestore {
       }
     }
 
-    // Customer-facing commercial projection, written exclusively by TCC's staging service.
+    // Customer-facing commercial projection, written exclusively by the authorized TCC service.
     match /commercialAccounts/{hid} {
       allow get: if owner(hid);
       allow list, create, update, delete: if false;
