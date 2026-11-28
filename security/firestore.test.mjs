@@ -258,3 +258,30 @@ test('customer subscription is readable only by its verified owner and never wri
  await assertFails(setDoc(doc(owner,'commercialAccounts',other),subscription));
  await assertFails(setDoc(doc(owner,'commercialAccounts',h,'invoices','fake'),{total:1}));
 });
+
+test('first administrator department initializes sequence atomically without consuming an extra slot',async()=>{
+ await env.withSecurityRulesDisabled(async ctx=>{
+  const db=ctx.firestore(),tenant=other;
+  await setDoc(p(db,'commercialPolicy','current',tenant),{expansionAllowed:true,validUntil:Timestamp.fromMillis(Date.now()+86400000),limits:{departments:1,doctors:5,staff:3}});
+  await setDoc(p(db,'commercialUsage','departments',tenant),{count:0,lastId:''});
+ });
+ const db=user('otherowner'),tenant=other,meta=p(db,'meta','sequence',tenant),usage=p(db,'commercialUsage','departments',tenant);
+ const create=(id,prefix)=>runTransaction(db,async tx=>{
+  const pr=p(db,'prefixes',prefix,tenant),[m,r,u]=await Promise.all([tx.get(meta),tx.get(pr),tx.get(usage)]);
+  if(r.exists())throw Error('Duplicate prefix');
+  tx.update(usage,{count:u.data().count+1,lastId:id});
+  if(m.exists())tx.update(meta,{nextPrefix:m.data().nextPrefix+1});else tx.set(meta,{nextPrefix:1});
+  tx.set(pr,{queueId:id});
+  tx.set(p(db,'queues',id,tenant),initialQueue(prefix+' Department',prefix,day,now));
+  tx.set(p(db,'controls',id,tenant),initialControl());
+ });
+ assert.equal((await getDoc(meta)).exists(),false);
+ await assertSucceeds(create('first-department','CAR'));
+ assert.equal((await getDoc(meta)).data().nextPrefix,1);
+ assert.equal((await getDoc(usage)).data().count,1);
+ assert.equal((await getDoc(p(db,'queues','general-opd',tenant))).exists(),false);
+ await assertFails(create('second-department','NEU'));
+ assert.equal((await getDoc(usage)).data().count,1);
+ assert.equal((await getDoc(meta)).data().nextPrefix,1);
+ assert.equal((await getDoc(p(db,'queues','second-department',tenant))).exists(),false);
+});
